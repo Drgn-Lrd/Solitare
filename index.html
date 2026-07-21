@@ -175,47 +175,71 @@
     </div>
 
     <script>
-        const WIKI_BASE = "https://upload.wikimedia.org/wikipedia/commons/";
-        const CARD_BACK_URL = WIKI_BASE + "d/d4/Card_back_01.svg";
-
-        const SUIT_NAMES = { 'H': 'hearts', 'D': 'diamonds', 'C': 'clubs', 'S': 'spades' };
-        const SUIT_COLORS = { 'H': 'red', 'D': 'red', 'C': 'black', 'S': 'black' };
+        const SUIT_SYMBOLS = { 'H': '♥', 'D': '♦', 'C': '♣', 'S': '♠' };
+        const SUIT_COLORS = { 'H': '#d63031', 'D': '#d63031', 'C': '#2d3436', 'S': '#2d3436' };
         const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-        // Verified Public Domain SVG Stock Deck from Wikimedia Commons
-        const CARD_URLS = {
-            'S_1': '2/25/Playing_card_spade_A.svg', 'S_2': 'a/a4/Playing_card_spade_2.svg',
-            'S_3': '5/52/Playing_card_spade_3.svg', 'S_4': '2/2c/Playing_card_spade_4.svg',
-            'S_5': '4/4c/Playing_card_spade_5.svg', 'S_6': 'd/d2/Playing_card_spade_6.svg',
-            'S_7': 'f/f2/Playing_card_spade_7.svg', 'S_8': '0/02/Playing_card_spade_8.svg',
-            'S_9': 'e/e5/Playing_card_spade_9.svg', 'S_10': '0/04/Playing_card_spade_10.svg',
-            'S_J': '5/51/Playing_card_spade_J.svg', 'S_Q': 'a/a2/Playing_card_spade_Q.svg',
-            'S_K': '9/9f/Playing_card_spade_K.svg',
-
-            'H_1': '5/57/Playing_card_heart_A.svg', 'H_2': 'd/d5/Playing_card_heart_2.svg',
-            'H_3': 'b/b6/Playing_card_heart_3.svg', 'H_4': 'a/a2/Playing_card_heart_4.svg',
-            'H_5': '5/52/Playing_card_heart_5.svg', 'H_6': 'c/cd/Playing_card_heart_6.svg',
-            'H_7': '9/94/Playing_card_heart_7.svg', 'H_8': '5/50/Playing_card_heart_8.svg',
-            'H_9': '5/50/Playing_card_heart_9.svg', 'H_10': '9/98/Playing_card_heart_10.svg',
-            'H_J': '4/46/Playing_card_heart_J.svg', 'H_Q': '7/72/Playing_card_heart_Q.svg',
-            'H_K': 'd/dc/Playing_card_heart_K.svg',
-
-            'D_1': 'd/d3/Playing_card_diamond_A.svg', 'D_2': '5/59/Playing_card_diamond_2.svg',
-            'D_3': '8/82/Playing_card_diamond_3.svg', 'D_4': '2/20/Playing_card_diamond_4.svg',
-            'D_5': 'f/fd/Playing_card_diamond_5.svg', 'D_6': '8/80/Playing_card_diamond_6.svg',
-            'D_7': 'e/e6/Playing_card_diamond_7.svg', 'D_8': '7/78/Playing_card_diamond_8.svg',
-            'D_9': '9/9e/Playing_card_diamond_9.svg', 'D_10': '3/34/Playing_card_diamond_10.svg',
-            'D_J': 'a/af/Playing_card_diamond_J.svg', 'D_Q': '0/0b/Playing_card_diamond_Q.svg',
-            'D_K': 'd/d0/Playing_card_diamond_K.svg',
-
-            'C_1': '3/36/Playing_card_club_A.svg', 'C_2': 'f/f5/Playing_card_club_2.svg',
-            'C_3': 'b/b2/Playing_card_club_3.svg', 'C_4': '3/3d/Playing_card_club_4.svg',
-            'C_5': '3/38/Playing_card_club_5.svg', 'C_6': 'a/a4/Playing_card_club_6.svg',
-            'C_7': '4/4b/Playing_card_club_7.svg', 'C_8': 'e/eb/Playing_card_club_8.svg',
-            'C_9': '2/27/Playing_card_club_9.svg', 'C_10': '3/3e/Playing_card_club_10.svg',
-            'C_J': 'b/b7/Playing_card_club_J.svg', 'C_Q': 'f/f2/Playing_card_club_Q.svg',
-            'C_K': 'd/d3/Playing_card_club_K.svg'
+        // Pip Positions for Standard Playing Card Layouts
+        const PIP_POSITIONS = {
+            1:  [[50, 50]],
+            2:  [[50, 20], [50, 80]],
+            3:  [[50, 20], [50, 50], [50, 80]],
+            4:  [[30, 20], [70, 20], [30, 80], [70, 80]],
+            5:  [[30, 20], [70, 20], [50, 50], [30, 80], [70, 80]],
+            6:  [[30, 20], [70, 20], [30, 50], [70, 50], [30, 80], [70, 80]],
+            7:  [[30, 20], [70, 20], [50, 35], [30, 50], [70, 50], [30, 80], [70, 80]],
+            8:  [[30, 20], [70, 20], [50, 35], [30, 50], [70, 50], [50, 65], [30, 80], [70, 80]],
+            9:  [[30, 20], [70, 20], [30, 40], [70, 40], [50, 50], [30, 60], [70, 60], [30, 80], [70, 80]],
+            10: [[30, 20], [70, 20], [50, 30], [30, 42], [70, 42], [30, 58], [70, 58], [50, 70], [30, 80], [70, 80]]
         };
+
+        function generateCardSVG(suit, rank, value) {
+            const symbol = SUIT_SYMBOLS[suit];
+            const color = SUIT_COLORS[suit];
+            const isFace = ['J', 'Q', 'K'].includes(rank);
+
+            let centerGraphic = '';
+            if (isFace) {
+                let crownTitle = rank === 'K' ? '👑' : rank === 'Q' ? '👸' : '⚔️';
+                centerGraphic = `
+                    <rect x="22" y="28" width="56" height="84" rx="4" fill="#f8f9fa" stroke="${color}" stroke-width="2"/>
+                    <text x="50" y="60" font-size="28" text-anchor="middle">${crownTitle}</text>
+                    <text x="50" y="96" font-size="30" fill="${color}" text-anchor="middle">${symbol}</text>
+                `;
+            } else {
+                const positions = PIP_POSITIONS[value] || [];
+                centerGraphic = positions.map(([x, y]) => {
+                    const flip = y > 50 ? 'transform="rotate(180 ' + x + ' ' + y + ')"' : '';
+                    return `<text x="${x}" y="${y + 6}" font-size="18" fill="${color}" text-anchor="middle" ${flip}>${symbol}</text>`;
+                }).join('');
+            }
+
+            const svg = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
+                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
+                    <!-- Top Left Index -->
+                    <text x="8" y="20" font-size="16" font-weight="bold" fill="${color}">${rank}</text>
+                    <text x="8" y="34" font-size="14" fill="${color}">${symbol}</text>
+                    <!-- Center Graphic -->
+                    ${centerGraphic}
+                    <!-- Bottom Right Index -->
+                    <g transform="rotate(180, 50, 70)">
+                        <text x="8" y="20" font-size="16" font-weight="bold" fill="${color}">${rank}</text>
+                        <text x="8" y="34" font-size="14" fill="${color}">${symbol}</text>
+                    </g>
+                </svg>
+            `;
+            return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+        }
+
+        const CARD_BACK_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
+                <rect width="100" height="140" rx="8" fill="#b2bec3" stroke="#ffffff" stroke-width="3"/>
+                <rect x="6" y="6" width="88" height="128" rx="6" fill="#d63031"/>
+                <path d="M 10 10 L 90 130 M 90 10 L 10 130" stroke="#ffffff" stroke-width="3" opacity="0.4"/>
+                <circle cx="50" cy="70" r="20" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.6"/>
+            </svg>
+        `);
 
         let deck = [], history = [];
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
@@ -249,17 +273,17 @@
         function buildDeck() {
             deck = [];
             let id = 0;
-            for (let suit in SUIT_NAMES) {
+            for (let suit in SUIT_SYMBOLS) {
                 for (let r = 0; r < RANKS.length; r++) {
                     const rank = RANKS[r];
-                    const key = `${suit}_${rank === 'A' ? '1' : rank}`;
+                    const val = r + 1;
                     deck.push({
                         id: id++,
                         suit,
                         rank,
-                        value: r + 1,
+                        value: val,
                         isFaceUp: false,
-                        imageUrl: WIKI_BASE + CARD_URLS[key]
+                        imageUrl: generateCardSVG(suit, rank, val)
                     });
                 }
             }
@@ -373,7 +397,7 @@
         function createCardElement(card) {
             const div = document.createElement('div');
             div.classList.add('card');
-            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_URL}')` : `url('${card.imageUrl}')`;
+            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_SVG}')` : `url('${card.imageUrl}')`;
             return div;
         }
 
@@ -546,7 +570,7 @@
 
             const fIdx = getFoundationIndexForCard(card);
             if (fIdx !== -1) {
-                saveHistory(); // Saved prior to mutation to eliminate undo duplicates
+                saveHistory();
                 if (type === 'tab') {
                     state.foundations[fIdx].push(state.tableau[pileIndex].pop());
                     if (state.tableau[pileIndex].length > 0) {
