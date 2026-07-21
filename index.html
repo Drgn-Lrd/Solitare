@@ -41,7 +41,7 @@
             flex-direction: column;
         }
 
-        /* --- Header / Controls Bar --- */
+        /* --- Header Bar --- */
         #header-bar {
             background-color: var(--panel-bg);
             padding: 10px 12px;
@@ -111,6 +111,7 @@
             max-width: 600px;
             margin: 0 auto;
             width: 100%;
+            position: relative;
         }
 
         #top-row, #tableau {
@@ -129,7 +130,7 @@
             margin: 0 auto;
         }
 
-        /* --- Card Styling --- */
+        /* --- Cards --- */
         .card {
             width: var(--card-width);
             height: var(--card-height);
@@ -152,12 +153,20 @@
             z-index: 1000 !important;
         }
 
-        /* --- Settings Modal --- */
+        /* --- Canvas & Win Modal --- */
+        #win-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 1500;
+        }
+
         .modal-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(0, 0, 0, 0.65);
             z-index: 2000;
             justify-content: center;
             align-items: center;
@@ -172,6 +181,7 @@
             max-width: 360px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.5);
             overflow: hidden;
+            text-align: center;
         }
 
         .modal-header {
@@ -185,7 +195,7 @@
         }
 
         .modal-body {
-            padding: 16px;
+            padding: 20px;
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -195,6 +205,7 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
+            text-align: left;
         }
 
         .setting-title {
@@ -247,6 +258,8 @@
 </head>
 <body>
 
+    <canvas id="win-canvas"></canvas>
+
     <!-- Top Navigation / Stats -->
     <div id="header-bar">
         <div class="header-left">
@@ -297,7 +310,21 @@
         </div>
     </div>
 
-    <!-- Unified Settings Modal -->
+    <!-- Victory Modal -->
+    <div class="modal-overlay" id="win-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span>🎉 Victory!</span>
+            </div>
+            <div class="modal-body">
+                <h2 style="margin: 0; color: #00a65a;">Congratulations!</h2>
+                <p style="margin: 0; color: #cfd8dc;" id="win-stats-text">You solved the game!</p>
+                <button class="app-btn btn-green" style="width:100%; margin-top:10px; padding: 12px; font-size:15px;" onclick="closeWinModal(); initGame();">Play Again</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
     <div class="modal-overlay" id="settings-modal">
         <div class="modal-card">
             <div class="modal-header">
@@ -352,7 +379,6 @@
             'back_10': 'cards/back_10.svg'
         };
 
-        // Defaults per user requirements
         let selectedBackKey = 'back_10';
         let tempSelectedBackKey = 'back_10';
         let drawCount = 1;
@@ -363,7 +389,7 @@
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
         let selectedOrigin = null;
         let timer = null, timeElapsed = 0, movesCount = 0, score = 0;
-        let gameInProgress = false;
+        let gameInProgress = false, winAnimationActive = false;
 
         function confirmNewGame() {
             if (gameInProgress && movesCount > 0 && !isGameWon()) {
@@ -376,6 +402,7 @@
         }
 
         function initGame() {
+            stopWinAnimation();
             clearInterval(timer);
             timeElapsed = 0; movesCount = 0; score = 0; selectedOrigin = null; history = [];
             gameInProgress = true;
@@ -466,8 +493,13 @@
             }
 
             updateStatus();
-            checkAutoCompletable();
-            checkNoMoreMoves();
+
+            if (isGameWon()) {
+                handleWin();
+            } else {
+                checkAutoCompletable();
+                checkNoMoreMoves();
+            }
         }
 
         function renderPile(container, cardArray, hideAll, type, pileIndex = 0) {
@@ -516,7 +548,9 @@
 
             if (selectedOrigin === null) {
                 if (cardIndex === -1) return;
-                let card = type === 'tab' ? state.tableau[pileIndex][cardIndex] : (type === 'waste' ? state.waste[state.waste.length-1] : state.foundations[pileIndex][state.foundations[pileIndex].length-1]);
+                let card = type === 'tab' ? state.tableau[pileIndex][cardIndex] 
+                         : (type === 'waste' ? state.waste[state.waste.length-1] 
+                         : state.foundations[pileIndex][state.foundations[pileIndex].length-1]);
                 if (card && card.isFaceUp) { selectedOrigin = { type, pileIndex, cardIndex }; render(); }
                 return;
             }
@@ -525,7 +559,11 @@
         }
 
         function attemptMove(origin, destination) {
-            let movingCards = origin.type === 'tab' ? state.tableau[origin.pileIndex].slice(origin.cardIndex) : [origin.type === 'waste' ? state.waste[state.waste.length - 1] : state.foundations[origin.pileIndex][origin.pileIndex.length - 1]];
+            // FIX: Correctly access origin card when origin is a foundation pile
+            let movingCards = origin.type === 'tab' ? state.tableau[origin.pileIndex].slice(origin.cardIndex) 
+                            : [origin.type === 'waste' ? state.waste[state.waste.length - 1] 
+                            : state.foundations[origin.pileIndex][state.foundations[origin.pileIndex].length - 1]];
+            
             if (!movingCards || movingCards.length === 0 || !movingCards[0]) { selectedOrigin = null; render(); return; }
 
             let firstCard = movingCards[0], isValid = false;
@@ -566,7 +604,6 @@
         }
 
         function handleCardDoubleClick(type, pileIndex, cardIndex) {
-            // FIX: Only allow double-click on top-most card of tableau or waste
             if (type === 'tab' && cardIndex !== state.tableau[pileIndex].length - 1) return;
             if (type === 'waste' && cardIndex !== state.waste.length - 1) return;
 
@@ -587,7 +624,7 @@
             }
         }
 
-        // --- Auto Move / Auto Complete System ---
+        // --- Auto Move / Auto Complete Engine ---
         function triggerAutoMove() {
             let movedAny = false;
             let keepScanning = true;
@@ -638,8 +675,6 @@
 
         function checkAutoCompletable() {
             const autoBtn = document.getElementById('auto-btn');
-            
-            // Check if all remaining cards in tableau are face up and stock/waste are clear or solvable
             let hasFaceDown = false;
             for (let t = 0; t < 7; t++) {
                 if (state.tableau[t].some(c => !c.isFaceUp)) {
@@ -659,10 +694,8 @@
         function checkNoMoreMoves() {
             if (isGameWon()) return;
 
-            // Simple check: Can we draw stock?
             if (state.stock.length > 0 || state.waste.length > 0) return;
 
-            // Check if waste top card can move to tableau or foundation
             if (state.waste.length > 0) {
                 let card = state.waste[state.waste.length - 1];
                 for (let f = 0; f < 4; f++) {
@@ -679,30 +712,26 @@
                 }
             }
 
-            // Check if any tableau face up card or pile can move anywhere
             for (let t1 = 0; t1 < 7; t1++) {
                 let pile1 = state.tableau[t1];
                 if (pile1.length === 0) continue;
 
-                // Find first face up card
                 let firstFaceUpIdx = pile1.findIndex(c => c.isFaceUp);
                 if (firstFaceUpIdx === -1) continue;
 
                 let topCard = pile1[pile1.length - 1];
 
-                // Can top card move to foundation?
                 for (let f = 0; f < 4; f++) {
                     let fPile = state.foundations[f];
                     if ((fPile.length === 0 && topCard.rank === 'A') || (fPile.length > 0 && fPile[fPile.length - 1].suit === topCard.suit && fPile[fPile.length - 1].value === topCard.value - 1)) return;
                 }
 
-                // Can any stack starting from firstFaceUpIdx move to another tableau pile?
                 for (let idx = firstFaceUpIdx; idx < pile1.length; idx++) {
                     let cardToMove = pile1[idx];
                     for (let t2 = 0; t2 < 7; t2++) {
                         if (t1 === t2) continue;
                         let pile2 = state.tableau[t2];
-                        if (pile2.length === 0 && cardToMove.rank === 'K' && idx > 0) return; // Moving K to empty space makes sense if not already at base
+                        if (pile2.length === 0 && cardToMove.rank === 'K' && idx > 0) return;
                         if (pile2.length > 0) {
                             let target = pile2[pile2.length - 1];
                             if (SUIT_COLORS[cardToMove.suit] !== SUIT_COLORS[target.suit] && target.value === cardToMove.value + 1) return;
@@ -712,6 +741,105 @@
             }
 
             setTimeout(() => { alert("No more available moves!"); }, 300);
+        }
+
+        // --- Bouncing Cards Animation Engine ---
+        let animationReq = null;
+        function handleWin() {
+            if (winAnimationActive) return;
+            winAnimationActive = true;
+            clearInterval(timer);
+
+            const mins = Math.floor(timeElapsed / 60);
+            const secs = timeElapsed % 60;
+            const timeStr = `${mins > 0 ? mins + 'm ' : ''}${secs}s`;
+            document.getElementById('win-stats-text').innerText = `Completed in ${timeStr} with ${movesCount} moves!`;
+
+            startBouncingCards();
+            setTimeout(() => {
+                document.getElementById('win-modal').style.display = 'flex';
+            }, 1200);
+        }
+
+        function startBouncingCards() {
+            const canvas = document.getElementById('win-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const cardsToBounce = [];
+            let cardIndex = 51;
+
+            // Load all card images for rendering
+            for (let f = 0; f < 4; f++) {
+                const fPile = state.foundations[f];
+                const fEl = document.getElementById(`fnd-${f}`);
+                const rect = fEl.getBoundingClientRect();
+
+                fPile.forEach(card => {
+                    const img = new Image();
+                    img.src = card.imageUrl;
+                    cardsToBounce.push({
+                        img: img,
+                        x: rect.left,
+                        y: rect.top,
+                        vx: (Math.random() - 0.5) * 12,
+                        vy: (Math.random() * -6) - 4,
+                        gravity: 0.6,
+                        bounce: -0.75,
+                        width: rect.width,
+                        height: rect.height,
+                        active: false
+                    });
+                });
+            }
+
+            let currentCardIdx = cardsToBounce.length - 1;
+            let spawnInterval = setInterval(() => {
+                if (currentCardIdx >= 0) {
+                    cardsToBounce[currentCardIdx].active = true;
+                    currentCardIdx--;
+                } else {
+                    clearInterval(spawnInterval);
+                }
+            }, 150);
+
+            function animate() {
+                cardsToBounce.forEach(c => {
+                    if (!c.active) return;
+                    ctx.drawImage(c.img, c.x, c.y, c.width, c.height);
+
+                    c.vy += c.gravity;
+                    c.x += c.vx;
+                    c.y += c.vy;
+
+                    if (c.y + c.height >= canvas.height) {
+                        c.y = canvas.height - c.height;
+                        c.vy *= c.bounce;
+                    }
+                    if (c.x <= 0 || c.x + c.width >= canvas.width) {
+                        c.vx *= -1;
+                    }
+                });
+
+                if (winAnimationActive) {
+                    animationReq = requestAnimationFrame(animate);
+                }
+            }
+            animate();
+        }
+
+        function stopWinAnimation() {
+            winAnimationActive = false;
+            if (animationReq) cancelAnimationFrame(animationReq);
+            const canvas = document.getElementById('win-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            closeWinModal();
+        }
+
+        function closeWinModal() {
+            document.getElementById('win-modal').style.display = 'none';
         }
 
         function saveHistory() { history.push(JSON.stringify(state)); }
