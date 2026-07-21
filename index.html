@@ -53,9 +53,15 @@
             z-index: 100;
         }
 
+        .header-left, .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .stats-group {
             display: flex;
-            gap: 16px;
+            gap: 14px;
         }
 
         .stat-item {
@@ -72,11 +78,6 @@
         .stat-value {
             font-size: 15px;
             font-weight: bold;
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 8px;
         }
 
         .app-btn {
@@ -97,6 +98,7 @@
         .btn-gray { background-color: #62727b; }
         .btn-orange { background-color: #f57c00; }
         .btn-green { background-color: #00a65a; }
+        .btn-purple { background-color: #8e24aa; }
         .btn-icon { background-color: #37474f; padding: 8px 10px; }
 
         /* --- Playing Field --- */
@@ -247,25 +249,27 @@
 
     <!-- Top Navigation / Stats -->
     <div id="header-bar">
-        <div class="stats-group">
-            <div class="stat-item" id="time-container">
-                <span class="stat-label">Time:</span>
-                <span class="stat-value" id="time-display">00:00</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Moves:</span>
-                <span class="stat-value" id="moves-display">0</span>
-            </div>
-            <div class="stat-item" id="score-container">
-                <span class="stat-label">Score:</span>
-                <span class="stat-value" id="score-display">0</span>
+        <div class="header-left">
+            <button class="app-btn btn-green" onclick="confirmNewGame()">New Game</button>
+            <div class="stats-group">
+                <div class="stat-item" id="time-container" style="display: none;">
+                    <span class="stat-label">Time:</span>
+                    <span class="stat-value" id="time-display">00:00</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Moves:</span>
+                    <span class="stat-value" id="moves-display">0</span>
+                </div>
+                <div class="stat-item" id="score-container" style="display: none;">
+                    <span class="stat-label">Score:</span>
+                    <span class="stat-value" id="score-display">0</span>
+                </div>
             </div>
         </div>
 
-        <div class="btn-group">
+        <div class="header-right">
             <button class="app-btn btn-gray" onclick="undo()">Undo</button>
-            <button class="app-btn btn-orange" onclick="triggerAutoMove()">Auto Move</button>
-            <button class="app-btn btn-green" onclick="initGame()">New Game</button>
+            <button class="app-btn btn-orange" id="auto-btn" onclick="triggerAutoMove()">Auto Move</button>
             <button class="app-btn btn-icon" onclick="openSettings()">⚙️</button>
         </div>
     </div>
@@ -312,8 +316,8 @@
                 <div class="setting-group">
                     <span class="setting-title">Display Options</span>
                     <div class="setting-options" style="flex-direction: column;">
-                        <label><input type="checkbox" id="toggle-timer" checked> Show Timer</label>
-                        <label><input type="checkbox" id="toggle-score" checked> Show Score</label>
+                        <label><input type="checkbox" id="toggle-timer"> Show Timer</label>
+                        <label><input type="checkbox" id="toggle-score"> Show Score</label>
                     </div>
                 </div>
 
@@ -328,7 +332,6 @@
     </div>
 
     <script>
-        // --- Card Engine Constants ---
         const SUIT_NAMES = { 'H': 'hearts', 'D': 'diamonds', 'C': 'clubs', 'S': 'spades' };
         const SUIT_COLORS = { 'H': 'red', 'D': 'red', 'C': 'black', 'S': 'black' };
         const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -349,18 +352,33 @@
             'back_10': 'cards/back_10.svg'
         };
 
-        let selectedBackKey = 'back_6';
-        let tempSelectedBackKey = 'back_6';
+        // Defaults per user requirements
+        let selectedBackKey = 'back_10';
+        let tempSelectedBackKey = 'back_10';
         let drawCount = 1;
+        let showTimer = false;
+        let showScore = false;
 
         let deck = [], history = [];
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
         let selectedOrigin = null;
         let timer = null, timeElapsed = 0, movesCount = 0, score = 0;
+        let gameInProgress = false;
+
+        function confirmNewGame() {
+            if (gameInProgress && movesCount > 0 && !isGameWon()) {
+                if (confirm("Start a new game? Current game progress will be lost.")) {
+                    initGame();
+                }
+            } else {
+                initGame();
+            }
+        }
 
         function initGame() {
             clearInterval(timer);
             timeElapsed = 0; movesCount = 0; score = 0; selectedOrigin = null; history = [];
+            gameInProgress = true;
             updateStatus();
 
             buildDeck();
@@ -448,6 +466,8 @@
             }
 
             updateStatus();
+            checkAutoCompletable();
+            checkNoMoreMoves();
         }
 
         function renderPile(container, cardArray, hideAll, type, pileIndex = 0) {
@@ -524,7 +544,6 @@
                     if (firstCard.rank === 'A') isValid = true; 
                 } else {
                     const topCard = targetPile[targetPile.length - 1];
-                    // STRICT VALIDATION: Suit must match AND value must be exactly +1
                     if (firstCard.suit === topCard.suit && firstCard.value === topCard.value + 1) isValid = true;
                 }
             }
@@ -547,6 +566,10 @@
         }
 
         function handleCardDoubleClick(type, pileIndex, cardIndex) {
+            // FIX: Only allow double-click on top-most card of tableau or waste
+            if (type === 'tab' && cardIndex !== state.tableau[pileIndex].length - 1) return;
+            if (type === 'waste' && cardIndex !== state.waste.length - 1) return;
+
             let card = type === 'tab' ? state.tableau[pileIndex][cardIndex] : state.waste[state.waste.length - 1];
             if (!card || !card.isFaceUp) return;
 
@@ -564,7 +587,7 @@
             }
         }
 
-        // --- Auto Move System ---
+        // --- Auto Move / Auto Complete System ---
         function triggerAutoMove() {
             let movedAny = false;
             let keepScanning = true;
@@ -572,7 +595,6 @@
             while (keepScanning) {
                 keepScanning = false;
 
-                // Check waste card top
                 if (state.waste.length > 0) {
                     let card = state.waste[state.waste.length - 1];
                     for (let f = 0; f < 4; f++) {
@@ -587,7 +609,6 @@
                     }
                 }
 
-                // Check tableau piles
                 for (let t = 0; t < 7; t++) {
                     let pile = state.tableau[t];
                     if (pile.length === 0) continue;
@@ -609,6 +630,88 @@
             }
 
             if (movedAny) render();
+        }
+
+        function isGameWon() {
+            return state.foundations.reduce((acc, f) => acc + f.length, 0) === 52;
+        }
+
+        function checkAutoCompletable() {
+            const autoBtn = document.getElementById('auto-btn');
+            
+            // Check if all remaining cards in tableau are face up and stock/waste are clear or solvable
+            let hasFaceDown = false;
+            for (let t = 0; t < 7; t++) {
+                if (state.tableau[t].some(c => !c.isFaceUp)) {
+                    hasFaceDown = true; break;
+                }
+            }
+
+            if (!hasFaceDown && state.stock.length === 0 && state.waste.length === 0) {
+                autoBtn.innerText = "Complete";
+                autoBtn.className = "app-btn btn-purple";
+            } else {
+                autoBtn.innerText = "Auto Move";
+                autoBtn.className = "app-btn btn-orange";
+            }
+        }
+
+        function checkNoMoreMoves() {
+            if (isGameWon()) return;
+
+            // Simple check: Can we draw stock?
+            if (state.stock.length > 0 || state.waste.length > 0) return;
+
+            // Check if waste top card can move to tableau or foundation
+            if (state.waste.length > 0) {
+                let card = state.waste[state.waste.length - 1];
+                for (let f = 0; f < 4; f++) {
+                    let fPile = state.foundations[f];
+                    if ((fPile.length === 0 && card.rank === 'A') || (fPile.length > 0 && fPile[fPile.length - 1].suit === card.suit && fPile[fPile.length - 1].value === card.value - 1)) return;
+                }
+                for (let t = 0; t < 7; t++) {
+                    let pile = state.tableau[t];
+                    if (pile.length === 0 && card.rank === 'K') return;
+                    if (pile.length > 0) {
+                        let top = pile[pile.length - 1];
+                        if (SUIT_COLORS[card.suit] !== SUIT_COLORS[top.suit] && top.value === card.value + 1) return;
+                    }
+                }
+            }
+
+            // Check if any tableau face up card or pile can move anywhere
+            for (let t1 = 0; t1 < 7; t1++) {
+                let pile1 = state.tableau[t1];
+                if (pile1.length === 0) continue;
+
+                // Find first face up card
+                let firstFaceUpIdx = pile1.findIndex(c => c.isFaceUp);
+                if (firstFaceUpIdx === -1) continue;
+
+                let topCard = pile1[pile1.length - 1];
+
+                // Can top card move to foundation?
+                for (let f = 0; f < 4; f++) {
+                    let fPile = state.foundations[f];
+                    if ((fPile.length === 0 && topCard.rank === 'A') || (fPile.length > 0 && fPile[fPile.length - 1].suit === topCard.suit && fPile[fPile.length - 1].value === topCard.value - 1)) return;
+                }
+
+                // Can any stack starting from firstFaceUpIdx move to another tableau pile?
+                for (let idx = firstFaceUpIdx; idx < pile1.length; idx++) {
+                    let cardToMove = pile1[idx];
+                    for (let t2 = 0; t2 < 7; t2++) {
+                        if (t1 === t2) continue;
+                        let pile2 = state.tableau[t2];
+                        if (pile2.length === 0 && cardToMove.rank === 'K' && idx > 0) return; // Moving K to empty space makes sense if not already at base
+                        if (pile2.length > 0) {
+                            let target = pile2[pile2.length - 1];
+                            if (SUIT_COLORS[cardToMove.suit] !== SUIT_COLORS[target.suit] && target.value === cardToMove.value + 1) return;
+                        }
+                    }
+                }
+            }
+
+            setTimeout(() => { alert("No more available moves!"); }, 300);
         }
 
         function saveHistory() { history.push(JSON.stringify(state)); }
@@ -647,8 +750,12 @@
         
         function saveSettings() {
             drawCount = document.getElementById('draw-3').checked ? 3 : 1;
-            document.getElementById('time-container').style.display = document.getElementById('toggle-timer').checked ? 'flex' : 'none';
-            document.getElementById('score-container').style.display = document.getElementById('toggle-score').checked ? 'flex' : 'none';
+            showTimer = document.getElementById('toggle-timer').checked;
+            showScore = document.getElementById('toggle-score').checked;
+            
+            document.getElementById('time-container').style.display = showTimer ? 'flex' : 'none';
+            document.getElementById('score-container').style.display = showScore ? 'flex' : 'none';
+            
             selectedBackKey = tempSelectedBackKey;
             closeSettings();
             render();
