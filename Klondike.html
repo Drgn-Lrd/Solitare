@@ -1,23 +1,19 @@
 <!DOCTYPE html>
 <!--
   LAST EDIT:
-  - Found and fixed the actual remaining drag-drop bug (the pointer-events
-    fix last time was real but incomplete). Tableau cards are appended as
-    children of .tcol, while the empty-column placeholder is a separate
-    .pile.slot div — a sibling, not a parent. So closest('.pile.slot')
-    from a stacked card's position could never find its column once any
-    card was sitting on it, meaning drops only ever worked on completely
-    empty columns. Replaced with resolveDropTarget(), which checks .tcol
-    first (covers empty or occupied tableau columns) and falls back to
-    .pile.slot for foundations. Also moved the hover highlight onto the
-    whole .tcol (a glowing outline around the column) instead of only the
-    now-hidden placeholder underneath, so it's visible even when the
-    column has cards stacked on it.
-  - Broken-image fallback (shown if a card's actual art fails to load)
-    now draws small top-left/bottom-right corner indices like a real
-    card, instead of one big centered label — so a card that's mostly
-    covered by another stacked on top of it stays identifiable from just
-    the sliver that peeks out.
+  - Fixed the GitHub raw-content fallback URL using the correct path the
+    user provided: raw.githubusercontent.com/Drgn-Lrd/Solitare/refs/heads/
+    main/cards/ (the earlier main/cards/ form 404s).
+  - Corrected the fallback corner-badge layout: default is vertical
+    (rank above the suit glyph, like a normal card corner) for a fully
+    exposed card (last/only card in its pile). Only when a card has
+    another card stacked on top of it does the badge switch to
+    horizontal (rank beside the glyph) — since a covered card's visible
+    area is a thin strip across the top, and a vertical layout there
+    would clip off the glyph, leaving only the rank number visible.
+    Threaded a `covered` flag through makeCardEl/buildFaceEl so the
+    tableau renderer can mark every card except the topmost in each
+    column as covered.
 -->
 <html lang="en">
 <head>
@@ -197,7 +193,9 @@
   }
   .pile.slot.drop-ok{ border-color:#7ee6a8; box-shadow: 0 0 14px #7ee6a888, inset 0 0 10px rgba(0,0,0,0.35);}
   .tcol.drop-ok::after{
-    content:""; position:absolute; inset:-4px; border-radius:12px;
+    content:""; position:absolute; left:-4px; top:-4px;
+    width: calc(var(--card-w) + 8px); height: calc(100% + 8px);
+    border-radius:12px;
     border:2px solid #7ee6a8; box-shadow:0 0 14px rgba(126,230,168,0.6);
     pointer-events:none; z-index:500;
   }
@@ -231,13 +229,16 @@
   }
   .img-fallback .fc-center{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    font-size:calc(var(--card-w)*0.3); opacity:0.8;
+    gap:calc(var(--card-w)*0.05);
+    font-size:calc(var(--card-w)*0.26); font-weight:bold; opacity:0.85;
   }
   .img-fallback .fc-corner{
-    position:absolute; left:7%; top:5%; font-size:calc(var(--card-w)*0.16);
-    font-weight:bold; line-height:1.15; text-align:center;
+    position:absolute; left:6%; top:5%; font-size:calc(var(--card-w)*0.17);
+    font-weight:bold; line-height:1.1;
+    display:flex; flex-direction:column; align-items:center; gap:calc(var(--card-w)*0.02);
   }
-  .img-fallback .fc-corner.br{ left:auto; right:7%; top:auto; bottom:5%; transform:rotate(180deg); }
+  .img-fallback .fc-corner.stacked{ flex-direction:row; gap:calc(var(--card-w)*0.035); }
+  .img-fallback .fc-corner.br{ left:auto; right:6%; top:auto; bottom:5%; transform:rotate(180deg); }
   .suit-red{ color: var(--burgundy); }
   .suit-black{ color: var(--navy); }
 
@@ -466,6 +467,24 @@ function suitFile(suit){ return SUIT_FILE[suit]; }
 function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.svg'; }
 function backImgSrc(style){ return 'cards/back_'+style+'.png'; }
 
+// Prefer the local cards/ folder (the real deployed site) so we never hit
+// GitHub unnecessarily. Only if that 404s (e.g. a preview environment with
+// no local folder) do we fall back to the raw GitHub copy of the same file.
+const GITHUB_CARDS_BASE = 'https://raw.githubusercontent.com/Drgn-Lrd/Solitare/refs/heads/main/cards/';
+function loadCardImage(img, localPath, onFinalFail){
+  let stage = 0;
+  img.src = localPath;
+  img.addEventListener('error', function onErr(){
+    stage++;
+    if(stage===1){
+      img.src = GITHUB_CARDS_BASE + localPath.split('/').pop();
+    } else {
+      img.removeEventListener('error', onErr);
+      if(onFinalFail) onFinalFail();
+    }
+  });
+}
+
 /* =========================================================
    CARD MODEL
    ========================================================= */
@@ -487,23 +506,23 @@ function shuffle(arr){
   return arr;
 }
 
-function buildFaceEl(card){
+function buildFaceEl(card, covered){
   const wrap = document.createElement('div');
   wrap.className = 'face';
   const img = document.createElement('img');
   img.className = 'card-face-img';
-  img.src = cardImgSrc(card);
   img.alt = card.rank+' of '+suitFile(card.suit);
   img.draggable = false;
-  img.addEventListener('error', ()=>{
+  loadCardImage(img, cardImgSrc(card), ()=>{
     const cls = isRed(card.suit)?'suit-red':'suit-black';
     const glyph = suitGlyph(card.suit);
+    const cornerCls = 'fc-corner'+(covered?' stacked':'');
     wrap.innerHTML = '<div class="img-fallback '+cls+'">'+
-      '<div class="fc-corner tl">'+card.rank+'<br>'+glyph+'</div>'+
-      '<div class="fc-center">'+glyph+'</div>'+
-      '<div class="fc-corner br">'+card.rank+'<br>'+glyph+'</div>'+
+      '<div class="'+cornerCls+' tl"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
+      '<div class="fc-center"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
+      '<div class="'+cornerCls+' br"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
     '</div>';
-  }, { once:true });
+  });
   wrap.appendChild(img);
   return wrap;
 }
@@ -512,9 +531,9 @@ function buildBackEl(){
   wrap.className = 'back-img-wrap';
   const img = document.createElement('img');
   img.className = 'card-back-img';
-  img.src = backImgSrc(state.backStyle);
   img.alt = 'card back';
   img.draggable = false;
+  loadCardImage(img, backImgSrc(state.backStyle));
   wrap.appendChild(img);
   return wrap;
 }
@@ -683,14 +702,14 @@ function renderAll(){
   if(!won) checkNoMoves();
 }
 
-function makeCardEl(card, pileType, pileKey, index){
+function makeCardEl(card, pileType, pileKey, index, covered){
   const el = document.createElement('div');
   el.className = 'card';
   el.dataset.id = card.id;
   el.dataset.pile = pileType;
   el.dataset.key = pileKey;
   el.dataset.index = index;
-  el.appendChild(card.faceUp ? buildFaceEl(card) : buildBackEl());
+  el.appendChild(card.faceUp ? buildFaceEl(card, !!covered) : buildBackEl());
   attachCardEvents(el, card, pileType, pileKey, index);
   return el;
 }
@@ -740,7 +759,7 @@ function renderTableau(){
     col.querySelectorAll('.card').forEach(e=>e.remove());
     const pile = state.tableau[c];
     pile.forEach((card, i)=>{
-      const el = makeCardEl(card,'tableau',c,i);
+      const el = makeCardEl(card,'tableau',c,i, i<pile.length-1);
       el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
     });
@@ -798,9 +817,10 @@ function findPileArray(pileType, key){
   return null;
 }
 
-function tryMove(fromType, fromKey, fromIndex, toType, toKey){
+function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
   const fromPile = findPileArray(fromType, fromKey);
   if(!fromPile) return false;
+  if(fromIndex<0 || fromIndex>=fromPile.length) return false;
   if(fromType==='waste' && fromIndex !== fromPile.length-1) return false;
   if(fromType==='foundation' && fromIndex !== fromPile.length-1) return false;
 
@@ -813,31 +833,61 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
     }
   }
   const card = movingCards[0];
-
   if(toType==='foundation'){
     if(movingCards.length!==1) return false;
+    return canPlaceOnFoundation(card, state.foundations[toKey], toKey);
+  } else if(toType==='tableau'){
+    if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false;
+    return canPlaceOnTableau(card, state.tableau[toKey]);
+  }
+  return false;
+}
+
+// Handles grabbing into the middle of a tableau run by mistake (e.g. meaning
+// to move 6-5-4 onto a 7 but catching just 5-4, or only 4). If the exact
+// slice grabbed doesn't fit anywhere, walk backward through the same
+// continuous face-up run to find a wider slice (starting earlier) that
+// WOULD be a legal move to this destination, and use that instead. Returns
+// the resolved start index, or -1 if nothing works.
+function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
+  if(canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return fromIndex;
+  if(fromType==='tableau'){
+    const pile = state.tableau[fromKey];
+    for(let i=fromIndex-1; i>=0 && pile[i] && pile[i].faceUp; i--){
+      if(canMoveExact(fromType, fromKey, i, toType, toKey)) return i;
+    }
+  }
+  return -1;
+}
+
+function tryMove(fromType, fromKey, fromIndex, toType, toKey){
+  if(!canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return false;
+  const fromPile = findPileArray(fromType, fromKey);
+  const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
+  const card = movingCards[0];
+  pushUndo();
+  if(toType==='foundation'){
     const destPile = state.foundations[toKey];
-    if(!canPlaceOnFoundation(card, destPile, toKey)) return false;
-    pushUndo();
     fromPile.splice(fromIndex, movingCards.length);
     destPile.push(card);
     addScore(10);
-  } else if(toType==='tableau'){
+  } else {
     const destPile = state.tableau[toKey];
-    if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false;
-    if(!canPlaceOnTableau(card, destPile)) return false;
-    pushUndo();
     fromPile.splice(fromIndex, movingCards.length);
     destPile.push(...movingCards);
     if(fromType==='waste') addScore(5);
     if(fromType==='foundation') addScore(-15);
-  } else {
-    return false;
   }
-
   if(fromType==='tableau') flipNewTopIfNeeded(Number(fromKey));
   renderAll();
   return true;
+}
+
+// Same as tryMove, but forgiving of a misclick into the middle of a run.
+function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
+  const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
+  if(idx<0) return false;
+  return tryMove(fromType, fromKey, idx, toType, toKey);
 }
 
 function autoMoveToFoundation(fromType, fromKey, fromIndex){
@@ -1103,7 +1153,10 @@ function updateVisualDrag(dx, dy){
   });
   clearDropHighlights();
   const target = resolveDropTarget(lastPointer.x, lastPointer.y);
-  if(target) target.highlightEl.classList.add('drop-ok');
+  if(target && dragCtx){
+    const idx = canMoveWithWiden(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, target.type, target.key);
+    if(idx>=0) target.highlightEl.classList.add('drop-ok');
+  }
 }
 let lastPointer = {x:0,y:0};
 
@@ -1149,7 +1202,7 @@ function endVisualDrag(x,y){
   clearDropHighlights();
   let success = false;
   if(target){
-    success = tryMove(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, target.type, target.key);
+    success = tryMoveAuto(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, target.type, target.key);
   }
   cleanupDragEls();
   if(!success) renderAll();
@@ -1172,8 +1225,8 @@ function handleTapSelect(pileType, pileKey, index){
       clearSelection(); return;
     }
     let moved = false;
-    if(pileType==='tableau') moved = tryMove(sel.pileType, sel.pileKey, sel.index, 'tableau', pileKey);
-    else if(pileType==='foundation') moved = tryMove(sel.pileType, sel.pileKey, sel.index, 'foundation', pileKey);
+    if(pileType==='tableau') moved = tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'tableau', pileKey);
+    else if(pileType==='foundation') moved = tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'foundation', pileKey);
     clearSelection();
     if(moved) return;
   }
@@ -1193,7 +1246,7 @@ SUITS.forEach(s=>{
     if(e.target.closest('.card')) return;
     if(state.selected){
       const sel = state.selected;
-      tryMove(sel.pileType, sel.pileKey, sel.index, 'foundation', s);
+      tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'foundation', s);
       clearSelection();
     }
   });
@@ -1204,7 +1257,7 @@ document.getElementById('tableau').addEventListener('click', (e)=>{
   if(!col) return;
   if(state.selected){
     const sel = state.selected;
-    tryMove(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index));
+    tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index));
     clearSelection();
   }
 });
