@@ -38,7 +38,7 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #008000; /* Windows XP Classic Green Felt */
+            background-color: #008000;
             display: flex;
             flex-direction: column;
         }
@@ -126,7 +126,7 @@
             background: rgba(0, 0, 0, 0.12);
         }
 
-        /* --- Pure Image-Based Card Graphics --- */
+        /* --- Card Styling --- */
         .card {
             width: var(--card-width);
             height: var(--card-height);
@@ -138,7 +138,6 @@
             background-position: center;
             background-repeat: no-repeat;
             background-color: #ffffff;
-            border: 1px solid #716f64;
         }
 
         .card.selected {
@@ -147,7 +146,7 @@
             z-index: 1000 !important;
         }
 
-        /* --- Windows XP Style Modal Dialogs --- */
+        /* --- Dialog Windows --- */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -192,9 +191,7 @@
             font-weight: bold;
         }
 
-        .modal-body {
-            padding: 12px;
-        }
+        .modal-body { padding: 12px; }
 
         .card-backs-grid {
             display: grid;
@@ -252,11 +249,6 @@
             font-size: 11px;
         }
 
-        .win-btn:hover {
-            border-color: #e59700;
-        }
-
-        /* --- Status Bar --- */
         #status-bar {
             background: var(--win-gray);
             border-top: 1px solid #919089;
@@ -275,7 +267,7 @@
 </head>
 <body>
 
-    <!-- Windows XP Menu Bar -->
+    <!-- Menu Bar -->
     <div id="menu-bar">
         <div class="menu-item" id="menu-game">
             Game
@@ -292,13 +284,13 @@
         <div class="menu-item" id="menu-help">
             Help
             <div class="dropdown">
-                <div class="dropdown-item" onclick="alert('Classic Windows XP Solitaire Engine')">Help Topics</div>
-                <div class="dropdown-item" onclick="alert('Windows XP Solitaire\nEmbedded SVG Vector Assets.')">About Solitaire</div>
+                <div class="dropdown-item" onclick="alert('Classic Windows XP Solitaire')">Help Topics</div>
+                <div class="dropdown-item" onclick="alert('Solitaire - Image Asset Edition')">About Solitaire</div>
             </div>
         </div>
     </div>
 
-    <!-- Playing Board -->
+    <!-- Board -->
     <div id="game-board">
         <div id="top-row">
             <div id="stock" class="zone"></div>
@@ -328,7 +320,7 @@
         <div class="status-field">Moves: <span id="moves-display">0</span></div>
     </div>
 
-    <!-- Deck Selection Modal (12 Original Card Backs) -->
+    <!-- Deck Selection Modal -->
     <div class="modal-overlay" id="deck-modal">
         <div class="modal-win">
             <div class="modal-title-bar">
@@ -359,11 +351,6 @@
                     <label><input type="radio" name="draw-mode" value="3" id="draw-3"> Draw Three</label>
                 </fieldset>
                 <fieldset class="options-group">
-                    <legend>Scoring</legend>
-                    <label><input type="radio" name="scoring" value="standard" checked id="score-std"> Standard</label><br>
-                    <label><input type="radio" name="scoring" value="vegas" id="score-vegas"> Vegas</label>
-                </fieldset>
-                <fieldset class="options-group">
                     <legend>Display</legend>
                     <label><input type="checkbox" id="toggle-status" checked> Show Status Bar / Timer</label>
                 </fieldset>
@@ -376,52 +363,36 @@
     </div>
 
     <script>
-        // --- 1. Inline Vector Card Front Asset Generator ---
-        const SUIT_SYMBOLS = { 'H': '♥', 'D': '♦', 'C': '♣', 'S': '♠' };
-        const SUIT_COLORS = { 'H': '#d63031', 'D': '#d63031', 'C': '#2d3436', 'S': '#2d3436' };
+        // --- 1. File Name Mapping derived from directory listing ---
+        const SUIT_NAMES = { 'H': 'hearts', 'D': 'diamonds', 'C': 'clubs', 'S': 'spades' };
+        const SUIT_COLORS = { 'H': 'red', 'D': 'red', 'C': 'black', 'S': 'black' };
         const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-        function buildCardFrontSVG(rank, suit) {
-            const color = SUIT_COLORS[suit];
-            const sym = SUIT_SYMBOLS[suit];
-            const isCourt = ['J', 'Q', 'K'].includes(rank);
-            const courtArt = isCourt ? `<rect x="25" y="45" width="50" height="50" rx="3" fill="#fafafa" stroke="${color}" stroke-width="1.5"/><text x="50" y="78" font-size="32" text-anchor="middle" fill="${color}">${rank}</text>` : `<text x="50" y="82" font-size="40" text-anchor="middle" fill="${color}">${sym}</text>`;
+        function getCardImagePath(rank, suit) {
+            const fullSuit = SUIT_NAMES[suit];
+            let rankName = rank;
+            if (rank === 'A') rankName = 'ace';
+            else if (rank === 'J') rankName = 'jack';
+            else if (rank === 'Q') rankName = 'queen';
+            else if (rank === 'K') rankName = 'king';
 
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140">
-                <rect width="100" height="140" rx="4" fill="#ffffff"/>
-                <text x="8" y="22" font-family="sans-serif" font-weight="bold" font-size="18" fill="${color}">${rank}</text>
-                <text x="8" y="38" font-family="sans-serif" font-size="16" fill="${color}">${sym}</text>
-                ${courtArt}
-                <text x="92" y="122" font-family="sans-serif" font-weight="bold" font-size="18" fill="${color}" text-anchor="end">${rank}</text>
-            </svg>`;
-            return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+            // Matches your exact svg file format: cards/[rank]_of_[suit].svg
+            return `cards/${rankName}_of_${fullSuit}.svg`;
         }
 
-        // --- 2. All 12 Classic Original Windows Solitaire Card Backs ---
-        function makeSvgBack(content) {
-            return 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><rect width="100" height="140" rx="3" fill="#ffffff" stroke="#000000" stroke-width="1"/>${content}</svg>`);
-        }
-
-        const CARD_BACK_TEMPLATES = {
-            'beach': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#87ceeb"/><path d="M4 90 Q 50 80 96 95 L 96 136 L 4 136 Z" fill="#f0e68c"/><circle cx="80" cy="30" r="12" fill="#ffd700"/><text x="45" y="80" font-size="38" text-anchor="middle">🏖️</text>'),
-            'castle': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#191970"/><circle cx="25" cy="30" r="14" fill="#f5f5f5"/><text x="50" y="85" font-size="38" text-anchor="middle">🏰</text>'),
-            'fish': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#008080"/><text x="50" y="82" font-size="38" text-anchor="middle">🐟</text>'),
-            'island': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#20b2aa"/><path d="M10 100 Q 50 85 90 100 L 90 136 L 10 136 Z" fill="#e6c280"/><text x="50" y="75" font-size="38" text-anchor="middle">🏝️</text>'),
-            'palm_trees': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#ff7f50"/><circle cx="50" cy="110" r="40" fill="#ffd700"/><text x="50" y="75" font-size="38" text-anchor="middle">🌴</text>'),
-            'robot': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#2f4f4f"/><text x="50" y="80" font-size="38" text-anchor="middle">🤖</text>'),
-            'shells': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#d2b48c"/><text x="50" y="80" font-size="38" text-anchor="middle">🐚</text>'),
-            'cards': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#006400"/><text x="50" y="80" font-size="38" text-anchor="middle">🃏</text>'),
-            'blue_pattern': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#000080"/><path d="M 10 10 L 90 130 M 90 10 L 10 130" stroke="#4169e1" stroke-width="4"/>'),
-            'red_pattern': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#800000"/><path d="M 10 10 L 90 130 M 90 10 L 10 130" stroke="#dc143c" stroke-width="4"/>'),
-            'dark_mosaic': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#111111"/><circle cx="50" cy="70" r="25" fill="none" stroke="#00ffff" stroke-width="3"/>'),
-            'rose': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#2e8b57"/><text x="50" y="80" font-size="38" text-anchor="middle">🌹</text>')
+        // Exact filenames of your 4 PNG card backs
+        const CARD_BACKS = {
+            'back_6': 'cards/back_6.png',
+            'back_7': 'cards/back_7.png',
+            'back_9': 'cards/back_9.png',
+            'back_10': 'cards/back_10.png'
         };
 
-        let selectedBackKey = 'beach';
-        let tempSelectedBackKey = 'beach';
+        let selectedBackKey = 'back_6';
+        let tempSelectedBackKey = 'back_6';
         let drawCount = 1;
 
-        // --- Game State ---
+        // --- Game Engine ---
         let deck = [], history = [];
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
         let selectedOrigin = null;
@@ -455,7 +426,7 @@
                         rank: rank,
                         value: r + 1,
                         isFaceUp: false,
-                        imageUrl: buildCardFrontSVG(rank, suit)
+                        imageUrl: getCardImagePath(rank, suit)
                     });
                 }
             }
@@ -542,7 +513,7 @@
         function createCardElement(card) {
             const div = document.createElement('div');
             div.classList.add('card');
-            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_TEMPLATES[selectedBackKey]}')` : `url('${card.imageUrl}')`;
+            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACKS[selectedBackKey]}')` : `url('${card.imageUrl}')`;
             return div;
         }
 
@@ -574,7 +545,7 @@
         }
 
         function attemptMove(origin, destination) {
-            let movingCards = origin.type === 'tab' ? state.tableau[origin.pileIndex].slice(origin.cardIndex) : [origin.type === 'waste' ? state.waste[state.waste.length - 1] : state.foundations[origin.pileIndex][state.foundations[origin.pileIndex].length - 1]];
+            let movingCards = origin.type === 'tab' ? state.tableau[origin.pileIndex].slice(origin.cardIndex) : [origin.type === 'waste' ? state.waste[state.waste.length - 1] : state.foundations[origin.pileIndex][origin.pileIndex.length - 1]];
             if (movingCards.length === 0) { selectedOrigin = null; render(); return; }
 
             let firstCard = movingCards[0], isValid = false;
@@ -637,17 +608,17 @@
             document.getElementById('moves-display').innerText = movesCount;
         }
 
-        // --- Deck Modal UI Logic ---
+        // --- Dialog Handling ---
         function openDeckModal() {
             const grid = document.getElementById('deck-grid');
             grid.innerHTML = '';
             tempSelectedBackKey = selectedBackKey;
 
-            for (let key in CARD_BACK_TEMPLATES) {
+            for (let key in CARD_BACKS) {
                 const opt = document.createElement('div');
                 opt.classList.add('card-back-option');
                 if (key === tempSelectedBackKey) opt.classList.add('selected');
-                opt.style.backgroundImage = `url('${CARD_BACK_TEMPLATES[key]}')`;
+                opt.style.backgroundImage = `url('${CARD_BACKS[key]}')`;
                 opt.onclick = () => {
                     document.querySelectorAll('.card-back-option').forEach(el => el.classList.remove('selected'));
                     opt.classList.add('selected');
@@ -661,19 +632,14 @@
         function closeDeckModal() { document.getElementById('deck-modal').style.display = 'none'; }
         function confirmDeckSelection() { selectedBackKey = tempSelectedBackKey; closeDeckModal(); render(); }
 
-        // --- Options Modal UI Logic ---
-        function openOptionsModal() {
-            document.getElementById('options-modal').style.display = 'flex';
-        }
+        function openOptionsModal() { document.getElementById('options-modal').style.display = 'flex'; }
         function closeOptionsModal() { document.getElementById('options-modal').style.display = 'none'; }
         function confirmOptions() {
             drawCount = document.getElementById('draw-3').checked ? 3 : 1;
-            const showStatus = document.getElementById('toggle-status').checked;
-            document.getElementById('status-bar').style.display = showStatus ? 'flex' : 'none';
+            document.getElementById('status-bar').style.display = document.getElementById('toggle-status').checked ? 'flex' : 'none';
             closeOptionsModal();
         }
 
-        // --- Menu Dropdown Toggle ---
         document.querySelectorAll('.menu-item').forEach(item => {
             item.onclick = (e) => {
                 e.stopPropagation();
