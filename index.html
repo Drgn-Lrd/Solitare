@@ -68,12 +68,13 @@
             font-size: 0.85rem;
         }
 
-        .buttons {
+        .controls {
             display: flex;
             gap: 6px;
+            align-items: center;
         }
 
-        button {
+        button, select {
             padding: 6px 10px;
             font-weight: bold;
             border: none;
@@ -87,6 +88,7 @@
         #new-game-btn { background-color: #27ae60; color: white; }
         #auto-move-btn { background-color: #f39c12; color: white; }
         #undo-btn { background-color: #7f8c8d; color: white; }
+        #back-style-select { background-color: #34495e; color: white; outline: none; }
 
         /* --- Game Board --- */
         #board {
@@ -145,7 +147,13 @@
             <div>Moves: <span id="moves-display">0</span></div>
             <div>Score: <span id="score-display">0</span></div>
         </div>
-        <div class="buttons">
+        <div class="controls">
+            <select id="back-style-select" title="Change Card Back Pattern">
+                <option value="red">Red Geometric</option>
+                <option value="blue">Blue Lattice</option>
+                <option value="green">Green Weave</option>
+                <option value="gold">Gold Classic</option>
+            </select>
             <button id="undo-btn">Undo</button>
             <button id="auto-move-btn" title="Push playable cards to Foundations">Auto Move</button>
             <button id="new-game-btn">New Game</button>
@@ -175,14 +183,51 @@
     </div>
 
     <script>
-        const CDN_BASE = 'https://cdn.jsdelivr.net/gh/hayeah/playing-cards-assets@master/svg-cards/';
-        const CARD_BACK_URL = `${CDN_BASE}back.svg`;
+        // Direct GitHub Pages static assets URL
+        const DIRECT_GITHUB_BASE = 'https://hayeah.github.io/playing-cards-assets/svg-cards/';
 
         const SUIT_NAMES = { 'H': 'hearts', 'D': 'diamonds', 'C': 'clubs', 'S': 'spades' };
         const SUIT_COLORS = { 'H': '#d63031', 'D': '#d63031', 'C': '#2d3436', 'S': '#2d3436' };
         const RANK_NAMES = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
         const RANKS_SHORT = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
+        // Vector Card Back Options
+        const CARD_BACK_OPTIONS = {
+            red: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
+                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
+                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#d63031"/>
+                    <path d="M 8 8 L 92 132 M 92 8 L 8 132" stroke="#ffffff" stroke-width="2.5" opacity="0.4"/>
+                    <circle cx="50" cy="70" r="18" fill="none" stroke="#ffffff" stroke-width="2.5" opacity="0.6"/>
+                </svg>
+            `),
+            blue: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
+                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
+                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#0984e3"/>
+                    <circle cx="50" cy="70" r="30" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.3"/>
+                    <circle cx="50" cy="70" r="15" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.5"/>
+                </svg>
+            `),
+            green: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
+                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
+                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#27ae60"/>
+                    <path d="M 10 10 H 90 V 130 H 10 Z" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.4"/>
+                    <path d="M 20 20 H 80 V 120 H 20 Z" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4"/>
+                </svg>
+            `),
+            gold: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
+                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
+                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#f39c12"/>
+                    <rect x="12" y="12" width="76" height="116" rx="4" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.5"/>
+                    <circle cx="50" cy="70" r="22" fill="none" stroke="#ffffff" stroke-width="2.5" opacity="0.6"/>
+                </svg>
+            `)
+        };
+
+        let currentBackStyle = 'red';
         let deck = [], history = [];
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
         let selectedOrigin = null;
@@ -226,7 +271,7 @@
                         rank: RANKS_SHORT[r],
                         value: val,
                         isFaceUp: false,
-                        imageUrl: `${CDN_BASE}${rankName}_of_${suitName}.svg`
+                        imageUrl: `${DIRECT_GITHUB_BASE}${rankName}_of_${suitName}.svg`
                     });
                 }
             }
@@ -340,7 +385,7 @@
         function createCardElement(card) {
             const div = document.createElement('div');
             div.classList.add('card');
-            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_URL}')` : `url('${card.imageUrl}')`;
+            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_OPTIONS[currentBackStyle]}')` : `url('${card.imageUrl}')`;
             return div;
         }
 
@@ -535,6 +580,11 @@
                 alert(`Congratulations! You won in ${movesCount} moves! Final Score: ${score}`);
             }
         }
+
+        document.getElementById('back-style-select').addEventListener('change', (e) => {
+            currentBackStyle = e.target.value;
+            render();
+        });
 
         document.getElementById('new-game-btn').addEventListener('click', initGame);
         document.getElementById('auto-move-btn').addEventListener('click', triggerAutoMove);
