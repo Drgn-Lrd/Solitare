@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Klondike</title>
+<style>
+  :root{
+    --felt-1:#0e4432;
+    --felt-2:#082c21;
+    --wood-1:#7a5230;
+    --wood-2:#4a2f18;
+    --wood-3:#2c1c0e;
+    --brass:#c9a24b;
+    --brass-light:#e8c873;
+    --ivory:#faf6ec;
+    --navy:#16233f;
+    --burgundy:#8c1f3b;
+    --panel:#0e2f24;
+    --panel-line:#1c5340;
+    --card-w: clamp(50px, 8.6vw, 100px);
+    --card-h: calc(var(--card-w) * 1.42);
+    --gap: clamp(6px, 1.2vw, 14px);
+    font-size: 16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: radial-gradient(ellipse at 50% -10%, #241708, #120b04 65%);
+    color: var(--ivory);
+    font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+    overflow-x:hidden;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 10px clamp(10px,3vw,28px);
+    background: linear-gradient(180deg, #150d05, #150d0500 92%);
+    border-bottom: 1px solid #3a2812;
+    position: sticky; top:0; z-index: 50;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand .crest{
+    width:34px; height:34px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; color:#3a2a08; font-weight:bold; box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008;
+  }
+  .brand h1{
+    margin:0; font-size: clamp(18px,3vw,26px); letter-spacing:2px; font-weight:400;
+    font-variant: small-caps;
+    color: var(--brass-light);
+    text-shadow: 0 1px 0 #000, 0 0 18px rgba(232,200,115,0.25);
+  }
+  .brand small{ display:block; letter-spacing:3px; font-size:9px; color:#c9b89a; opacity:.8; margin-top:-2px;}
+
+  .hud{ display:flex; align-items:center; gap: clamp(6px,1.6vw,14px); }
+  .chip{
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    padding: 6px 12px; border-radius: 20px;
+    font-size: 13px; letter-spacing: 1px; color:#dce9df;
+    display:flex; gap:6px; align-items:center;
+    min-width: 64px; justify-content:center;
+  }
+  .chip b{ color: var(--brass-light); font-weight:600; }
+  .iconbtn{
+    width:36px; height:36px; border-radius:50%;
+    border:1px solid var(--panel-line);
+    background: var(--panel);
+    color: var(--brass-light);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:16px;
+    transition: transform .15s ease, background .15s ease;
+  }
+  .iconbtn:hover{ background:#123a2c; transform: translateY(-1px); }
+  .iconbtn:active{ transform: scale(.92); }
+  .textbtn{
+    border:1px solid var(--panel-line); background:var(--panel); color:var(--ivory);
+    padding:7px 14px; border-radius:20px; cursor:pointer; font-family:inherit;
+    font-size:13px; letter-spacing:1px;
+  }
+  .textbtn:hover{ background:#123a2c; }
+
+  .stage{
+    padding: clamp(10px,2vw,24px) clamp(8px,2.4vw,22px) 40px;
+    max-width: 1240px; margin: 0 auto;
+  }
+  .table-frame{
+    border-radius: 22px;
+    padding: clamp(10px,1.6vw,18px);
+    background:
+      linear-gradient(155deg, var(--wood-1), var(--wood-2) 55%, var(--wood-3)),
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 7px);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.06);
+    position:relative;
+  }
+  .table-frame::before{
+    content:""; position:absolute; inset:6px; border-radius:16px;
+    border: 1.5px solid rgba(232,200,115,0.35); pointer-events:none;
+  }
+  .table-felt{
+    border-radius: 14px;
+    background-image:
+      radial-gradient(ellipse 140% 90% at 50% -10%, #1a7a54, var(--felt-1) 45%, var(--felt-2) 100%);
+    box-shadow: inset 0 0 90px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3);
+    padding: clamp(14px,2.2vw,26px) clamp(10px,2.4vw,22px) 28px;
+  }
+
+  .row{ display:flex; gap: var(--gap); }
+  .top-row{ justify-content:space-between; margin-bottom: clamp(14px,2.4vw,26px); }
+  .foundations{ display:flex; gap: var(--gap); }
+  .stockwaste{ display:flex; gap: var(--gap); }
+  .tableau-row{ display:flex; gap: var(--gap); }
+  .tcol{ flex:1; min-width:0; position:relative; }
+
+  .pile{
+    width: var(--card-w); height: var(--card-h);
+    border-radius: 9px;
+    position:relative;
+    flex-shrink:0;
+  }
+  .pile.slot{
+    border: 2px solid rgba(232,200,115,0.3);
+    background: rgba(0,0,0,0.14);
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.4);
+  }
+  .pile.slot .slot-mark{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size: calc(var(--card-w)*0.42); color: rgba(232,200,115,0.3);
+  }
+  .pile.slot.drop-ok{ border-color:#7ee6a8; box-shadow: 0 0 14px #7ee6a888, inset 0 0 10px rgba(0,0,0,0.35);}
+  .tcol .pile.slot{ position:absolute; top:0; left:0; }
+  .tcol{ height: calc(var(--card-h) + 26px * 6 + 40px); }
+
+  /* ---------- Cards (real image assets) ---------- */
+  .card{
+    position:absolute; left:0; top:0;
+    width: var(--card-w); height: var(--card-h);
+    border-radius: 9px;
+    background: var(--ivory);
+    box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 3px 7px rgba(0,0,0,.4);
+    transition: box-shadow .15s ease;
+    cursor: grab;
+    touch-action: none;
+    overflow:hidden;
+  }
+  .card.dragging{ cursor:grabbing; z-index:999 !important; filter: drop-shadow(0 10px 14px rgba(0,0,0,.55)); transition:none; }
+  .card.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 4px 10px rgba(0,0,0,.5); }
+  .face, .back-img-wrap{ position:absolute; inset:0; border-radius:9px; overflow:hidden; background:var(--ivory); }
+  .back-img-wrap{ background:#0d3358; }
+  .card-face-img, .card-back-img{
+    width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; user-select:none;
+  }
+  .img-fallback{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--card-w)*0.22); font-weight:bold; background:var(--ivory); border-radius:9px;
+  }
+  .suit-red{ color: var(--burgundy); }
+  .suit-black{ color: var(--navy); }
+
+  /* ---------- Win banner ---------- */
+  .winmask{
+    position:fixed; inset:0; background: rgba(4,20,14,0.85); z-index:200;
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px;
+    opacity:0; pointer-events:none; transition: opacity .4s ease;
+  }
+  .winmask.show{ opacity:1; pointer-events:all; }
+  .winmask h2{ font-size: clamp(28px,6vw,52px); color: var(--brass-light); letter-spacing:4px; font-variant:small-caps; margin:0; text-shadow:0 0 30px rgba(232,200,115,.5);}
+  .winmask p{ color:#cfe6d8; letter-spacing:2px;}
+
+  /* ---------- Settings modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100;
+    display:none; align-items:center; justify-content:center;
+  }
+  .overlay.show{ display:flex; }
+  .modal{
+    width: min(440px, 92vw); max-height: 90vh; overflow-y:auto;
+    background: linear-gradient(180deg,#0f3527,#0a2a1f);
+    border:1px solid var(--panel-line); border-radius:14px;
+    padding: 22px 24px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .modal h3{ margin:0 0 4px; color:var(--brass-light); font-variant:small-caps; letter-spacing:2px; font-size:22px;}
+  .modal .sub{ color:#9fc9b6; font-size:12px; letter-spacing:1px; margin-bottom:18px;}
+  .field{ margin-bottom:16px; }
+  .field > label{ display:block; font-size:13px; letter-spacing:1px; color:#dce9df; margin-bottom:8px;}
+  .segmented{ display:flex; border:1px solid var(--panel-line); border-radius:10px; overflow:hidden; }
+  .segmented button{
+    flex:1; padding:9px 6px; background:var(--panel); color:#cfe6d8; border:none; cursor:pointer;
+    font-family:inherit; font-size:13px; letter-spacing:1px; border-right:1px solid var(--panel-line);
+  }
+  .segmented button:last-child{ border-right:none; }
+  .segmented button.active{ background: var(--brass); color:#2a1e05; font-weight:bold; }
+  .toggrow{ display:flex; align-items:center; justify-content:space-between; padding:4px 0; }
+  .toggrow span{ font-size:14px; color:#e7f2ea;}
+  .switch{ position:relative; width:46px; height:26px; flex-shrink:0; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{
+    position:absolute; inset:0; background:#12402f; border-radius:20px; cursor:pointer;
+    transition:.2s; border:1px solid var(--panel-line);
+  }
+  .slider::before{
+    content:""; position:absolute; width:20px; height:20px; left:2px; top:2px;
+    background: var(--ivory); border-radius:50%; transition:.2s;
+  }
+  .switch input:checked + .slider{ background: #2f7a53; }
+  .switch input:checked + .slider::before{ transform: translateX(20px); background: var(--brass-light); }
+  .modal-actions{ display:flex; gap:10px; margin-top:18px; }
+  .modal-actions .textbtn{ flex:1; text-align:center; }
+  .primary{ background: linear-gradient(180deg, var(--brass-light), var(--brass)); color:#2a1e05; border:none; font-weight:bold;}
+
+  .backpicker{ display:flex; gap:10px; flex-wrap:wrap; }
+  .backswatch{
+    width:52px; height:74px; border-radius:7px; cursor:pointer;
+    border: 2px solid transparent; position:relative; overflow:hidden;
+    box-shadow: 0 2px 5px rgba(0,0,0,.4);
+    background:#0d3358;
+  }
+  .backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .backswatch.active{ border-color: #7ee6a8; }
+
+  footer{ text-align:center; padding: 6px 0 26px; color:#8a7458; font-size:11px; letter-spacing:2px;}
+  @media (max-width:560px){
+    .brand small{ display:none; }
+    .chip{ padding:5px 9px; font-size:11px; min-width:52px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest">♠</div>
+    <div>
+      <h1>Klondike</h1>
+      <small>Solitaire</small>
+    </div>
+  </div>
+  <div class="hud">
+    <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+    <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+    <button class="textbtn" id="btn-newgame">New Game</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="row top-row">
+        <div class="stockwaste">
+          <div class="pile slot" id="pile-stock"><div class="slot-mark">↺</div></div>
+          <div class="pile slot" id="pile-waste"></div>
+        </div>
+        <div class="foundations">
+          <div class="pile slot" data-suit="S" id="f-S"><div class="slot-mark">♠</div></div>
+          <div class="pile slot" data-suit="H" id="f-H"><div class="slot-mark">♥</div></div>
+          <div class="pile slot" data-suit="D" id="f-D"><div class="slot-mark">♦</div></div>
+          <div class="pile slot" data-suit="C" id="f-C"><div class="slot-mark">♣</div></div>
+        </div>
+      </div>
+
+      <div class="row tableau-row" id="tableau"></div>
+    </div>
+  </div>
+</div>
+
+<footer>DRAG · DOUBLE-TAP TO SEND HOME · CLICK STOCK TO DRAW</footer>
+
+<div class="winmask" id="winmask">
+  <h2>You Win!</h2>
+  <p id="win-sub">Cleared in — </p>
+  <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Draw and timer/score apply on your next new game. Card back applies instantly.</div>
+
+    <div class="field">
+      <label>Draw</label>
+      <div class="segmented" id="seg-draw">
+        <button data-val="1">Draw 1</button>
+        <button data-val="3">Draw 3</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Card Back</label>
+      <div class="backpicker" id="back-picker">
+        <div class="backswatch" data-val="6"><img src="cards/back_6.png" alt="Back 6"></div>
+        <div class="backswatch" data-val="7"><img src="cards/back_7.png" alt="Back 7"></div>
+        <div class="backswatch" data-val="9"><img src="cards/back_9.png" alt="Back 9"></div>
+        <div class="backswatch" data-val="10"><img src="cards/back_10.png" alt="Back 10"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Close</button>
+      <button class="textbtn primary" id="settings-apply">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================
+   CARD ASSET PATHS  (files live in /cards next to index.html)
+   ========================================================= */
+const SUITS = ['S','H','D','C'];
+const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+function rankValue(r){ return RANKS.indexOf(r)+1; }
+function isRed(suit){ return suit==='H'||suit==='D'; }
+function suitGlyph(suit){ return {S:'♠',H:'♥',D:'♦',C:'♣'}[suit]; }
+
+const RANK_FILE = {A:'ace', J:'jack', Q:'queen', K:'king'};
+function rankFile(rank){ return RANK_FILE[rank] || rank; }
+const SUIT_FILE = {S:'spades', H:'hearts', D:'diamonds', C:'clubs'};
+function suitFile(suit){ return SUIT_FILE[suit]; }
+function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.svg'; }
+function backImgSrc(style){ return 'cards/back_'+style+'.png'; }
+
+/* =========================================================
+   CARD MODEL
+   ========================================================= */
+function buildDeck(){
+  const deck = [];
+  let id = 0;
+  for(const s of SUITS){
+    for(const r of RANKS){
+      deck.push({ id: 'c'+(id++), rank:r, suit:s, faceUp:false });
+    }
+  }
+  return deck;
+}
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+
+function buildFaceEl(card){
+  const wrap = document.createElement('div');
+  wrap.className = 'face';
+  const img = document.createElement('img');
+  img.className = 'card-face-img';
+  img.src = cardImgSrc(card);
+  img.alt = card.rank+' of '+suitFile(card.suit);
+  img.draggable = false;
+  img.addEventListener('error', ()=>{
+    wrap.innerHTML = '<div class="img-fallback '+(isRed(card.suit)?'suit-red':'suit-black')+'">'+card.rank+' '+suitGlyph(card.suit)+'</div>';
+  }, { once:true });
+  wrap.appendChild(img);
+  return wrap;
+}
+function buildBackEl(){
+  const wrap = document.createElement('div');
+  wrap.className = 'back-img-wrap';
+  const img = document.createElement('img');
+  img.className = 'card-back-img';
+  img.src = backImgSrc(state.backStyle);
+  img.alt = 'card back';
+  img.draggable = false;
+  wrap.appendChild(img);
+  return wrap;
+}
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+const state = {
+  drawCount: 1,
+  showTimer: false,
+  showScore: false,
+  backStyle: '9',
+  stock: [], waste: [],
+  foundations: {S:[],H:[],D:[],C:[]},
+  tableau: [[],[],[],[],[],[],[]],
+  score: 0,
+  seconds: 0,
+  timerHandle: null,
+  selected: null
+};
+
+const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'9' };
+
+function newGame(){
+  clearInterval(state.timerHandle);
+  state.drawCount = pendingSettings.drawCount;
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.backStyle = pendingSettings.backStyle;
+  state.stock = shuffle(buildDeck());
+  state.waste = [];
+  state.foundations = {S:[],H:[],D:[],C:[]};
+  state.tableau = [[],[],[],[],[],[],[]];
+  state.score = 0;
+  state.seconds = 0;
+  state.selected = null;
+
+  for(let col=0; col<7; col++){
+    for(let i=0;i<=col;i++){
+      const card = state.stock.pop();
+      card.faceUp = (i===col);
+      state.tableau[col].push(card);
+    }
+  }
+
+  document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
+  document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
+  if(state.showTimer){
+    state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+  }
+  document.getElementById('winmask').classList.remove('show');
+  renderAll();
+}
+
+function addScore(n){
+  state.score = Math.max(0, state.score + n);
+  renderHUD();
+}
+
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+
+/* =========================================================
+   RENDER BOARD
+   ========================================================= */
+function ensureTableauCols(){
+  const row = document.getElementById('tableau');
+  if(row.children.length===7) return;
+  row.innerHTML = '';
+  for(let i=0;i<7;i++){
+    const col = document.createElement('div');
+    col.className = 'tcol';
+    col.dataset.pile = 'tableau';
+    col.dataset.index = i;
+    col.innerHTML = '<div class="pile slot"></div>';
+    row.appendChild(col);
+  }
+}
+
+function renderAll(){
+  ensureTableauCols();
+  renderHUD();
+  renderStock();
+  renderWaste();
+  renderFoundations();
+  renderTableau();
+  checkWin();
+}
+
+function makeCardEl(card, pileType, pileKey, index){
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.dataset.id = card.id;
+  el.dataset.pile = pileType;
+  el.dataset.key = pileKey;
+  el.dataset.index = index;
+  el.appendChild(card.faceUp ? buildFaceEl(card) : buildBackEl());
+  attachCardEvents(el, card, pileType, pileKey, index);
+  return el;
+}
+
+function renderStock(){
+  const p = document.getElementById('pile-stock');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  if(state.stock.length){
+    const top = state.stock[state.stock.length-1];
+    const fake = {id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false};
+    const el = makeCardEl(fake,'stock','stock',state.stock.length-1);
+    p.appendChild(el);
+  }
+}
+function renderWaste(){
+  const p = document.getElementById('pile-waste');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  const n = state.waste.length;
+  if(!n) return;
+  const showN = Math.min(state.drawCount, n);
+  const startIdx = n - showN;
+  const fanStep = 22;
+  for(let i=startIdx;i<n;i++){
+    const card = state.waste[i];
+    const el = makeCardEl(card,'waste','waste',i);
+    el.style.left = ((i-startIdx) * fanStep) + 'px';
+    if(i < n-1){ el.style.cursor='default'; }
+    p.appendChild(el);
+  }
+}
+function renderFoundations(){
+  for(const s of SUITS){
+    const p = document.getElementById('f-'+s);
+    p.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.foundations[s];
+    if(pile.length){
+      const top = pile[pile.length-1];
+      const el = makeCardEl(top,'foundation',s,pile.length-1);
+      p.appendChild(el);
+    }
+  }
+}
+function renderTableau(){
+  const overlap = 26;
+  for(let c=0;c<7;c++){
+    const col = document.querySelector('.tcol[data-index="'+c+'"]');
+    col.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.tableau[c];
+    pile.forEach((card, i)=>{
+      const el = makeCardEl(card,'tableau',c,i);
+      el.style.top = (i*overlap)+'px';
+      col.appendChild(el);
+    });
+  }
+}
+
+/* =========================================================
+   GAME RULES
+   ========================================================= */
+function canPlaceOnTableau(card, destPile){
+  if(destPile.length===0) return card.rank==='K';
+  const top = destPile[destPile.length-1];
+  if(!top.faceUp) return false;
+  return (isRed(card.suit) !== isRed(top.suit)) && (rankValue(card.rank) === rankValue(top.rank)-1);
+}
+function canPlaceOnFoundation(card, destPile, suit){
+  if(card.suit!==suit) return false;
+  if(destPile.length===0) return card.rank==='A';
+  const top = destPile[destPile.length-1];
+  return rankValue(card.rank) === rankValue(top.rank)+1;
+}
+
+function drawFromStock(){
+  if(state.stock.length===0){
+    if(state.waste.length===0) return;
+    state.stock = state.waste.reverse().map(c=>({...c, faceUp:false}));
+    state.waste = [];
+    renderAll();
+    return;
+  }
+  const n = Math.min(state.drawCount, state.stock.length);
+  for(let i=0;i<n;i++){
+    const c = state.stock.pop();
+    c.faceUp = true;
+    state.waste.push(c);
+  }
+  renderAll();
+}
+
+function flipNewTopIfNeeded(col){
+  const pile = state.tableau[col];
+  if(pile.length){
+    const top = pile[pile.length-1];
+    if(!top.faceUp){ top.faceUp = true; addScore(5); }
+  }
+}
+
+function findPileArray(pileType, key){
+  if(pileType==='waste') return state.waste;
+  if(pileType==='tableau') return state.tableau[key];
+  if(pileType==='foundation') return state.foundations[key];
+  return null;
+}
+
+function tryMove(fromType, fromKey, fromIndex, toType, toKey){
+  const fromPile = findPileArray(fromType, fromKey);
+  if(!fromPile) return false;
+  if(fromType==='waste' && fromIndex !== fromPile.length-1) return false;
+  if(fromType==='foundation' && fromIndex !== fromPile.length-1) return false;
+
+  const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
+  if(movingCards.some(c=>!c.faceUp)) return false;
+  if(fromType==='tableau' && movingCards.length>1){
+    for(let i=0;i<movingCards.length-1;i++){
+      const a=movingCards[i], b=movingCards[i+1];
+      if(!((isRed(a.suit)!==isRed(b.suit)) && rankValue(a.rank)===rankValue(b.rank)+1)) return false;
+    }
+  }
+  const card = movingCards[0];
+
+  if(toType==='foundation'){
+    if(movingCards.length!==1) return false;
+    const destPile = state.foundations[toKey];
+    if(!canPlaceOnFoundation(card, destPile, toKey)) return false;
+    fromPile.splice(fromIndex, movingCards.length);
+    destPile.push(card);
+    addScore(10);
+  } else if(toType==='tableau'){
+    const destPile = state.tableau[toKey];
+    if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false;
+    if(!canPlaceOnTableau(card, destPile)) return false;
+    fromPile.splice(fromIndex, movingCards.length);
+    destPile.push(...movingCards);
+    if(fromType==='waste') addScore(5);
+    if(fromType==='foundation') addScore(-15);
+  } else {
+    return false;
+  }
+
+  if(fromType==='tableau') flipNewTopIfNeeded(Number(fromKey));
+  renderAll();
+  return true;
+}
+
+function autoMoveToFoundation(fromType, fromKey, fromIndex){
+  const fromPile = findPileArray(fromType, fromKey);
+  if(!fromPile) return false;
+  if(fromIndex !== fromPile.length-1) return false;
+  const card = fromPile[fromIndex];
+  if(!card.faceUp) return false;
+  for(const s of SUITS){
+    if(canPlaceOnFoundation(card, state.foundations[s], s)){
+      return tryMove(fromType, fromKey, fromIndex, 'foundation', s);
+    }
+  }
+  return false;
+}
+
+function checkWin(){
+  const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
+  if(total===52){
+    clearInterval(state.timerHandle);
+    const m = Math.floor(state.seconds/60), s = state.seconds%60;
+    document.getElementById('win-sub').textContent = state.showTimer
+      ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+      : (state.showScore ? ('Score '+state.score) : 'Well played.');
+    document.getElementById('winmask').classList.add('show');
+  }
+}
+
+/* =========================================================
+   INTERACTION: click-select + pointer drag
+   ========================================================= */
+let dragCtx = null;
+
+function attachCardEvents(el, card, pileType, pileKey, index){
+  if(pileType==='stock'){ el.style.cursor='pointer'; return; }
+  const fromPile = findPileArray(pileType, pileKey);
+  const isTop = index === fromPile.length-1;
+  const movable = card.faceUp && (pileType!=='waste' || isTop) && (pileType!=='foundation' || isTop);
+  if(!movable){ el.style.cursor='default'; return; }
+
+  let downX=0, downY=0, moved=false, lastTap=0;
+
+  el.addEventListener('pointerdown', (e)=>{
+    if(e.button!==undefined && e.button!==0) return;
+    downX=e.clientX; downY=e.clientY; moved=false;
+    dragCtx = { el, card, pileType, pileKey, index, startX:downX, startY:downY };
+    el.setPointerCapture(e.pointerId);
+  });
+
+  el.addEventListener('pointermove', (e)=>{
+    if(!dragCtx || dragCtx.el!==el) return;
+    const dx = e.clientX-downX, dy = e.clientY-downY;
+    if(!moved && Math.hypot(dx,dy) < 6) return;
+    moved = true;
+    beginVisualDrag(pileType, pileKey, index);
+    updateVisualDrag(e.clientX-dragCtx.startX, e.clientY-dragCtx.startY);
+  });
+
+  el.addEventListener('pointerup', (e)=>{
+    if(!dragCtx || dragCtx.el!==el) return;
+    if(moved){
+      endVisualDrag(e.clientX, e.clientY);
+    } else {
+      const now = Date.now();
+      if(now - lastTap < 320){
+        autoMoveToFoundation(pileType, pileKey, index);
+        clearSelection();
+      } else {
+        handleTapSelect(pileType, pileKey, index);
+      }
+      lastTap = now;
+    }
+    dragCtx = null; moved=false;
+  });
+
+  el.addEventListener('pointercancel', ()=>{ if(dragCtx && dragCtx.el===el){ cancelVisualDrag(); dragCtx=null; moved=false; } });
+}
+
+let dragEls = [];
+function beginVisualDrag(pileType, pileKey, index){
+  const pile = findPileArray(pileType, pileKey);
+  const cards = pileType==='tableau' ? pile.slice(index) : [pile[index]];
+  dragEls = [];
+  cards.forEach((c)=>{
+    const el = document.querySelector('.card[data-id="'+c.id+'"]');
+    if(!el) return;
+    const rect = el.getBoundingClientRect();
+    el.classList.add('dragging');
+    el.style.position='fixed';
+    el.style.left = rect.left+'px';
+    el.style.top = rect.top+'px';
+    el.style.zIndex = 999;
+    document.body.appendChild(el);
+    dragEls.push({el, baseLeft:rect.left, baseTop:rect.top});
+  });
+  document.querySelectorAll('.pile.slot').forEach(p=>p.classList.remove('drop-ok'));
+}
+function updateVisualDrag(dx, dy){
+  dragEls.forEach(d=>{
+    d.el.style.left = (d.baseLeft+dx)+'px';
+    d.el.style.top = (d.baseTop+dy)+'px';
+  });
+  document.querySelectorAll('.pile.slot').forEach(p=>p.classList.remove('drop-ok'));
+  const target = pileUnderPoint(lastPointer.x, lastPointer.y);
+  if(target) target.classList.add('drop-ok');
+}
+let lastPointer = {x:0,y:0};
+document.addEventListener('pointermove', (e)=>{
+  lastPointer.x=e.clientX; lastPointer.y=e.clientY;
+  if(dragEls.length && dragCtx) updateVisualDrag(e.clientX-dragCtx.startX, e.clientY-dragCtx.startY);
+});
+
+function pileUnderPoint(x,y){
+  const el = document.elementFromPoint(x,y);
+  if(!el) return null;
+  return el.closest('.pile.slot');
+}
+
+function cleanupDragEls(){
+  dragEls.forEach(d=>{
+    d.el.classList.remove('dragging');
+    d.el.style.position=''; d.el.style.left=''; d.el.style.top=''; d.el.style.zIndex='';
+    if(d.el.parentNode === document.body) d.el.remove();
+  });
+  dragEls = [];
+}
+
+function endVisualDrag(x,y){
+  const targetSlot = pileUnderPoint(x,y);
+  document.querySelectorAll('.pile.slot').forEach(p=>p.classList.remove('drop-ok'));
+  let success = false;
+  if(targetSlot){
+    const col = targetSlot.closest('.tcol');
+    let toType, toKey;
+    if(col){ toType='tableau'; toKey=Number(col.dataset.index); }
+    else if(targetSlot.dataset.suit){ toType='foundation'; toKey=targetSlot.dataset.suit; }
+    if(toType){
+      success = tryMove(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, toType, toKey);
+    }
+  }
+  cleanupDragEls();
+  if(!success) renderAll();
+}
+function cancelVisualDrag(){
+  cleanupDragEls();
+  renderAll();
+}
+
+function clearSelection(){
+  if(state.selected){
+    document.querySelectorAll('.card.selected').forEach(e=>e.classList.remove('selected'));
+    state.selected = null;
+  }
+}
+function handleTapSelect(pileType, pileKey, index){
+  if(state.selected){
+    const sel = state.selected;
+    if(sel.pileType===pileType && String(sel.pileKey)===String(pileKey) && sel.index===index){
+      clearSelection(); return;
+    }
+    let moved = false;
+    if(pileType==='tableau') moved = tryMove(sel.pileType, sel.pileKey, sel.index, 'tableau', pileKey);
+    else if(pileType==='foundation') moved = tryMove(sel.pileType, sel.pileKey, sel.index, 'foundation', pileKey);
+    clearSelection();
+    if(moved) return;
+  }
+  clearSelection();
+  state.selected = {pileType, pileKey, index};
+  const pile = findPileArray(pileType, pileKey);
+  const cards = pileType==='tableau' ? pile.slice(index) : [pile[index]];
+  cards.forEach(c=>{
+    const el = document.querySelector('.card[data-id="'+c.id+'"]');
+    if(el) el.classList.add('selected');
+  });
+}
+
+document.getElementById('pile-stock').addEventListener('click', ()=>{ clearSelection(); drawFromStock(); });
+SUITS.forEach(s=>{
+  document.getElementById('f-'+s).addEventListener('click', (e)=>{
+    if(e.target.closest('.card')) return;
+    if(state.selected){
+      const sel = state.selected;
+      tryMove(sel.pileType, sel.pileKey, sel.index, 'foundation', s);
+      clearSelection();
+    }
+  });
+});
+document.querySelectorAll('.tcol').forEach(col=>{
+  col.addEventListener('click', (e)=>{
+    if(e.target.closest('.card')) return;
+    if(state.selected){
+      const sel = state.selected;
+      tryMove(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index));
+      clearSelection();
+    }
+  });
+});
+
+/* =========================================================
+   SETTINGS MODAL
+   ========================================================= */
+const overlay = document.getElementById('settings-overlay');
+function refreshBackPicker(){
+  document.querySelectorAll('.backswatch').forEach(sw=>{
+    sw.classList.toggle('active', sw.dataset.val===pendingSettings.backStyle);
+  });
+}
+function openSettings(){
+  document.querySelectorAll('#seg-draw button').forEach(b=>{
+    b.classList.toggle('active', Number(b.dataset.val)===pendingSettings.drawCount);
+  });
+  document.getElementById('tog-timer').checked = pendingSettings.showTimer;
+  document.getElementById('tog-score').checked = pendingSettings.showScore;
+  refreshBackPicker();
+  overlay.classList.add('show');
+}
+document.getElementById('btn-settings').addEventListener('click', openSettings);
+document.getElementById('settings-cancel').addEventListener('click', ()=> overlay.classList.remove('show'));
+overlay.addEventListener('click', (e)=>{ if(e.target===overlay) overlay.classList.remove('show'); });
+
+document.querySelectorAll('#seg-draw button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    pendingSettings.drawCount = Number(b.dataset.val);
+    document.querySelectorAll('#seg-draw button').forEach(x=>x.classList.toggle('active', x===b));
+  });
+});
+document.getElementById('tog-timer').addEventListener('change', (e)=>{ pendingSettings.showTimer = e.target.checked; });
+document.getElementById('tog-score').addEventListener('change', (e)=>{ pendingSettings.showScore = e.target.checked; });
+
+document.querySelectorAll('.backswatch').forEach(sw=>{
+  sw.addEventListener('click', ()=>{
+    pendingSettings.backStyle = sw.dataset.val;
+    state.backStyle = sw.dataset.val;
+    refreshBackPicker();
+    renderAll();
+  });
+});
+
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  overlay.classList.remove('show');
+  newGame();
+});
+document.getElementById('btn-newgame').addEventListener('click', newGame);
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('winmask').classList.remove('show');
+  newGame();
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+ensureTableauCols();
+newGame();
+
+})();
+</script>
+</body>
+</html>
