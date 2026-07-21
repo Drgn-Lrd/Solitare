@@ -1,21 +1,19 @@
 <!DOCTYPE html>
 <!--
   LAST EDIT:
-  - Fixed empty-tableau-column bug: click handler was bound via
-    querySelectorAll('.tcol') before those columns existed in the DOM,
-    so it silently attached to nothing. Now delegated from the
-    always-present #tableau container instead.
-  - Fixed card back art: was zoomed to 3.4x (way overblown, showing a
-    pixelated 1/3 crop). object-fit:cover already fills the card
-    completely on its own, so both --face-scale and --back-scale are
-    back to 1.0 (no extra zoom).
-  - Hint/no-moves scanner no longer suggests "dead" tableau-to-tableau
-    shuffles (e.g. a lone King relocating between columns, or a run
-    sliding from one exposed same-rank card to another). A
-    tableau-to-tableau move now only counts as real progress if it
-    flips a face-down card underneath. Also dropped foundation-back-
-    to-tableau from move detection entirely, since it's almost always
-    trivially "available" and was masking genuine stuck states.
+  - Inspected the real card assets (uploaded ace_of_spades.svg, back_10.svg,
+    and the full cards.zip). Confirmed: front cards are self-contained
+    167.09x242.67pt vector cards (ratio 1.4523) with their own drawn
+    border/background baked in; card backs (back_6/7/9/10) are near-square
+    540x500 illustrations with no card framing of their own, meant to fill
+    a card-shaped container. Our display approach (transparent wrapper,
+    object-fit:cover, scale 1.0) already matches this correctly.
+  - Tightened our CARD_RATIO from a guessed 1.42 to the real 1.4523 so
+    object-fit:cover crops almost nothing off the front card art.
+  - Lowered the max auto-scaled card width from 140px to 104px — on tall
+    desktop browser windows the height-fill algorithm was scaling cards up
+    to that old cap, looking oversized ("massive") compared to the more
+    compact mobile/artifact view.
 -->
 <html lang="en">
 <head>
@@ -37,7 +35,7 @@
     --panel:#0e2f24;
     --panel-line:#1c5340;
     --card-w: clamp(50px, 8.6vw, 100px);
-    --card-h: calc(var(--card-w) * 1.42);
+    --card-h: calc(var(--card-w) * 1.4523);
     --gap: clamp(6px, 1.2vw, 14px);
     --face-scale: 1.0;
     --back-scale: 1.0;
@@ -604,7 +602,7 @@ function ensureTableauCols(){
 }
 
 const OVERLAP_FRAC = 0.183;
-const CARD_RATIO = 1.42;
+const CARD_RATIO = 1.4523;
 function cardMetrics(){
   const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w')) || 80;
   const h = w * CARD_RATIO;
@@ -645,7 +643,7 @@ function fitBoard(){
   const cardWByWidth = (availW - gapPx*6) / 7;
 
   let cardW = Math.min(cardWByHeight, cardWByWidth);
-  cardW = Math.max(44, Math.min(cardW, 140));
+  cardW = Math.max(44, Math.min(cardW, 104));
   document.documentElement.style.setProperty('--card-w', cardW+'px');
 }
 
