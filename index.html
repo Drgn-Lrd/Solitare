@@ -3,24 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solitaire - Windows XP Edition</title>
+    <title>Solitaire</title>
     <style>
         :root {
-            --win-gray: #ece9d8;
-            --win-border-light: #ffffff;
-            --win-border-dark: #716f64;
-            --win-border-black: #000000;
-            --win-blue-start: #0058e6;
-            --win-blue-end: #003b96;
-            --card-width: 71px;
+            --bg-color: #044222;
+            --panel-bg: #091c12;
+            --card-width: 68px;
             --card-height: 96px;
-            --card-radius: 3px;
+            --card-radius: 6px;
+            --gap: 8px;
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 500px) {
             :root {
-                --card-width: 48px;
-                --card-height: 66px;
+                --card-width: 46px;
+                --card-height: 65px;
+                --card-radius: 4px;
+                --gap: 4px;
             }
         }
 
@@ -28,8 +27,7 @@
             box-sizing: border-box;
             user-select: none;
             -webkit-user-select: none;
-            font-family: "Tahoma", "Segoe UI", sans-serif;
-            font-size: 11px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
 
         html, body {
@@ -38,74 +36,77 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #008000;
+            background-color: var(--bg-color);
             display: flex;
             flex-direction: column;
         }
 
-        /* --- Classic Windows XP Menu Bar --- */
-        #menu-bar {
-            background-color: var(--win-gray);
-            border-bottom: 1px solid #919089;
+        /* --- Header / Controls Bar --- */
+        #header-bar {
+            background-color: var(--panel-bg);
+            padding: 10px 12px;
             display: flex;
-            padding: 2px 4px;
-            gap: 12px;
-            z-index: 50;
-        }
-
-        .menu-item {
-            padding: 2px 6px;
-            cursor: pointer;
-            position: relative;
-            color: #000;
-        }
-
-        .menu-item:hover, .menu-item.active {
-            background-color: #316ac5;
-            color: white;
-        }
-
-        .dropdown {
-            display: none;
-            position: absolute;
-            top: 100%;
-            left: 0;
-            background: #ffffff;
-            border: 1px solid #666666;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-            min-width: 150px;
+            align-items: center;
+            justify-content: space-between;
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
             z-index: 100;
-            padding: 2px;
         }
 
-        .menu-item.active .dropdown { display: block; }
-
-        .dropdown-item {
-            padding: 4px 16px;
-            color: black;
-            cursor: pointer;
-            white-space: nowrap;
+        .stats-group {
+            display: flex;
+            gap: 16px;
         }
 
-        .dropdown-item:hover {
-            background: #316ac5;
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #a0a0a0;
+            font-weight: 500;
+        }
+
+        .stat-value {
+            font-size: 15px;
+            font-weight: bold;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .app-btn {
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: bold;
             color: white;
+            cursor: pointer;
+            transition: opacity 0.15s ease, transform 0.1s ease;
         }
 
-        .dropdown-divider {
-            height: 1px;
-            background-color: #e0e0e0;
-            margin: 3px 0;
+        .app-btn:active {
+            transform: scale(0.96);
         }
+
+        .btn-gray { background-color: #62727b; }
+        .btn-orange { background-color: #f57c00; }
+        .btn-green { background-color: #00a65a; }
+        .btn-icon { background-color: #37474f; padding: 8px 10px; }
 
         /* --- Playing Field --- */
         #game-board {
             flex: 1;
-            padding: 12px;
+            padding: 12px var(--gap);
             display: flex;
             flex-direction: column;
             gap: 16px;
-            max-width: 740px;
+            max-width: 600px;
             margin: 0 auto;
             width: 100%;
         }
@@ -113,17 +114,17 @@
         #top-row, #tableau {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 8px;
+            gap: var(--gap);
             width: 100%;
         }
 
         .zone {
             width: var(--card-width);
             height: var(--card-height);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            border: 2px dashed rgba(255, 255, 255, 0.25);
             border-radius: var(--card-radius);
             position: relative;
-            background: rgba(0, 0, 0, 0.12);
+            margin: 0 auto;
         }
 
         /* --- Card Styling --- */
@@ -132,168 +133,144 @@
             height: var(--card-height);
             border-radius: var(--card-radius);
             position: absolute;
-            box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+            box-shadow: 1px 2px 5px rgba(0,0,0,0.4);
             cursor: pointer;
             background-size: 100% 100% !important;
             background-position: center !important;
             background-repeat: no-repeat !important;
             background-color: #ffffff;
             overflow: hidden;
+            top: 0;
+            left: 0;
         }
 
         .card.selected {
-            outline: 2px solid #ffff00;
-            box-shadow: 0 0 8px #ffff00;
+            outline: 3px solid #ffea00;
+            box-shadow: 0 0 10px #ffea00;
             z-index: 1000 !important;
         }
 
-        /* --- Dialog Windows --- */
+        /* --- Settings Modal --- */
         .modal-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.25);
+            background: rgba(0, 0, 0, 0.6);
             z-index: 2000;
             justify-content: center;
             align-items: center;
+            padding: 16px;
         }
 
-        .modal-win {
-            background: var(--win-gray);
-            border: 1px solid #003b96;
-            border-radius: 4px 4px 0 0;
-            box-shadow: 3px 3px 12px rgba(0,0,0,0.4);
-            padding: 3px;
-            min-width: 340px;
+        .modal-card {
+            background: #1e282c;
+            color: #ffffff;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            overflow: hidden;
         }
 
-        .modal-title-bar {
-            background: linear-gradient(to right, var(--win-blue-start), var(--win-blue-end));
-            color: white;
-            padding: 4px 8px;
-            font-weight: bold;
+        .modal-header {
+            background: #141c1f;
+            padding: 14px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-radius: 2px 2px 0 0;
-        }
-
-        .modal-close-btn {
-            background: #d84a38;
-            color: white;
-            border: 1px solid #ffffff;
-            border-radius: 3px;
-            width: 16px;
-            height: 16px;
-            font-size: 10px;
-            line-height: 12px;
-            text-align: center;
-            cursor: pointer;
+            font-size: 16px;
             font-weight: bold;
         }
 
-        .modal-body { padding: 12px; }
+        .modal-body {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .setting-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .setting-title {
+            font-size: 12px;
+            color: #b0bec5;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: bold;
+        }
+
+        .setting-options {
+            display: flex;
+            gap: 12px;
+        }
+
+        .setting-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
 
         .card-backs-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            max-height: 260px;
-            overflow-y: auto;
+            gap: 8px;
             padding: 8px;
-            background: #ffffff;
-            border: 1px solid #7f9db9;
+            background: #141c1f;
+            border-radius: 8px;
         }
 
         .card-back-option {
-            width: 54px;
-            height: 74px;
+            width: 50px;
+            height: 70px;
             border: 2px solid transparent;
+            border-radius: 4px;
             cursor: pointer;
             background-size: 100% 100% !important;
             background-position: center !important;
             background-repeat: no-repeat !important;
             margin: 0 auto;
-            box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
         }
 
         .card-back-option.selected {
-            border-color: #316ac5;
-            outline: 2px solid #316ac5;
-        }
-
-        .options-group {
-            border: 1px solid #d0d0d0;
-            padding: 8px 12px;
-            margin-bottom: 10px;
-            background: #ffffff;
-        }
-
-        .options-group legend {
-            padding: 0 4px;
-            color: #003399;
-            font-weight: bold;
-        }
-
-        .win-button-row {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            margin-top: 12px;
-        }
-
-        .win-btn {
-            background: linear-gradient(to bottom, #ffffff, #ece9d8);
-            border: 1px solid #003c74;
-            border-radius: 3px;
-            padding: 4px 16px;
-            cursor: pointer;
-            min-width: 65px;
-            font-size: 11px;
-        }
-
-        #status-bar {
-            background: var(--win-gray);
-            border-top: 1px solid #919089;
-            display: flex;
-            justify-content: space-between;
-            padding: 3px 10px;
-        }
-
-        .status-field {
-            border: 1px solid #7f9db9;
-            padding: 2px 8px;
-            background: #ffffff;
-            min-width: 80px;
+            border-color: #00a65a;
+            box-shadow: 0 0 8px #00a65a;
         }
     </style>
 </head>
 <body>
 
-    <!-- Menu Bar -->
-    <div id="menu-bar">
-        <div class="menu-item" id="menu-game">
-            Game
-            <div class="dropdown">
-                <div class="dropdown-item" onclick="initGame()">Deal</div>
-                <div class="dropdown-divider"></div>
-                <div class="dropdown-item" onclick="undo()">Undo</div>
-                <div class="dropdown-item" onclick="openDeckModal()">Deck...</div>
-                <div class="dropdown-item" onclick="openOptionsModal()">Options...</div>
-                <div class="dropdown-divider"></div>
-                <div class="dropdown-item" onclick="initGame()">Exit</div>
+    <!-- Top Navigation / Stats -->
+    <div id="header-bar">
+        <div class="stats-group">
+            <div class="stat-item" id="time-container">
+                <span class="stat-label">Time:</span>
+                <span class="stat-value" id="time-display">00:00</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Moves:</span>
+                <span class="stat-value" id="moves-display">0</span>
+            </div>
+            <div class="stat-item" id="score-container">
+                <span class="stat-label">Score:</span>
+                <span class="stat-value" id="score-display">0</span>
             </div>
         </div>
-        <div class="menu-item" id="menu-help">
-            Help
-            <div class="dropdown">
-                <div class="dropdown-item" onclick="alert('Classic Windows XP Solitaire')">Help Topics</div>
-                <div class="dropdown-item" onclick="alert('Solitaire - Image Asset Edition')">About Solitaire</div>
-            </div>
+
+        <div class="btn-group">
+            <button class="app-btn btn-gray" onclick="undo()">Undo</button>
+            <button class="app-btn btn-orange" onclick="triggerAutoMove()">Auto Move</button>
+            <button class="app-btn btn-green" onclick="initGame()">New Game</button>
+            <button class="app-btn btn-icon" onclick="openSettings()">⚙️</button>
         </div>
     </div>
 
-    <!-- Board -->
+    <!-- Main Game Playing Field -->
     <div id="game-board">
         <div id="top-row">
             <div id="stock" class="zone"></div>
@@ -316,73 +293,55 @@
         </div>
     </div>
 
-    <!-- Status Bar -->
-    <div id="status-bar">
-        <div class="status-field">Score: <span id="score-display">0</span></div>
-        <div class="status-field">Time: <span id="time-display">0</span></div>
-        <div class="status-field">Moves: <span id="moves-display">0</span></div>
-    </div>
-
-    <!-- Deck Selection Modal -->
-    <div class="modal-overlay" id="deck-modal">
-        <div class="modal-win">
-            <div class="modal-title-bar">
-                <span>Select Card Back</span>
-                <div class="modal-close-btn" onclick="closeDeckModal()">X</div>
+    <!-- Unified Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span>Settings</span>
+                <span style="cursor:pointer;" onclick="closeSettings()">✕</span>
             </div>
             <div class="modal-body">
-                <div class="card-backs-grid" id="deck-grid"></div>
-                <div class="win-button-row">
-                    <button class="win-btn" onclick="confirmDeckSelection()">OK</button>
-                    <button class="win-btn" onclick="closeDeckModal()">Cancel</button>
+                <div class="setting-group">
+                    <span class="setting-title">Draw Mode</span>
+                    <div class="setting-options">
+                        <label><input type="radio" name="draw-mode" value="1" checked id="draw-1"> Draw 1</label>
+                        <label><input type="radio" name="draw-mode" value="3" id="draw-3"> Draw 3</label>
+                    </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Options Modal -->
-    <div class="modal-overlay" id="options-modal">
-        <div class="modal-win">
-            <div class="modal-title-bar">
-                <span>Options</span>
-                <div class="modal-close-btn" onclick="closeOptionsModal()">X</div>
-            </div>
-            <div class="modal-body">
-                <fieldset class="options-group">
-                    <legend>Draw Mode</legend>
-                    <label><input type="radio" name="draw-mode" value="1" checked id="draw-1"> Draw One</label><br>
-                    <label><input type="radio" name="draw-mode" value="3" id="draw-3"> Draw Three</label>
-                </fieldset>
-                <fieldset class="options-group">
-                    <legend>Display</legend>
-                    <label><input type="checkbox" id="toggle-status" checked> Show Status Bar / Timer</label>
-                </fieldset>
-                <div class="win-button-row">
-                    <button class="win-btn" onclick="confirmOptions()">OK</button>
-                    <button class="win-btn" onclick="closeOptionsModal()">Cancel</button>
+                <div class="setting-group">
+                    <span class="setting-title">Display Options</span>
+                    <div class="setting-options" style="flex-direction: column;">
+                        <label><input type="checkbox" id="toggle-timer" checked> Show Timer</label>
+                        <label><input type="checkbox" id="toggle-score" checked> Show Score</label>
+                    </div>
                 </div>
+
+                <div class="setting-group">
+                    <span class="setting-title">Select Card Back</span>
+                    <div class="card-backs-grid" id="deck-grid"></div>
+                </div>
+
+                <button class="app-btn btn-green" style="width:100%; margin-top:8px;" onclick="saveSettings()">Save & Close</button>
             </div>
         </div>
     </div>
 
     <script>
-        // --- 1. File Name Mapping ---
+        // --- Card Engine Constants ---
         const SUIT_NAMES = { 'H': 'hearts', 'D': 'diamonds', 'C': 'clubs', 'S': 'spades' };
         const SUIT_COLORS = { 'H': 'red', 'D': 'red', 'C': 'black', 'S': 'black' };
         const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
         function getCardImagePath(rank, suit) {
-            const fullSuit = SUIT_NAMES[suit];
             let rankName = rank;
             if (rank === 'A') rankName = 'ace';
             else if (rank === 'J') rankName = 'jack';
             else if (rank === 'Q') rankName = 'queen';
             else if (rank === 'K') rankName = 'king';
-
-            return `cards/${rankName}_of_${fullSuit}.svg`;
+            return `cards/${rankName}_of_${SUIT_NAMES[suit]}.svg`;
         }
 
-        // Exact filenames of your 4 SVG card backs
         const CARD_BACKS = {
             'back_6': 'cards/back_6.svg',
             'back_7': 'cards/back_7.svg',
@@ -394,7 +353,6 @@
         let tempSelectedBackKey = 'back_6';
         let drawCount = 1;
 
-        // --- Game Engine ---
         let deck = [], history = [];
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
         let selectedOrigin = null;
@@ -412,7 +370,7 @@
 
             timer = setInterval(() => {
                 timeElapsed++;
-                document.getElementById('time-display').innerText = timeElapsed;
+                updateStatus();
             }, 1000);
         }
 
@@ -464,7 +422,7 @@
                 renderPile(document.getElementById(`fnd-${i}`), state.foundations[i], false, 'fnd', i);
             }
 
-            const gap = window.innerWidth <= 600 ? 12 : 18;
+            const gap = window.innerWidth <= 500 ? 14 : 20;
             for (let i = 0; i < 7; i++) {
                 const pileEl = document.getElementById(`tab-${i}`);
                 pileEl.innerHTML = '';
@@ -483,7 +441,7 @@
                     }
 
                     pileEl.appendChild(cardEl);
-                    currentTop += card.isFaceUp ? gap : 6;
+                    currentTop += card.isFaceUp ? gap : 8;
                 });
 
                 if (state.tableau[i].length === 0) pileEl.onclick = () => handleCardClick('tab', i, -1);
@@ -548,22 +506,25 @@
 
         function attemptMove(origin, destination) {
             let movingCards = origin.type === 'tab' ? state.tableau[origin.pileIndex].slice(origin.cardIndex) : [origin.type === 'waste' ? state.waste[state.waste.length - 1] : state.foundations[origin.pileIndex][origin.pileIndex.length - 1]];
-            if (movingCards.length === 0) { selectedOrigin = null; render(); return; }
+            if (!movingCards || movingCards.length === 0 || !movingCards[0]) { selectedOrigin = null; render(); return; }
 
             let firstCard = movingCards[0], isValid = false;
 
             if (destination.type === 'tab') {
                 const targetPile = state.tableau[destination.pileIndex];
-                if (targetPile.length === 0) { if (firstCard.rank === 'K') isValid = true; }
-                else {
+                if (targetPile.length === 0) { 
+                    if (firstCard.rank === 'K') isValid = true; 
+                } else {
                     const topCard = targetPile[targetPile.length - 1];
                     if (SUIT_COLORS[firstCard.suit] !== SUIT_COLORS[topCard.suit] && topCard.value === firstCard.value + 1) isValid = true;
                 }
             } else if (destination.type === 'fnd' && movingCards.length === 1) {
                 const targetPile = state.foundations[destination.pileIndex];
-                if (targetPile.length === 0) { if (firstCard.rank === 'A') isValid = true; }
-                else {
+                if (targetPile.length === 0) { 
+                    if (firstCard.rank === 'A') isValid = true; 
+                } else {
                     const topCard = targetPile[targetPile.length - 1];
+                    // STRICT VALIDATION: Suit must match AND value must be exactly +1
                     if (firstCard.suit === topCard.suit && firstCard.value === topCard.value + 1) isValid = true;
                 }
             }
@@ -591,7 +552,8 @@
 
             for (let f = 0; f < 4; f++) {
                 const targetPile = state.foundations[f];
-                if ((targetPile.length === 0 && card.rank === 'A') || (targetPile.length > 0 && targetPile[targetPile.length - 1].suit === card.suit && targetPile[targetPile.length - 1].value === card.value - 1)) {
+                if ((targetPile.length === 0 && card.rank === 'A') || 
+                    (targetPile.length > 0 && targetPile[targetPile.length - 1].suit === card.suit && targetPile[targetPile.length - 1].value === card.value - 1)) {
                     saveHistory();
                     if (type === 'tab') {
                         state.foundations[f].push(state.tableau[pileIndex].pop());
@@ -602,16 +564,66 @@
             }
         }
 
+        // --- Auto Move System ---
+        function triggerAutoMove() {
+            let movedAny = false;
+            let keepScanning = true;
+
+            while (keepScanning) {
+                keepScanning = false;
+
+                // Check waste card top
+                if (state.waste.length > 0) {
+                    let card = state.waste[state.waste.length - 1];
+                    for (let f = 0; f < 4; f++) {
+                        let fPile = state.foundations[f];
+                        if ((fPile.length === 0 && card.rank === 'A') || 
+                            (fPile.length > 0 && fPile[fPile.length - 1].suit === card.suit && fPile[fPile.length - 1].value === card.value - 1)) {
+                            saveHistory();
+                            state.foundations[f].push(state.waste.pop());
+                            score += 10; movesCount++; movedAny = true; keepScanning = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Check tableau piles
+                for (let t = 0; t < 7; t++) {
+                    let pile = state.tableau[t];
+                    if (pile.length === 0) continue;
+                    let card = pile[pile.length - 1];
+                    if (!card.isFaceUp) continue;
+
+                    for (let f = 0; f < 4; f++) {
+                        let fPile = state.foundations[f];
+                        if ((fPile.length === 0 && card.rank === 'A') || 
+                            (fPile.length > 0 && fPile[fPile.length - 1].suit === card.suit && fPile[fPile.length - 1].value === card.value - 1)) {
+                            saveHistory();
+                            state.foundations[f].push(pile.pop());
+                            if (pile.length > 0) pile[pile.length - 1].isFaceUp = true;
+                            score += 10; movesCount++; movedAny = true; keepScanning = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (movedAny) render();
+        }
+
         function saveHistory() { history.push(JSON.stringify(state)); }
         function undo() { if (history.length > 0) { state = JSON.parse(history.pop()); selectedOrigin = null; render(); } }
+
         function updateStatus() {
             document.getElementById('score-display').innerText = score;
-            document.getElementById('time-display').innerText = timeElapsed;
+            const mins = String(Math.floor(timeElapsed / 60)).padStart(2, '0');
+            const secs = String(timeElapsed % 60).padStart(2, '0');
+            document.getElementById('time-display').innerText = `${mins}:${secs}`;
             document.getElementById('moves-display').innerText = movesCount;
         }
 
-        // --- Dialog Handling ---
-        function openDeckModal() {
+        // --- Settings Dialog ---
+        function openSettings() {
             const grid = document.getElementById('deck-grid');
             grid.innerHTML = '';
             tempSelectedBackKey = selectedBackKey;
@@ -628,29 +640,19 @@
                 };
                 grid.appendChild(opt);
             }
-            document.getElementById('deck-modal').style.display = 'flex';
+            document.getElementById('settings-modal').style.display = 'flex';
         }
 
-        function closeDeckModal() { document.getElementById('deck-modal').style.display = 'none'; }
-        function confirmDeckSelection() { selectedBackKey = tempSelectedBackKey; closeDeckModal(); render(); }
-
-        function openOptionsModal() { document.getElementById('options-modal').style.display = 'flex'; }
-        function closeOptionsModal() { document.getElementById('options-modal').style.display = 'none'; }
-        function confirmOptions() {
+        function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+        
+        function saveSettings() {
             drawCount = document.getElementById('draw-3').checked ? 3 : 1;
-            document.getElementById('status-bar').style.display = document.getElementById('toggle-status').checked ? 'flex' : 'none';
-            closeOptionsModal();
+            document.getElementById('time-container').style.display = document.getElementById('toggle-timer').checked ? 'flex' : 'none';
+            document.getElementById('score-container').style.display = document.getElementById('toggle-score').checked ? 'flex' : 'none';
+            selectedBackKey = tempSelectedBackKey;
+            closeSettings();
+            render();
         }
-
-        document.querySelectorAll('.menu-item').forEach(item => {
-            item.onclick = (e) => {
-                e.stopPropagation();
-                document.querySelectorAll('.menu-item').forEach(other => { if (other !== item) other.classList.remove('active'); });
-                item.classList.toggle('active');
-            };
-        });
-
-        window.onclick = () => document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
 
         initGame();
     </script>
