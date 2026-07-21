@@ -3,21 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Classic Klondike Solitaire</title>
+    <title>Solitaire</title>
     <style>
         :root {
-            --card-width: 82px;
-            --card-height: 118px;
-            --card-radius: 6px;
-            --gold-highlight: #f1c40f;
-            --shadow: rgba(0, 0, 0, 0.4);
+            --win-gray: #c0c0c0;
+            --win-border-light: #ffffff;
+            --win-border-dark: #808080;
+            --win-border-black: #000000;
+            --win-blue: #000080;
+            --card-width: 71px;
+            --card-height: 96px;
+            --card-radius: 3px;
         }
 
-        @media (max-width: 650px) {
+        @media (max-width: 600px) {
             :root {
                 --card-width: 46px;
-                --card-height: 68px;
-                --card-radius: 4px;
+                --card-height: 62px;
             }
         }
 
@@ -25,6 +27,8 @@
             box-sizing: border-box;
             user-select: none;
             -webkit-user-select: none;
+            font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+            font-size: 11px;
         }
 
         html, body {
@@ -33,134 +37,266 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: radial-gradient(circle, #1a4325 30%, #0d2814 85%, #051308 100%);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: #ffffff;
-        }
-
-        body {
+            background-color: #008080; /* Windows 95 Teal */
             display: flex;
             flex-direction: column;
-            align-items: center;
-            padding: 10px 6px;
         }
 
-        /* --- Header Controls --- */
-        #header {
-            width: 100%;
-            max-width: 700px;
+        /* --- Classic Windows 95 Menu Bar --- */
+        #menu-bar {
+            background-color: var(--win-gray);
+            border-bottom: 2px solid var(--win-border-dark);
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-            padding: 8px 12px;
-            background: rgba(0, 0, 0, 0.45);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 8px;
-            box-shadow: 0 4px 8px var(--shadow);
-        }
-
-        .stats {
-            display: flex;
+            padding: 2px 4px;
             gap: 12px;
-            font-weight: bold;
-            color: #e0e0e0;
-            font-size: 0.85rem;
+            box-shadow: inset 0 1px 0 var(--win-border-light);
+            z-index: 50;
         }
 
-        .controls {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
-
-        button, select {
-            padding: 6px 10px;
-            font-weight: bold;
-            border: none;
-            border-radius: 4px;
+        .menu-item {
+            padding: 2px 6px;
             cursor: pointer;
-            box-shadow: 0 2px 4px var(--shadow);
-            transition: transform 0.1s;
-            font-size: 0.8rem;
+            position: relative;
         }
-        button:active { transform: scale(0.95); }
-        #new-game-btn { background-color: #27ae60; color: white; }
-        #auto-move-btn { background-color: #f39c12; color: white; }
-        #undo-btn { background-color: #7f8c8d; color: white; }
-        #back-style-select { background-color: #34495e; color: white; outline: none; }
 
-        /* --- Game Board --- */
-        #board {
-            width: 100%;
-            max-width: 700px;
+        .menu-item:hover, .menu-item.active {
+            background-color: var(--win-blue);
+            color: white;
+        }
+
+        .dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: var(--win-gray);
+            border: 2px solid;
+            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.4);
+            min-width: 140px;
+            z-index: 100;
+        }
+
+        .menu-item.active .dropdown { display: block; }
+
+        .dropdown-item {
+            padding: 4px 12px;
+            color: black;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .dropdown-item:hover {
+            background: var(--win-blue);
+            color: white;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            border-top: 1px solid var(--win-border-dark);
+            border-bottom: 1px solid var(--win-border-light);
+            margin: 2px 0;
+        }
+
+        /* --- Playing Area --- */
+        #game-board {
+            flex: 1;
+            padding: 12px;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 16px;
+            max-width: 720px;
+            margin: 0 auto;
+            width: 100%;
         }
 
         #top-row, #tableau {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 6px;
+            gap: 8px;
             width: 100%;
         }
 
         .zone {
-            width: 100%;
+            width: var(--card-width);
             height: var(--card-height);
-            border: 2px dashed rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.4);
             border-radius: var(--card-radius);
             position: relative;
-            background: rgba(0, 0, 0, 0.15);
+            background: rgba(0, 0, 0, 0.1);
         }
 
-        /* --- Cards --- */
+        /* --- Vector Card Rendering --- */
         .card {
-            width: 100%;
+            width: var(--card-width);
             height: var(--card-height);
             border-radius: var(--card-radius);
             position: absolute;
-            box-shadow: 0 3px 6px var(--shadow);
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.6);
             cursor: pointer;
             background-size: 100% 100%;
             background-position: center;
             background-repeat: no-repeat;
             background-color: #ffffff;
-            transition: box-shadow 0.1s;
+            border: 1px solid #808080;
         }
 
         .card.selected {
-            box-shadow: 0 0 0 3px var(--gold-highlight), 0 6px 12px rgba(0,0,0,0.6);
-            transform: translateY(-3px);
+            outline: 2px solid #ffff00;
+            box-shadow: 0 0 8px #ffff00;
             z-index: 1000 !important;
         }
 
-        .tableau-pile .card { position: absolute; }
+        /* --- Retro Dialog Modal --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-win {
+            background: var(--win-gray);
+            border: 2px solid;
+            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
+            padding: 3px;
+            min-width: 320px;
+        }
+
+        .modal-title-bar {
+            background: var(--win-blue);
+            color: white;
+            padding: 3px 6px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-close-btn {
+            background: var(--win-gray);
+            border: 1px solid;
+            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
+            width: 14px;
+            height: 14px;
+            font-size: 9px;
+            line-height: 10px;
+            text-align: center;
+            cursor: pointer;
+            color: black;
+            font-weight: bold;
+        }
+
+        .modal-body {
+            padding: 12px;
+        }
+
+        .card-backs-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            max-height: 240px;
+            overflow-y: auto;
+            padding: 8px;
+            background: #ffffff;
+            border: 2px solid;
+            border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+        }
+
+        .card-back-option {
+            width: 52px;
+            height: 72px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+            margin: 0 auto;
+        }
+
+        .card-back-option.selected {
+            border-color: var(--win-blue);
+            outline: 2px solid var(--win-blue);
+        }
+
+        .options-group {
+            border: 1px solid var(--win-border-dark);
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+
+        .options-group legend {
+            padding: 0 4px;
+        }
+
+        .win-button-row {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .win-btn {
+            background: var(--win-gray);
+            border: 2px solid;
+            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
+            padding: 4px 16px;
+            cursor: pointer;
+            min-width: 60px;
+        }
+
+        .win-btn:active {
+            border-color: var(--win-border-black) var(--win-border-light) var(--win-border-light) var(--win-border-black);
+        }
+
+        /* --- Status Bar --- */
+        #status-bar {
+            background: var(--win-gray);
+            border-top: 2px solid var(--win-border-light);
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 8px;
+            border-top: 1px solid var(--win-border-dark);
+        }
+
+        .status-field {
+            border: 1px solid;
+            border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+            padding: 2px 6px;
+            background: var(--win-gray);
+        }
     </style>
 </head>
 <body>
 
-    <div id="header">
-        <div class="stats">
-            <div>Time: <span id="time-display">00:00</span></div>
-            <div>Moves: <span id="moves-display">0</span></div>
-            <div>Score: <span id="score-display">0</span></div>
+    <!-- Windows Menu Bar -->
+    <div id="menu-bar">
+        <div class="menu-item" id="menu-game">
+            Game
+            <div class="dropdown">
+                <div class="dropdown-item" onclick="initGame()">Deal</div>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-item" onclick="undo()">Undo</div>
+                <div class="dropdown-item" onclick="openDeckModal()">Deck...</div>
+                <div class="dropdown-item" onclick="openOptionsModal()">Options...</div>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-item" onclick="initGame()">Exit</div>
+            </div>
         </div>
-        <div class="controls">
-            <select id="back-style-select" title="Change Card Back Pattern">
-                <option value="red">Red Geometric</option>
-                <option value="blue">Blue Lattice</option>
-                <option value="green">Green Weave</option>
-                <option value="gold">Gold Classic</option>
-            </select>
-            <button id="undo-btn">Undo</button>
-            <button id="auto-move-btn" title="Push playable cards to Foundations">Auto Move</button>
-            <button id="new-game-btn">New Game</button>
+        <div class="menu-item" id="menu-help">
+            Help
+            <div class="dropdown">
+                <div class="dropdown-item" onclick="alert('Classic Windows Solitaire Engine')">Help Topics</div>
+                <div class="dropdown-item" onclick="alert('Windows Solitaire\nUsing GitHub static card assets.')">About Solitaire</div>
+            </div>
         </div>
     </div>
 
-    <div id="board">
+    <!-- Playing Board -->
+    <div id="game-board">
         <div id="top-row">
             <div id="stock" class="zone"></div>
             <div id="waste" class="zone"></div>
@@ -182,67 +318,86 @@
         </div>
     </div>
 
+    <!-- Status Bar -->
+    <div id="status-bar">
+        <div class="status-field">Score: <span id="score-display">0</span></div>
+        <div class="status-field">Time: <span id="time-display">0</span></div>
+        <div class="status-field">Moves: <span id="moves-display">0</span></div>
+    </div>
+
+    <!-- Deck Selection Modal -->
+    <div class="modal-overlay" id="deck-modal">
+        <div class="modal-win">
+            <div class="modal-title-bar">
+                <span>Select Card Back</span>
+                <div class="modal-close-btn" onclick="closeDeckModal()">X</div>
+            </div>
+            <div class="modal-body">
+                <div class="card-backs-grid" id="deck-grid"></div>
+                <div class="win-button-row">
+                    <button class="win-btn" onclick="confirmDeckSelection()">OK</button>
+                    <button class="win-btn" onclick="closeDeckModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Options Modal -->
+    <div class="modal-overlay" id="options-modal">
+        <div class="modal-win">
+            <div class="modal-title-bar">
+                <span>Options</span>
+                <div class="modal-close-btn" onclick="closeOptionsModal()">X</div>
+            </div>
+            <div class="modal-body">
+                <fieldset class="options-group">
+                    <legend>Draw Mode</legend>
+                    <label><input type="radio" name="draw-mode" value="1" checked id="draw-1"> Draw One</label><br>
+                    <label><input type="radio" name="draw-mode" value="3" id="draw-3"> Draw Three</label>
+                </fieldset>
+                <fieldset class="options-group">
+                    <legend>Display</legend>
+                    <label><input type="checkbox" id="toggle-status" checked> Show Status Bar / Timer</label>
+                </fieldset>
+                <div class="win-button-row">
+                    <button class="win-btn" onclick="confirmOptions()">OK</button>
+                    <button class="win-btn" onclick="closeOptionsModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // Direct GitHub Pages static assets URL
-        const DIRECT_GITHUB_BASE = 'https://hayeah.github.io/playing-cards-assets/svg-cards/';
+        // Exact GitHub Pages base URL for your SVG card repository
+        const CARD_FRONT_BASE = 'https://hayeah.github.io/playing-cards-assets/svg-cards/';
 
         const SUIT_NAMES = { 'H': 'hearts', 'D': 'diamonds', 'C': 'clubs', 'S': 'spades' };
         const SUIT_COLORS = { 'H': '#d63031', 'D': '#d63031', 'C': '#2d3436', 'S': '#2d3436' };
         const RANK_NAMES = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
         const RANKS_SHORT = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-        // Vector Card Back Options
+        // Card Back Options (Real image URLs)
         const CARD_BACK_OPTIONS = {
-            red: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
-                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
-                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#d63031"/>
-                    <path d="M 8 8 L 92 132 M 92 8 L 8 132" stroke="#ffffff" stroke-width="2.5" opacity="0.4"/>
-                    <circle cx="50" cy="70" r="18" fill="none" stroke="#ffffff" stroke-width="2.5" opacity="0.6"/>
-                </svg>
-            `),
-            blue: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
-                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
-                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#0984e3"/>
-                    <circle cx="50" cy="70" r="30" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.3"/>
-                    <circle cx="50" cy="70" r="15" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.5"/>
-                </svg>
-            `),
-            green: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
-                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
-                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#27ae60"/>
-                    <path d="M 10 10 H 90 V 130 H 10 Z" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.4"/>
-                    <path d="M 20 20 H 80 V 120 H 20 Z" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4"/>
-                </svg>
-            `),
-            gold: 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140" width="100%" height="100%">
-                    <rect width="100" height="140" rx="8" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
-                    <rect x="4" y="4" width="92" height="132" rx="6" fill="#f39c12"/>
-                    <rect x="12" y="12" width="76" height="116" rx="4" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.5"/>
-                    <circle cx="50" cy="70" r="22" fill="none" stroke="#ffffff" stroke-width="2.5" opacity="0.6"/>
-                </svg>
-            `)
+            'red_ornament': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_01.svg',
+            'blue_ornament': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_03.svg',
+            'red_simple': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_02.svg',
+            'blue_simple': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_02a.svg'
         };
 
-        let currentBackStyle = 'red';
+        let selectedBackKey = 'red_ornament';
+        let tempSelectedBackKey = 'red_ornament';
+        let drawCount = 1;
+
+        // Game State
         let deck = [], history = [];
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
         let selectedOrigin = null;
         let timer = null, timeElapsed = 0, movesCount = 0, score = 0;
 
-        function getGaps() {
-            return window.innerWidth <= 650 ? { down: 8, up: 16 } : { down: 12, up: 26 };
-        }
-
         function initGame() {
             clearInterval(timer);
             timeElapsed = 0; movesCount = 0; score = 0; selectedOrigin = null; history = [];
-            document.getElementById('time-display').innerText = "00:00";
-            document.getElementById('moves-display').innerText = "0";
-            document.getElementById('score-display').innerText = "0";
+            updateStatus();
 
             buildDeck();
             shuffleDeck();
@@ -251,9 +406,7 @@
 
             timer = setInterval(() => {
                 timeElapsed++;
-                const mins = String(Math.floor(timeElapsed / 60)).padStart(2, '0');
-                const secs = String(timeElapsed % 60).padStart(2, '0');
-                document.getElementById('time-display').innerText = `${mins}:${secs}`;
+                document.getElementById('time-display').innerText = timeElapsed;
             }, 1000);
         }
 
@@ -264,14 +417,14 @@
                 const suitName = SUIT_NAMES[suitKey];
                 for (let r = 0; r < 13; r++) {
                     const rankName = RANK_NAMES[r];
-                    const val = r + 1;
                     deck.push({
                         id: id++,
                         suit: suitKey,
                         rank: RANKS_SHORT[r],
-                        value: val,
+                        value: r + 1,
                         isFaceUp: false,
-                        imageUrl: `${DIRECT_GITHUB_BASE}${rankName}_of_${suitName}.svg`
+                        // Exact file naming matching hayeah/playing-cards-assets repo
+                        imageUrl: `${CARD_FRONT_BASE}${rankName}_of_${suitName}.svg`
                     });
                 }
             }
@@ -299,10 +452,6 @@
             }
         }
 
-        function saveHistory() {
-            history.push(JSON.stringify(state));
-        }
-
         function render() {
             renderPile(document.getElementById('stock'), state.stock, true, 'stock');
             renderPile(document.getElementById('waste'), state.waste, false, 'waste');
@@ -311,7 +460,7 @@
                 renderPile(document.getElementById(`fnd-${i}`), state.foundations[i], false, 'fnd', i);
             }
 
-            const gaps = getGaps();
+            const gap = window.innerWidth <= 600 ? 12 : 18;
             for (let i = 0; i < 7; i++) {
                 const pileEl = document.getElementById(`tab-${i}`);
                 pileEl.innerHTML = '';
@@ -322,39 +471,25 @@
                     cardEl.style.top = `${currentTop}px`;
                     cardEl.style.zIndex = cardIdx;
 
-                    cardEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        handleCardClick('tab', i, cardIdx);
-                    });
-
-                    cardEl.addEventListener('dblclick', (e) => {
-                        e.stopPropagation();
-                        handleCardDoubleClick('tab', i, cardIdx);
-                    });
+                    cardEl.onclick = (e) => { e.stopPropagation(); handleCardClick('tab', i, cardIdx); };
+                    cardEl.ondblclick = (e) => { e.stopPropagation(); handleCardDoubleClick('tab', i, cardIdx); };
 
                     if (selectedOrigin && selectedOrigin.type === 'tab' && selectedOrigin.pileIndex === i && cardIdx >= selectedOrigin.cardIndex) {
                         cardEl.classList.add('selected');
                     }
 
                     pileEl.appendChild(cardEl);
-                    currentTop += card.isFaceUp ? gaps.up : gaps.down;
+                    currentTop += card.isFaceUp ? gap : 6;
                 });
 
-                if (state.tableau[i].length === 0) {
-                    pileEl.onclick = () => handleCardClick('tab', i, -1);
-                } else {
-                    pileEl.onclick = null;
-                }
+                if (state.tableau[i].length === 0) pileEl.onclick = () => handleCardClick('tab', i, -1);
             }
 
-            document.getElementById('moves-display').innerText = movesCount;
-            document.getElementById('score-display').innerText = score;
+            updateStatus();
         }
 
         function renderPile(container, cardArray, hideAll, type, pileIndex = 0) {
             container.innerHTML = '';
-            container.onclick = null;
-
             if (cardArray.length === 0) {
                 container.onclick = () => handleCardClick(type, pileIndex, -1);
                 return;
@@ -367,17 +502,8 @@
                 cardEl.classList.add('selected');
             }
 
-            cardEl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                handleCardClick(type, pileIndex, cardArray.length - 1);
-            });
-
-            if (!hideAll) {
-                cardEl.addEventListener('dblclick', (e) => {
-                    e.stopPropagation();
-                    handleCardDoubleClick(type, pileIndex, cardArray.length - 1);
-                });
-            }
+            cardEl.onclick = (e) => { e.stopPropagation(); handleCardClick(type, pileIndex, cardArray.length - 1); };
+            if (!hideAll) cardEl.ondblclick = (e) => { e.stopPropagation(); handleCardDoubleClick(type, pileIndex, cardArray.length - 1); };
 
             container.appendChild(cardEl);
         }
@@ -385,7 +511,7 @@
         function createCardElement(card) {
             const div = document.createElement('div');
             div.classList.add('card');
-            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_OPTIONS[currentBackStyle]}')` : `url('${card.imageUrl}')`;
+            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_OPTIONS[selectedBackKey]}')` : `url('${card.imageUrl}')`;
             return div;
         }
 
@@ -396,67 +522,43 @@
                 if (state.stock.length === 0) {
                     state.stock = [...state.waste].reverse().map(c => ({...c, isFaceUp: false}));
                     state.waste = [];
-                    score = Math.max(0, score - 20);
                 } else {
-                    let card = state.stock.pop();
-                    card.isFaceUp = true;
-                    state.waste.push(card);
+                    for (let i = 0; i < drawCount && state.stock.length > 0; i++) {
+                        let card = state.stock.pop();
+                        card.isFaceUp = true;
+                        state.waste.push(card);
+                    }
                 }
-                movesCount++;
-                render();
-                return;
+                movesCount++; render(); return;
             }
 
             if (selectedOrigin === null) {
                 if (cardIndex === -1) return;
-                let card;
-                if (type === 'tab') card = state.tableau[pileIndex][cardIndex];
-                if (type === 'waste') card = state.waste[state.waste.length - 1];
-                if (type === 'fnd') card = state.foundations[pileIndex][state.foundations[pileIndex].length - 1];
-
-                if (card && card.isFaceUp) {
-                    selectedOrigin = { type, pileIndex, cardIndex };
-                    render();
-                }
+                let card = type === 'tab' ? state.tableau[pileIndex][cardIndex] : (type === 'waste' ? state.waste[state.waste.length-1] : state.foundations[pileIndex][state.foundations[pileIndex].length-1]);
+                if (card && card.isFaceUp) { selectedOrigin = { type, pileIndex, cardIndex }; render(); }
                 return;
             }
 
-            if (selectedOrigin !== null) {
-                if (selectedOrigin.type === type && selectedOrigin.pileIndex === pileIndex) {
-                    selectedOrigin = null;
-                    render();
-                    return;
-                }
-                attemptMove(selectedOrigin, { type, pileIndex });
-            }
+            attemptMove(selectedOrigin, { type, pileIndex });
         }
 
         function attemptMove(origin, destination) {
-            let movingCards = [];
-            if (origin.type === 'tab') movingCards = state.tableau[origin.pileIndex].slice(origin.cardIndex);
-            else if (origin.type === 'waste') movingCards = [state.waste[state.waste.length - 1]];
-            else if (origin.type === 'fnd') movingCards = [state.foundations[origin.pileIndex][state.foundations[origin.pileIndex].length - 1]];
-
+            let movingCards = origin.type === 'tab' ? state.tableau[origin.pileIndex].slice(origin.cardIndex) : [origin.type === 'waste' ? state.waste[state.waste.length - 1] : state.foundations[origin.pileIndex][state.foundations[origin.pileIndex].length - 1]];
             if (movingCards.length === 0) { selectedOrigin = null; render(); return; }
 
-            let firstCard = movingCards[0];
-            let isValid = false;
+            let firstCard = movingCards[0], isValid = false;
 
             if (destination.type === 'tab') {
                 const targetPile = state.tableau[destination.pileIndex];
-                if (targetPile.length === 0) {
-                    if (firstCard.rank === 'K') isValid = true;
-                } else {
+                if (targetPile.length === 0) { if (firstCard.rank === 'K') isValid = true; }
+                else {
                     const topCard = targetPile[targetPile.length - 1];
-                    const altColor = SUIT_COLORS[firstCard.suit] !== SUIT_COLORS[topCard.suit];
-                    const seqVal = topCard.value === firstCard.value + 1;
-                    if (altColor && seqVal) isValid = true;
+                    if (SUIT_COLORS[firstCard.suit] !== SUIT_COLORS[topCard.suit] && topCard.value === firstCard.value + 1) isValid = true;
                 }
             } else if (destination.type === 'fnd' && movingCards.length === 1) {
                 const targetPile = state.foundations[destination.pileIndex];
-                if (targetPile.length === 0) {
-                    if (firstCard.rank === 'A') isValid = true;
-                } else {
+                if (targetPile.length === 0) { if (firstCard.rank === 'A') isValid = true; }
+                else {
                     const topCard = targetPile[targetPile.length - 1];
                     if (firstCard.suit === topCard.suit && firstCard.value === topCard.value + 1) isValid = true;
                 }
@@ -466,143 +568,90 @@
                 saveHistory();
                 if (origin.type === 'tab') {
                     state.tableau[origin.pileIndex].splice(origin.cardIndex);
-                    if (state.tableau[origin.pileIndex].length > 0) {
-                        const nextTop = state.tableau[origin.pileIndex][state.tableau[origin.pileIndex].length - 1];
-                        if (!nextTop.isFaceUp) { nextTop.isFaceUp = true; score += 5; }
-                    }
+                    if (state.tableau[origin.pileIndex].length > 0) state.tableau[origin.pileIndex][state.tableau[origin.pileIndex].length - 1].isFaceUp = true;
                 } else if (origin.type === 'waste') state.waste.pop();
                 else if (origin.type === 'fnd') state.foundations[origin.pileIndex].pop();
 
-                if (destination.type === 'tab') {
-                    state.tableau[destination.pileIndex].push(...movingCards);
-                    if (origin.type === 'waste') score += 5;
-                } else if (destination.type === 'fnd') {
-                    state.foundations[destination.pileIndex].push(...movingCards);
-                    score += 10;
-                }
-
+                if (destination.type === 'tab') state.tableau[destination.pileIndex].push(...movingCards);
+                else if (destination.type === 'fnd') { state.foundations[destination.pileIndex].push(...movingCards); score += 10; }
                 movesCount++;
-                checkWinCondition();
             }
 
             selectedOrigin = null;
             render();
         }
 
-        function getFoundationIndexForCard(card) {
+        function handleCardDoubleClick(type, pileIndex, cardIndex) {
+            let card = type === 'tab' ? state.tableau[pileIndex][cardIndex] : state.waste[state.waste.length - 1];
+            if (!card || !card.isFaceUp) return;
+
             for (let f = 0; f < 4; f++) {
                 const targetPile = state.foundations[f];
-                if (targetPile.length === 0) {
-                    if (card.rank === 'A') return f;
-                } else {
-                    const topCard = targetPile[targetPile.length - 1];
-                    if (card.suit === topCard.suit && card.value === topCard.value + 1) return f;
+                if ((targetPile.length === 0 && card.rank === 'A') || (targetPile.length > 0 && targetPile[targetPile.length - 1].suit === card.suit && targetPile[targetPile.length - 1].value === card.value - 1)) {
+                    saveHistory();
+                    if (type === 'tab') {
+                        state.foundations[f].push(state.tableau[pileIndex].pop());
+                        if (state.tableau[pileIndex].length > 0) state.tableau[pileIndex][state.tableau[pileIndex].length - 1].isFaceUp = true;
+                    } else if (type === 'waste') state.foundations[f].push(state.waste.pop());
+                    score += 10; movesCount++; render(); break;
                 }
-            }
-            return -1;
-        }
-
-        function triggerAutoMove() {
-            let movedAny = false;
-            let keepSweeping = true;
-
-            saveHistory();
-
-            while (keepSweeping) {
-                keepSweeping = false;
-
-                if (state.waste.length > 0) {
-                    const wasteCard = state.waste[state.waste.length - 1];
-                    const fIdx = getFoundationIndexForCard(wasteCard);
-                    if (fIdx !== -1) {
-                        state.foundations[fIdx].push(state.waste.pop());
-                        movesCount++; score += 10;
-                        keepSweeping = true; movedAny = true;
-                        continue;
-                    }
-                }
-
-                for (let i = 0; i < 7; i++) {
-                    const pile = state.tableau[i];
-                    if (pile.length > 0) {
-                        const topCard = pile[pile.length - 1];
-                        if (topCard.isFaceUp) {
-                            const fIdx = getFoundationIndexForCard(topCard);
-                            if (fIdx !== -1) {
-                                state.foundations[fIdx].push(pile.pop());
-                                if (pile.length > 0) pile[pile.length - 1].isFaceUp = true;
-                                movesCount++; score += 10;
-                                keepSweeping = true; movedAny = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (!movedAny) {
-                history.pop();
-            } else {
-                checkWinCondition();
-                render();
             }
         }
 
-        function handleCardDoubleClick(type, pileIndex, cardIndex) {
-            let card;
-            if (type === 'tab') card = state.tableau[pileIndex][cardIndex];
-            if (type === 'waste') card = state.waste[state.waste.length - 1];
-
-            if (!card || !card.isFaceUp) return;
-            if (type === 'tab' && cardIndex !== state.tableau[pileIndex].length - 1) return;
-
-            const fIdx = getFoundationIndexForCard(card);
-            if (fIdx !== -1) {
-                saveHistory();
-                if (type === 'tab') {
-                    state.foundations[fIdx].push(state.tableau[pileIndex].pop());
-                    if (state.tableau[pileIndex].length > 0) {
-                        state.tableau[pileIndex][state.tableau[pileIndex].length - 1].isFaceUp = true;
-                    }
-                } else if (type === 'waste') {
-                    state.foundations[fIdx].push(state.waste.pop());
-                }
-                movesCount++; score += 10;
-                checkWinCondition();
-                render();
-            }
+        function saveHistory() { history.push(JSON.stringify(state)); }
+        function undo() { if (history.length > 0) { state = JSON.parse(history.pop()); selectedOrigin = null; render(); } }
+        function updateStatus() {
+            document.getElementById('score-display').innerText = score;
+            document.getElementById('time-display').innerText = timeElapsed;
+            document.getElementById('moves-display').innerText = movesCount;
         }
 
-        function checkWinCondition() {
-            const totalFoundations = state.foundations.reduce((acc, f) => acc + f.length, 0);
-            if (totalFoundations === 52) {
-                clearInterval(timer);
-                alert(`Congratulations! You won in ${movesCount} moves! Final Score: ${score}`);
+        // --- Deck Modal UI Logic ---
+        function openDeckModal() {
+            const grid = document.getElementById('deck-grid');
+            grid.innerHTML = '';
+            tempSelectedBackKey = selectedBackKey;
+
+            for (let key in CARD_BACK_OPTIONS) {
+                const opt = document.createElement('div');
+                opt.classList.add('card-back-option');
+                if (key === tempSelectedBackKey) opt.classList.add('selected');
+                opt.style.backgroundImage = `url('${CARD_BACK_OPTIONS[key]}')`;
+                opt.onclick = () => {
+                    document.querySelectorAll('.card-back-option').forEach(el => el.classList.remove('selected'));
+                    opt.classList.add('selected');
+                    tempSelectedBackKey = key;
+                };
+                grid.appendChild(opt);
             }
+            document.getElementById('deck-modal').style.display = 'flex';
         }
 
-        document.getElementById('back-style-select').addEventListener('change', (e) => {
-            currentBackStyle = e.target.value;
-            render();
+        function closeDeckModal() { document.getElementById('deck-modal').style.display = 'none'; }
+        function confirmDeckSelection() { selectedBackKey = tempSelectedBackKey; closeDeckModal(); render(); }
+
+        // --- Options Modal UI Logic ---
+        function openOptionsModal() {
+            document.getElementById('options-modal').style.display = 'flex';
+        }
+        function closeOptionsModal() { document.getElementById('options-modal').style.display = 'none'; }
+        function confirmOptions() {
+            drawCount = document.getElementById('draw-3').checked ? 3 : 1;
+            const showStatus = document.getElementById('toggle-status').checked;
+            document.getElementById('status-bar').style.display = showStatus ? 'flex' : 'none';
+            closeOptionsModal();
+        }
+
+        // --- Menu Dropdown Toggle ---
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.onclick = (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.menu-item').forEach(other => { if (other !== item) other.classList.remove('active'); });
+                item.classList.toggle('active');
+            };
         });
 
-        document.getElementById('new-game-btn').addEventListener('click', initGame);
-        document.getElementById('auto-move-btn').addEventListener('click', triggerAutoMove);
-        document.getElementById('undo-btn').addEventListener('click', () => {
-            if (history.length > 0) {
-                state = JSON.parse(history.pop());
-                selectedOrigin = null;
-                movesCount++;
-                render();
-            }
-        });
-
-        window.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            triggerAutoMove();
-        });
-
-        window.addEventListener('resize', render);
+        window.onclick = () => document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
 
         initGame();
     </script>
