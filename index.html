@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Solitaire</title>
+    <title>Solitaire - Windows XP Edition</title>
     <style>
         :root {
-            --win-gray: #c0c0c0;
+            --win-gray: #ece9d8;
             --win-border-light: #ffffff;
-            --win-border-dark: #808080;
+            --win-border-dark: #716f64;
             --win-border-black: #000000;
-            --win-blue: #000080;
+            --win-blue-start: #0058e6;
+            --win-blue-end: #003b96;
             --card-width: 71px;
             --card-height: 96px;
             --card-radius: 3px;
@@ -18,8 +19,8 @@
 
         @media (max-width: 600px) {
             :root {
-                --card-width: 46px;
-                --card-height: 62px;
+                --card-width: 48px;
+                --card-height: 66px;
             }
         }
 
@@ -27,7 +28,7 @@
             box-sizing: border-box;
             user-select: none;
             -webkit-user-select: none;
-            font-family: "MS Sans Serif", Tahoma, Geneva, sans-serif;
+            font-family: "Tahoma", "Segoe UI", sans-serif;
             font-size: 11px;
         }
 
@@ -37,19 +38,18 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #008080; /* Windows 95 Teal */
+            background-color: #008000; /* Windows XP Classic Green Felt */
             display: flex;
             flex-direction: column;
         }
 
-        /* --- Classic Windows 95 Menu Bar --- */
+        /* --- Classic Windows XP Menu Bar --- */
         #menu-bar {
             background-color: var(--win-gray);
-            border-bottom: 2px solid var(--win-border-dark);
+            border-bottom: 1px solid #919089;
             display: flex;
             padding: 2px 4px;
             gap: 12px;
-            box-shadow: inset 0 1px 0 var(--win-border-light);
             z-index: 50;
         }
 
@@ -57,10 +57,11 @@
             padding: 2px 6px;
             cursor: pointer;
             position: relative;
+            color: #000;
         }
 
         .menu-item:hover, .menu-item.active {
-            background-color: var(--win-blue);
+            background-color: #316ac5;
             color: white;
         }
 
@@ -69,43 +70,42 @@
             position: absolute;
             top: 100%;
             left: 0;
-            background: var(--win-gray);
-            border: 2px solid;
-            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.4);
-            min-width: 140px;
+            background: #ffffff;
+            border: 1px solid #666666;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            min-width: 150px;
             z-index: 100;
+            padding: 2px;
         }
 
         .menu-item.active .dropdown { display: block; }
 
         .dropdown-item {
-            padding: 4px 12px;
+            padding: 4px 16px;
             color: black;
             cursor: pointer;
             white-space: nowrap;
         }
 
         .dropdown-item:hover {
-            background: var(--win-blue);
+            background: #316ac5;
             color: white;
         }
 
         .dropdown-divider {
             height: 1px;
-            border-top: 1px solid var(--win-border-dark);
-            border-bottom: 1px solid var(--win-border-light);
-            margin: 2px 0;
+            background-color: #e0e0e0;
+            margin: 3px 0;
         }
 
-        /* --- Playing Area --- */
+        /* --- Playing Field --- */
         #game-board {
             flex: 1;
             padding: 12px;
             display: flex;
             flex-direction: column;
             gap: 16px;
-            max-width: 720px;
+            max-width: 740px;
             margin: 0 auto;
             width: 100%;
         }
@@ -120,25 +120,25 @@
         .zone {
             width: var(--card-width);
             height: var(--card-height);
-            border: 1px solid rgba(255, 255, 255, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: var(--card-radius);
             position: relative;
-            background: rgba(0, 0, 0, 0.1);
+            background: rgba(0, 0, 0, 0.12);
         }
 
-        /* --- Vector Card Rendering --- */
+        /* --- Pure Image-Based Card Graphics --- */
         .card {
             width: var(--card-width);
             height: var(--card-height);
             border-radius: var(--card-radius);
             position: absolute;
-            box-shadow: 1px 1px 2px rgba(0,0,0,0.6);
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
             cursor: pointer;
             background-size: 100% 100%;
             background-position: center;
             background-repeat: no-repeat;
             background-color: #ffffff;
-            border: 1px solid #808080;
+            border: 1px solid #716f64;
         }
 
         .card.selected {
@@ -147,12 +147,12 @@
             z-index: 1000 !important;
         }
 
-        /* --- Retro Dialog Modal --- */
+        /* --- Windows XP Style Modal Dialogs --- */
         .modal-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.25);
             z-index: 2000;
             justify-content: center;
             align-items: center;
@@ -160,34 +160,35 @@
 
         .modal-win {
             background: var(--win-gray);
-            border: 2px solid;
-            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
-            box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
+            border: 1px solid #003b96;
+            border-radius: 4px 4px 0 0;
+            box-shadow: 3px 3px 12px rgba(0,0,0,0.4);
             padding: 3px;
-            min-width: 320px;
+            min-width: 340px;
         }
 
         .modal-title-bar {
-            background: var(--win-blue);
+            background: linear-gradient(to right, var(--win-blue-start), var(--win-blue-end));
             color: white;
-            padding: 3px 6px;
+            padding: 4px 8px;
             font-weight: bold;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-radius: 2px 2px 0 0;
         }
 
         .modal-close-btn {
-            background: var(--win-gray);
-            border: 1px solid;
-            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
-            width: 14px;
-            height: 14px;
-            font-size: 9px;
-            line-height: 10px;
+            background: #d84a38;
+            color: white;
+            border: 1px solid #ffffff;
+            border-radius: 3px;
+            width: 16px;
+            height: 16px;
+            font-size: 10px;
+            line-height: 12px;
             text-align: center;
             cursor: pointer;
-            color: black;
             font-weight: bold;
         }
 
@@ -199,37 +200,39 @@
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 10px;
-            max-height: 240px;
+            max-height: 260px;
             overflow-y: auto;
             padding: 8px;
             background: #ffffff;
-            border: 2px solid;
-            border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+            border: 1px solid #7f9db9;
         }
 
         .card-back-option {
-            width: 52px;
-            height: 72px;
+            width: 54px;
+            height: 74px;
             border: 2px solid transparent;
             cursor: pointer;
-            background-size: cover;
-            background-position: center;
+            background-size: 100% 100%;
             margin: 0 auto;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
         }
 
         .card-back-option.selected {
-            border-color: var(--win-blue);
-            outline: 2px solid var(--win-blue);
+            border-color: #316ac5;
+            outline: 2px solid #316ac5;
         }
 
         .options-group {
-            border: 1px solid var(--win-border-dark);
-            padding: 8px;
+            border: 1px solid #d0d0d0;
+            padding: 8px 12px;
             margin-bottom: 10px;
+            background: #ffffff;
         }
 
         .options-group legend {
             padding: 0 4px;
+            color: #003399;
+            font-weight: bold;
         }
 
         .win-button-row {
@@ -240,39 +243,39 @@
         }
 
         .win-btn {
-            background: var(--win-gray);
-            border: 2px solid;
-            border-color: var(--win-border-light) var(--win-border-black) var(--win-border-black) var(--win-border-light);
+            background: linear-gradient(to bottom, #ffffff, #ece9d8);
+            border: 1px solid #003c74;
+            border-radius: 3px;
             padding: 4px 16px;
             cursor: pointer;
-            min-width: 60px;
+            min-width: 65px;
+            font-size: 11px;
         }
 
-        .win-btn:active {
-            border-color: var(--win-border-black) var(--win-border-light) var(--win-border-light) var(--win-border-black);
+        .win-btn:hover {
+            border-color: #e59700;
         }
 
         /* --- Status Bar --- */
         #status-bar {
             background: var(--win-gray);
-            border-top: 2px solid var(--win-border-light);
+            border-top: 1px solid #919089;
             display: flex;
             justify-content: space-between;
-            padding: 3px 8px;
-            border-top: 1px solid var(--win-border-dark);
+            padding: 3px 10px;
         }
 
         .status-field {
-            border: 1px solid;
-            border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
-            padding: 2px 6px;
-            background: var(--win-gray);
+            border: 1px solid #7f9db9;
+            padding: 2px 8px;
+            background: #ffffff;
+            min-width: 80px;
         }
     </style>
 </head>
 <body>
 
-    <!-- Windows Menu Bar -->
+    <!-- Windows XP Menu Bar -->
     <div id="menu-bar">
         <div class="menu-item" id="menu-game">
             Game
@@ -289,8 +292,8 @@
         <div class="menu-item" id="menu-help">
             Help
             <div class="dropdown">
-                <div class="dropdown-item" onclick="alert('Classic Windows Solitaire Engine')">Help Topics</div>
-                <div class="dropdown-item" onclick="alert('Windows Solitaire\nUsing GitHub static card assets.')">About Solitaire</div>
+                <div class="dropdown-item" onclick="alert('Classic Windows XP Solitaire Engine')">Help Topics</div>
+                <div class="dropdown-item" onclick="alert('Windows XP Solitaire\nEmbedded SVG Vector Assets.')">About Solitaire</div>
             </div>
         </div>
     </div>
@@ -325,7 +328,7 @@
         <div class="status-field">Moves: <span id="moves-display">0</span></div>
     </div>
 
-    <!-- Deck Selection Modal -->
+    <!-- Deck Selection Modal (12 Original Card Backs) -->
     <div class="modal-overlay" id="deck-modal">
         <div class="modal-win">
             <div class="modal-title-bar">
@@ -342,7 +345,7 @@
         </div>
     </div>
 
-    <!-- Game Options Modal -->
+    <!-- Options Modal -->
     <div class="modal-overlay" id="options-modal">
         <div class="modal-win">
             <div class="modal-title-bar">
@@ -354,6 +357,11 @@
                     <legend>Draw Mode</legend>
                     <label><input type="radio" name="draw-mode" value="1" checked id="draw-1"> Draw One</label><br>
                     <label><input type="radio" name="draw-mode" value="3" id="draw-3"> Draw Three</label>
+                </fieldset>
+                <fieldset class="options-group">
+                    <legend>Scoring</legend>
+                    <label><input type="radio" name="scoring" value="standard" checked id="score-std"> Standard</label><br>
+                    <label><input type="radio" name="scoring" value="vegas" id="score-vegas"> Vegas</label>
                 </fieldset>
                 <fieldset class="options-group">
                     <legend>Display</legend>
@@ -368,27 +376,52 @@
     </div>
 
     <script>
-        // Exact GitHub Pages base URL for your SVG card repository
-        const CARD_FRONT_BASE = 'https://hayeah.github.io/playing-cards-assets/svg-cards/';
-
-        const SUIT_NAMES = { 'H': 'hearts', 'D': 'diamonds', 'C': 'clubs', 'S': 'spades' };
+        // --- 1. Inline Vector Card Front Asset Generator ---
+        const SUIT_SYMBOLS = { 'H': '♥', 'D': '♦', 'C': '♣', 'S': '♠' };
         const SUIT_COLORS = { 'H': '#d63031', 'D': '#d63031', 'C': '#2d3436', 'S': '#2d3436' };
-        const RANK_NAMES = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
-        const RANKS_SHORT = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+        const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
-        // Card Back Options (Real image URLs)
-        const CARD_BACK_OPTIONS = {
-            'red_ornament': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_01.svg',
-            'blue_ornament': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_03.svg',
-            'red_simple': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_02.svg',
-            'blue_simple': 'https://commons.wikimedia.org/wiki/Special:FilePath/Card_back_02a.svg'
+        function buildCardFrontSVG(rank, suit) {
+            const color = SUIT_COLORS[suit];
+            const sym = SUIT_SYMBOLS[suit];
+            const isCourt = ['J', 'Q', 'K'].includes(rank);
+            const courtArt = isCourt ? `<rect x="25" y="45" width="50" height="50" rx="3" fill="#fafafa" stroke="${color}" stroke-width="1.5"/><text x="50" y="78" font-size="32" text-anchor="middle" fill="${color}">${rank}</text>` : `<text x="50" y="82" font-size="40" text-anchor="middle" fill="${color}">${sym}</text>`;
+
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140">
+                <rect width="100" height="140" rx="4" fill="#ffffff"/>
+                <text x="8" y="22" font-family="sans-serif" font-weight="bold" font-size="18" fill="${color}">${rank}</text>
+                <text x="8" y="38" font-family="sans-serif" font-size="16" fill="${color}">${sym}</text>
+                ${courtArt}
+                <text x="92" y="122" font-family="sans-serif" font-weight="bold" font-size="18" fill="${color}" text-anchor="end">${rank}</text>
+            </svg>`;
+            return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+        }
+
+        // --- 2. All 12 Classic Original Windows Solitaire Card Backs ---
+        function makeSvgBack(content) {
+            return 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><rect width="100" height="140" rx="3" fill="#ffffff" stroke="#000000" stroke-width="1"/>${content}</svg>`);
+        }
+
+        const CARD_BACK_TEMPLATES = {
+            'beach': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#87ceeb"/><path d="M4 90 Q 50 80 96 95 L 96 136 L 4 136 Z" fill="#f0e68c"/><circle cx="80" cy="30" r="12" fill="#ffd700"/><text x="45" y="80" font-size="38" text-anchor="middle">🏖️</text>'),
+            'castle': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#191970"/><circle cx="25" cy="30" r="14" fill="#f5f5f5"/><text x="50" y="85" font-size="38" text-anchor="middle">🏰</text>'),
+            'fish': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#008080"/><text x="50" y="82" font-size="38" text-anchor="middle">🐟</text>'),
+            'island': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#20b2aa"/><path d="M10 100 Q 50 85 90 100 L 90 136 L 10 136 Z" fill="#e6c280"/><text x="50" y="75" font-size="38" text-anchor="middle">🏝️</text>'),
+            'palm_trees': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#ff7f50"/><circle cx="50" cy="110" r="40" fill="#ffd700"/><text x="50" y="75" font-size="38" text-anchor="middle">🌴</text>'),
+            'robot': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#2f4f4f"/><text x="50" y="80" font-size="38" text-anchor="middle">🤖</text>'),
+            'shells': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#d2b48c"/><text x="50" y="80" font-size="38" text-anchor="middle">🐚</text>'),
+            'cards': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#006400"/><text x="50" y="80" font-size="38" text-anchor="middle">🃏</text>'),
+            'blue_pattern': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#000080"/><path d="M 10 10 L 90 130 M 90 10 L 10 130" stroke="#4169e1" stroke-width="4"/>'),
+            'red_pattern': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#800000"/><path d="M 10 10 L 90 130 M 90 10 L 10 130" stroke="#dc143c" stroke-width="4"/>'),
+            'dark_mosaic': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#111111"/><circle cx="50" cy="70" r="25" fill="none" stroke="#00ffff" stroke-width="3"/>'),
+            'rose': makeSvgBack('<rect x="4" y="4" width="92" height="132" fill="#2e8b57"/><text x="50" y="80" font-size="38" text-anchor="middle">🌹</text>')
         };
 
-        let selectedBackKey = 'red_ornament';
-        let tempSelectedBackKey = 'red_ornament';
+        let selectedBackKey = 'beach';
+        let tempSelectedBackKey = 'beach';
         let drawCount = 1;
 
-        // Game State
+        // --- Game State ---
         let deck = [], history = [];
         let state = { stock: [], waste: [], foundations: [[],[],[],[]], tableau: [[],[],[],[],[],[],[]] };
         let selectedOrigin = null;
@@ -413,18 +446,16 @@
         function buildDeck() {
             deck = [];
             let id = 0;
-            for (let suitKey in SUIT_NAMES) {
-                const suitName = SUIT_NAMES[suitKey];
+            for (let suit of ['H', 'D', 'C', 'S']) {
                 for (let r = 0; r < 13; r++) {
-                    const rankName = RANK_NAMES[r];
+                    const rank = RANKS[r];
                     deck.push({
                         id: id++,
-                        suit: suitKey,
-                        rank: RANKS_SHORT[r],
+                        suit: suit,
+                        rank: rank,
                         value: r + 1,
                         isFaceUp: false,
-                        // Exact file naming matching hayeah/playing-cards-assets repo
-                        imageUrl: `${CARD_FRONT_BASE}${rankName}_of_${suitName}.svg`
+                        imageUrl: buildCardFrontSVG(rank, suit)
                     });
                 }
             }
@@ -511,7 +542,7 @@
         function createCardElement(card) {
             const div = document.createElement('div');
             div.classList.add('card');
-            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_OPTIONS[selectedBackKey]}')` : `url('${card.imageUrl}')`;
+            div.style.backgroundImage = !card.isFaceUp ? `url('${CARD_BACK_TEMPLATES[selectedBackKey]}')` : `url('${card.imageUrl}')`;
             return div;
         }
 
@@ -612,11 +643,11 @@
             grid.innerHTML = '';
             tempSelectedBackKey = selectedBackKey;
 
-            for (let key in CARD_BACK_OPTIONS) {
+            for (let key in CARD_BACK_TEMPLATES) {
                 const opt = document.createElement('div');
                 opt.classList.add('card-back-option');
                 if (key === tempSelectedBackKey) opt.classList.add('selected');
-                opt.style.backgroundImage = `url('${CARD_BACK_OPTIONS[key]}')`;
+                opt.style.backgroundImage = `url('${CARD_BACK_TEMPLATES[key]}')`;
                 opt.onclick = () => {
                     document.querySelectorAll('.card-back-option').forEach(el => el.classList.remove('selected'));
                     opt.classList.add('selected');
