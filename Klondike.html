@@ -1,4 +1,22 @@
 <!DOCTYPE html>
+<!--
+  LAST EDIT:
+  - Fixed empty-tableau-column bug: click handler was bound via
+    querySelectorAll('.tcol') before those columns existed in the DOM,
+    so it silently attached to nothing. Now delegated from the
+    always-present #tableau container instead.
+  - Fixed card back art: was zoomed to 3.4x (way overblown, showing a
+    pixelated 1/3 crop). object-fit:cover already fills the card
+    completely on its own, so both --face-scale and --back-scale are
+    back to 1.0 (no extra zoom).
+  - Hint/no-moves scanner no longer suggests "dead" tableau-to-tableau
+    shuffles (e.g. a lone King relocating between columns, or a run
+    sliding from one exposed same-rank card to another). A
+    tableau-to-tableau move now only counts as real progress if it
+    flips a face-down card underneath. Also dropped foundation-back-
+    to-tableau from move detection entirely, since it's almost always
+    trivially "available" and was masking genuine stuck states.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -22,7 +40,7 @@
     --card-h: calc(var(--card-w) * 1.42);
     --gap: clamp(6px, 1.2vw, 14px);
     --face-scale: 1.0;
-    --back-scale: 3.4;
+    --back-scale: 1.0;
     font-size: 16px;
   }
   *{box-sizing:border-box;}
@@ -874,18 +892,15 @@ function findAnyMove(){
           if(canPlaceOnFoundation(card, state.foundations[s], s)) return {type:'tableau-foundation', from:'tableau', fromKey:c, index:i, to:s};
         }
       }
+      // Only treat a tableau-to-tableau move as real progress if it flips a
+      // face-down card underneath. Relocating a whole run (i===0) or shifting
+      // it onto an equivalent spot without exposing anything new is a dead
+      // shuffle (e.g. a lone King between columns, or a run sliding from one
+      // exposed same-rank card to another) — skip those.
+      if(i===0 || pile[i-1].faceUp) continue;
       for(let t=0;t<7;t++){
         if(t===c) continue;
         if(canPlaceOnTableau(card, state.tableau[t])) return {type:'tableau-tableau', from:'tableau', fromKey:c, index:i, to:t};
-      }
-    }
-  }
-  for(const s of SUITS){
-    const f = state.foundations[s];
-    if(f.length){
-      const top = f[f.length-1];
-      for(let t=0;t<7;t++){
-        if(canPlaceOnTableau(top, state.tableau[t])) return {type:'foundation-tableau', from:'foundation', fromKey:s, index:f.length-1, to:t};
       }
     }
   }
@@ -930,7 +945,6 @@ function findCardEl(pileType, pileKey, index){
 function showHint(){
   const move = findAnyMove();
   if(!move){ showToast("No moves left — try Undo or New Game."); return; }
-  const suitName = {S:'spades',H:'hearts',D:'diamonds',C:'clubs'};
   switch(move.type){
     case 'draw':
       showToast('Draw from the stock.');
@@ -955,10 +969,6 @@ function showHint(){
     case 'tableau-tableau':
       showToast('Move from column '+(move.fromKey+1)+' onto column '+(move.to+1)+'.');
       pulse(findCardEl('tableau',move.fromKey,move.index));
-      break;
-    case 'foundation-tableau':
-      showToast('You can move the '+suitName[move.fromKey]+' foundation card onto column '+(move.to+1)+'.');
-      pulse(findCardEl('foundation',move.fromKey,move.index));
       break;
   }
 }
