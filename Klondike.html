@@ -1,25 +1,24 @@
 <!DOCTYPE html>
 <!--
   LAST EDIT:
-  - Fixed floating/duplicated drag-and-drop cards: a card being dragged is
-    temporarily reparented to <body> with position:fixed so it can follow
-    the cursor. If a re-render fired while that was in flight, the render
-    rebuilt every pile fresh but never touched the orphaned clone sitting
-    in <body> (renderTableau/Waste/etc. only clear cards inside their own
-    pile container) — leaving a stray duplicate floating on the table.
-    Fix: (1) pointerup/pointercancel are now handled globally on document
-    instead of per-card, so a drag always resolves even if the original
-    element gets replaced mid-gesture; (2) added a purgeStrayCards() sweep
-    at the top of every renderAll() that removes any leftover `.card`
-    sitting directly in <body>; (3) an in-progress drag now also cancels
-    cleanly on window blur (e.g. alt-tabbing mid-drag).
-  - Fixed Hint/no-moves detection looping on "draw" forever: it used to
-    treat stock/waste as always giving *some* move as long as either had
-    cards left, even when nothing in either could ever actually be played
-    given the current board. Now it checks whether any remaining stock or
-    waste card could land on a foundation or tableau pile before
-    suggesting draw/recycle — if none can, it's correctly reported as no
-    moves left instead of "keep drawing".
+  - Fixed the real drag-and-drop bug: dropped cards always snapped back to
+    their origin. Cause: the dragged card follows the cursor exactly, so
+    at drop time document.elementFromPoint(x,y) was hitting the dragged
+    card itself (topmost, z-index 999) instead of the pile underneath it,
+    making every drop target lookup fail. Fix: dragged card(s) now get
+    pointer-events:none while in flight, so hit-testing sees through them
+    to the real target — pointer capture keeps move/up events routing to
+    them regardless. This also fixes the "highlight the pile you're
+    hovering over" feedback, which silently failed for the same reason.
+  - Reworked Settings: card back / timer / score / draw count (when no
+    cards drawn yet) now preview live as you change them, instead of only
+    taking effect via "Apply & New Game". Three explicit actions: Cancel
+    (reverts everything back to how it was when you opened Settings),
+    Apply (keeps the live-previewed changes, no reshuffle), and
+    Apply & New Game (forces every setting including draw count and deals
+    fresh). If draw count is changed after cards have already been drawn
+    this game, it's queued with a note and applies on the next New Game
+    instead of silently doing nothing.
 -->
 <html lang="en">
 <head>
@@ -277,8 +276,9 @@
   }
   .switch input:checked + .slider{ background: #2f7a53; }
   .switch input:checked + .slider::before{ transform: translateX(20px); background: var(--brass-light); }
-  .modal-actions{ display:flex; gap:10px; margin-top:18px; }
-  .modal-actions .textbtn{ flex:1; text-align:center; }
+  .modal-actions{ display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
+  .modal-actions .textbtn{ flex:1; min-width:100px; text-align:center; }
+  .fieldnote{ font-size:11px; color:#e0b95c; margin-top:8px; letter-spacing:.3px; line-height:1.4; }
   .primary{ background: linear-gradient(180deg, var(--brass-light), var(--brass)); color:#2a1e05; border:none; font-weight:bold;}
 
   .backpicker{ display:flex; gap:10px; flex-wrap:wrap; }
@@ -392,7 +392,7 @@
 <div class="overlay" id="settings-overlay">
   <div class="modal">
     <h3>Settings</h3>
-    <div class="sub">Draw and timer/score apply on your next new game. Card back applies instantly.</div>
+    <div class="sub">Changes preview instantly. Cancel reverts them; Apply keeps them.</div>
 
     <div class="field">
       <label>Draw</label>
@@ -400,6 +400,7 @@
         <button data-val="1">Draw 1</button>
         <button data-val="3">Draw 3</button>
       </div>
+      <div class="fieldnote" id="draw-note" style="display:none;">Cards already drawn this game — draw count will apply on your next New Game.</div>
     </div>
 
     <div class="field">
@@ -426,8 +427,9 @@
     </div>
 
     <div class="modal-actions">
-      <button class="textbtn" id="settings-cancel">Close</button>
-      <button class="textbtn primary" id="settings-apply">Apply &amp; New Game</button>
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
     </div>
   </div>
 </div>
@@ -568,13 +570,10 @@ function newGame(){
     }
   }
 
-  document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
-  document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
-  if(state.showTimer){
-    state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
-  }
   document.getElementById('winmask').classList.remove('show');
   document.getElementById('nomovesmask').classList.remove('show');
+  applyHudVisibility();
+  syncTimerInterval();
   updateUndoButton();
   renderAll();
 }
@@ -1073,6 +1072,7 @@ function beginVisualDrag(pileType, pileKey, index){
     el.style.left = rect.left+'px';
     el.style.top = rect.top+'px';
     el.style.zIndex = 999;
+    el.style.pointerEvents = 'none';
     document.body.appendChild(el);
     dragEls.push({el, baseLeft:rect.left, baseTop:rect.top});
   });
@@ -1098,7 +1098,7 @@ function pileUnderPoint(x,y){
 function cleanupDragEls(){
   dragEls.forEach(d=>{
     d.el.classList.remove('dragging');
-    d.el.style.position=''; d.el.style.left=''; d.el.style.top=''; d.el.style.zIndex='';
+    d.el.style.position=''; d.el.style.left=''; d.el.style.top=''; d.el.style.zIndex=''; d.el.style.pointerEvents='';
     if(d.el.parentNode === document.body) d.el.remove();
   });
   dragEls = [];
@@ -1186,32 +1186,91 @@ document.getElementById('tableau').addEventListener('click', (e)=>{
    SETTINGS MODAL
    ========================================================= */
 const overlay = document.getElementById('settings-overlay');
+let settingsSnapshot = null;
+
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer){
+    state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+  }
+}
+function applyHudVisibility(){
+  document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
+  document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
+}
+
 function refreshBackPicker(){
   document.querySelectorAll('.backswatch').forEach(sw=>{
     sw.classList.toggle('active', sw.dataset.val===pendingSettings.backStyle);
   });
 }
+function refreshDrawNote(){
+  const canApplyNow = state.waste.length===0;
+  document.getElementById('draw-note').style.display = canApplyNow ? 'none' : 'block';
+}
 function openSettings(){
+  settingsSnapshot = {
+    drawCount: state.drawCount, showTimer: state.showTimer,
+    showScore: state.showScore, backStyle: state.backStyle
+  };
+  pendingSettings.drawCount = state.drawCount;
+  pendingSettings.showTimer = state.showTimer;
+  pendingSettings.showScore = state.showScore;
+  pendingSettings.backStyle = state.backStyle;
+
   document.querySelectorAll('#seg-draw button').forEach(b=>{
     b.classList.toggle('active', Number(b.dataset.val)===pendingSettings.drawCount);
   });
   document.getElementById('tog-timer').checked = pendingSettings.showTimer;
   document.getElementById('tog-score').checked = pendingSettings.showScore;
   refreshBackPicker();
+  refreshDrawNote();
   overlay.classList.add('show');
 }
+function revertToSnapshot(){
+  if(!settingsSnapshot) return;
+  state.drawCount = settingsSnapshot.drawCount;
+  state.showTimer = settingsSnapshot.showTimer;
+  state.showScore = settingsSnapshot.showScore;
+  state.backStyle = settingsSnapshot.backStyle;
+  pendingSettings.drawCount = settingsSnapshot.drawCount;
+  pendingSettings.showTimer = settingsSnapshot.showTimer;
+  pendingSettings.showScore = settingsSnapshot.showScore;
+  pendingSettings.backStyle = settingsSnapshot.backStyle;
+  syncTimerInterval();
+  applyHudVisibility();
+  renderAll();
+}
+
 document.getElementById('btn-settings').addEventListener('click', openSettings);
-document.getElementById('settings-cancel').addEventListener('click', ()=> overlay.classList.remove('show'));
-overlay.addEventListener('click', (e)=>{ if(e.target===overlay) overlay.classList.remove('show'); });
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  revertToSnapshot();
+  overlay.classList.remove('show');
+});
+overlay.addEventListener('click', (e)=>{ if(e.target===overlay){ revertToSnapshot(); overlay.classList.remove('show'); } });
 
 document.querySelectorAll('#seg-draw button').forEach(b=>{
   b.addEventListener('click', ()=>{
     pendingSettings.drawCount = Number(b.dataset.val);
     document.querySelectorAll('#seg-draw button').forEach(x=>x.classList.toggle('active', x===b));
+    // Safe to preview live only if no cards have been drawn yet this game.
+    if(state.waste.length===0){
+      state.drawCount = pendingSettings.drawCount;
+    }
+    refreshDrawNote();
   });
 });
-document.getElementById('tog-timer').addEventListener('change', (e)=>{ pendingSettings.showTimer = e.target.checked; });
-document.getElementById('tog-score').addEventListener('change', (e)=>{ pendingSettings.showScore = e.target.checked; });
+document.getElementById('tog-timer').addEventListener('change', (e)=>{
+  pendingSettings.showTimer = e.target.checked;
+  state.showTimer = e.target.checked;
+  syncTimerInterval();
+  applyHudVisibility();
+});
+document.getElementById('tog-score').addEventListener('change', (e)=>{
+  pendingSettings.showScore = e.target.checked;
+  state.showScore = e.target.checked;
+  applyHudVisibility();
+});
 
 document.querySelectorAll('.backswatch').forEach(sw=>{
   sw.addEventListener('click', ()=>{
@@ -1223,6 +1282,13 @@ document.querySelectorAll('.backswatch').forEach(sw=>{
 });
 
 document.getElementById('settings-apply').addEventListener('click', ()=>{
+  // Everything safe has already been live-applied as the player interacted;
+  // this just locks it in (updates the "before" snapshot) and closes.
+  settingsSnapshot = null;
+  overlay.classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  settingsSnapshot = null;
   overlay.classList.remove('show');
   newGame();
 });
