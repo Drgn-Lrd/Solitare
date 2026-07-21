@@ -22,19 +22,21 @@
     --card-h: calc(var(--card-w) * 1.42);
     --gap: clamp(6px, 1.2vw, 14px);
     --face-scale: 0.92;
-    --back-scale: 1.28;
+    --back-scale: 2.2;
     font-size: 16px;
   }
   *{box-sizing:border-box;}
   html,body{
-    margin:0; padding:0; min-height:100%;
+    margin:0; padding:0; height:100%;
     background: radial-gradient(ellipse at 50% -10%, #241708, #120b04 65%);
     color: var(--ivory);
     font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
-    overflow-x:hidden;
     user-select:none;
     -webkit-user-select:none;
+    display:flex; flex-direction:column;
   }
+  html{ overflow:hidden; }
+  body{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; }
 
   header{
     display:flex; align-items:center; justify-content:space-between;
@@ -58,7 +60,7 @@
   }
   .brand small{ display:block; letter-spacing:3px; font-size:9px; color:#c9b89a; opacity:.8; margin-top:-2px;}
 
-  .hud{ display:flex; align-items:center; gap: clamp(6px,1.6vw,14px); }
+  .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
   .chip{
     background: var(--panel);
     border: 1px solid var(--panel-line);
@@ -87,8 +89,10 @@
   .textbtn:hover{ background:#123a2c; }
 
   .stage{
-    padding: clamp(10px,2vw,24px) clamp(8px,2.4vw,22px) 40px;
+    padding: clamp(8px,1.6vw,18px) clamp(8px,2.4vw,22px) clamp(8px,1.6vw,16px);
     max-width: 1240px; margin: 0 auto;
+    display:flex; flex-direction:column;
+    flex:1; min-height:0; width:100%;
   }
   .table-frame{
     border-radius: 22px;
@@ -98,6 +102,7 @@
       repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 7px);
     box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.06);
     position:relative;
+    flex:1; min-height:0; display:flex;
   }
   .table-frame::before{
     content:""; position:absolute; inset:6px; border-radius:16px;
@@ -108,11 +113,12 @@
     background-image:
       radial-gradient(ellipse 140% 90% at 50% -10%, #1a7a54, var(--felt-1) 45%, var(--felt-2) 100%);
     box-shadow: inset 0 0 90px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3);
-    padding: clamp(14px,2.2vw,26px) clamp(10px,2.4vw,22px) 28px;
+    padding: clamp(14px,2.2vw,26px) clamp(10px,2.4vw,22px) 18px;
+    flex:1; min-height:0; width:100%;
   }
 
   .row{ display:flex; gap: var(--gap); }
-  .top-row{ justify-content:space-between; margin-bottom: clamp(14px,2.4vw,26px); }
+  .top-row{ justify-content:space-between; margin-bottom: clamp(10px,2vw,20px); }
   .foundations{ display:flex; gap: var(--gap); }
   .stockwaste{ display:flex; gap: var(--gap); }
   .tableau-row{ display:flex; gap: var(--gap); }
@@ -135,7 +141,8 @@
   }
   .pile.slot.drop-ok{ border-color:#7ee6a8; box-shadow: 0 0 14px #7ee6a888, inset 0 0 10px rgba(0,0,0,0.35);}
   .tcol .pile.slot{ position:absolute; top:0; left:0; }
-  .tcol{ height: calc(var(--card-h) + 26px * 6 + 40px); }
+  .tcol{ min-height: var(--card-h); transition: height .2s ease; }
+  .pile{ transition: width .2s ease, height .2s ease; }
 
   /* ---------- Cards (real image assets) ---------- */
   .card{
@@ -144,7 +151,7 @@
     border-radius: 9px;
     background: var(--ivory);
     box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 3px 7px rgba(0,0,0,.4);
-    transition: box-shadow .15s ease;
+    transition: box-shadow .15s ease, width .2s ease, height .2s ease;
     cursor: grab;
     touch-action: none;
     overflow:hidden;
@@ -226,7 +233,6 @@
   .backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
   .backswatch.active{ border-color: #7ee6a8; }
 
-  footer{ text-align:center; padding: 6px 0 26px; color:#8a7458; font-size:11px; letter-spacing:2px;}
   @media (max-width:560px){
     .brand small{ display:none; }
     .chip{ padding:5px 9px; font-size:11px; min-width:52px;}
@@ -246,7 +252,10 @@
   <div class="hud">
     <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
     <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+    <button class="iconbtn" id="btn-undo" title="Undo">↺</button>
+    <button class="textbtn" id="btn-automove" title="Send eligible top cards home">Auto Move</button>
     <button class="textbtn" id="btn-newgame">New Game</button>
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
@@ -272,12 +281,27 @@
   </div>
 </div>
 
-<footer>DRAG · DOUBLE-TAP TO SEND HOME · CLICK STOCK TO DRAW</footer>
-
 <div class="winmask" id="winmask">
   <h2>You Win!</h2>
   <p id="win-sub">Cleared in — </p>
   <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Klondike Solitaire</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Drag a card (or a valid stack) onto a foundation or another tableau pile.</li>
+      <li>Double-tap a card to send it straight to its foundation if possible.</li>
+      <li>Tap the stock pile to draw new cards.</li>
+      <li><b>Undo</b> reverses your last move, one step at a time.</li>
+      <li><b>Auto Move</b> sends any currently eligible top cards to their foundations — it won't play the rest of the game for you, and you can still pull cards back off a foundation onto the tableau.</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
 </div>
 
 <div class="overlay" id="settings-overlay">
@@ -404,10 +428,37 @@ const state = {
   score: 0,
   seconds: 0,
   timerHandle: null,
-  selected: null
+  selected: null,
+  undoStack: []
 };
 
 const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'10' };
+
+function snapshotForUndo(){
+  return JSON.stringify({
+    stock: state.stock, waste: state.waste,
+    foundations: state.foundations, tableau: state.tableau,
+    score: state.score
+  });
+}
+function pushUndo(){
+  state.undoStack.push(snapshotForUndo());
+  if(state.undoStack.length > 200) state.undoStack.shift();
+  updateUndoButton();
+}
+function undoMove(){
+  if(!state.undoStack.length) return;
+  const snap = JSON.parse(state.undoStack.pop());
+  state.stock = snap.stock; state.waste = snap.waste;
+  state.foundations = snap.foundations; state.tableau = snap.tableau;
+  state.score = snap.score;
+  clearSelection();
+  renderAll();
+}
+function updateUndoButton(){
+  const btn = document.getElementById('btn-undo');
+  if(btn) btn.style.opacity = state.undoStack.length ? '1' : '0.4';
+}
 
 function newGame(){
   clearInterval(state.timerHandle);
@@ -422,6 +473,7 @@ function newGame(){
   state.score = 0;
   state.seconds = 0;
   state.selected = null;
+  state.undoStack = [];
 
   for(let col=0; col<7; col++){
     for(let i=0;i<=col;i++){
@@ -437,6 +489,7 @@ function newGame(){
     state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
   }
   document.getElementById('winmask').classList.remove('show');
+  updateUndoButton();
   renderAll();
 }
 
@@ -468,8 +521,53 @@ function ensureTableauCols(){
   }
 }
 
+const OVERLAP_FRAC = 0.183;
+const CARD_RATIO = 1.42;
+function cardMetrics(){
+  const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w')) || 80;
+  const h = w * CARD_RATIO;
+  return { w, h, overlap: h*OVERLAP_FRAC, fan: w*0.22 };
+}
+
+function fitBoard(){
+  const header = document.querySelector('header');
+  const stage = document.querySelector('.stage');
+  const frame = document.querySelector('.table-frame');
+  const felt = document.querySelector('.table-felt');
+  if(!header || !stage || !frame || !felt) return;
+
+  const headerH = header.getBoundingClientRect().height;
+  const stageCS = getComputedStyle(stage);
+  const frameCS = getComputedStyle(frame);
+  const feltCS = getComputedStyle(felt);
+
+  const vPad = parseFloat(stageCS.paddingTop)+parseFloat(stageCS.paddingBottom)
+             + parseFloat(frameCS.paddingTop)+parseFloat(frameCS.paddingBottom)
+             + parseFloat(feltCS.paddingTop)+parseFloat(feltCS.paddingBottom);
+  const hPad = parseFloat(stageCS.paddingLeft)+parseFloat(stageCS.paddingRight)
+             + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
+             + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
+
+  const availH = window.innerHeight - headerH - vPad - 10;
+  const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
+
+  const maxStack = Math.max(7, ...state.tableau.map(c=>c.length));
+  const topRowGap = 18;
+  const denom = 2 + (maxStack-1)*OVERLAP_FRAC;
+  const cardHByHeight = (availH - topRowGap) / denom;
+  const cardWByHeight = cardHByHeight / CARD_RATIO;
+
+  const gapPx = 10;
+  const cardWByWidth = (availW - gapPx*6) / 7;
+
+  let cardW = Math.min(cardWByHeight, cardWByWidth);
+  cardW = Math.max(44, Math.min(cardW, 140));
+  document.documentElement.style.setProperty('--card-w', cardW+'px');
+}
+
 function renderAll(){
   ensureTableauCols();
+  fitBoard();
   renderHUD();
   renderStock();
   renderWaste();
@@ -505,13 +603,13 @@ function renderWaste(){
   p.querySelectorAll('.card').forEach(e=>e.remove());
   const n = state.waste.length;
   if(!n) return;
+  const metrics = cardMetrics();
   const showN = Math.min(state.drawCount, n);
   const startIdx = n - showN;
-  const fanStep = 22;
   for(let i=startIdx;i<n;i++){
     const card = state.waste[i];
     const el = makeCardEl(card,'waste','waste',i);
-    el.style.left = ((i-startIdx) * fanStep) + 'px';
+    el.style.left = ((i-startIdx) * metrics.fan) + 'px';
     if(i < n-1){ el.style.cursor='default'; }
     p.appendChild(el);
   }
@@ -529,16 +627,17 @@ function renderFoundations(){
   }
 }
 function renderTableau(){
-  const overlap = 26;
+  const metrics = cardMetrics();
   for(let c=0;c<7;c++){
     const col = document.querySelector('.tcol[data-index="'+c+'"]');
     col.querySelectorAll('.card').forEach(e=>e.remove());
     const pile = state.tableau[c];
     pile.forEach((card, i)=>{
       const el = makeCardEl(card,'tableau',c,i);
-      el.style.top = (i*overlap)+'px';
+      el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
     });
+    col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap + 8) + 'px';
   }
 }
 
@@ -561,11 +660,13 @@ function canPlaceOnFoundation(card, destPile, suit){
 function drawFromStock(){
   if(state.stock.length===0){
     if(state.waste.length===0) return;
+    pushUndo();
     state.stock = state.waste.reverse().map(c=>({...c, faceUp:false}));
     state.waste = [];
     renderAll();
     return;
   }
+  pushUndo();
   const n = Math.min(state.drawCount, state.stock.length);
   for(let i=0;i<n;i++){
     const c = state.stock.pop();
@@ -610,6 +711,7 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
     if(movingCards.length!==1) return false;
     const destPile = state.foundations[toKey];
     if(!canPlaceOnFoundation(card, destPile, toKey)) return false;
+    pushUndo();
     fromPile.splice(fromIndex, movingCards.length);
     destPile.push(card);
     addScore(10);
@@ -617,6 +719,7 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
     const destPile = state.tableau[toKey];
     if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false;
     if(!canPlaceOnTableau(card, destPile)) return false;
+    pushUndo();
     fromPile.splice(fromIndex, movingCards.length);
     destPile.push(...movingCards);
     if(fromType==='waste') addScore(5);
@@ -642,6 +745,28 @@ function autoMoveToFoundation(fromType, fromKey, fromIndex){
     }
   }
   return false;
+}
+
+function autoMoveAll(){
+  let movedAny = false;
+  let guard = 0;
+  let progress = true;
+  while(progress && guard < 300){
+    guard++;
+    progress = false;
+    if(state.waste.length){
+      const i = state.waste.length-1;
+      if(autoMoveToFoundation('waste','waste',i)){ progress = true; movedAny = true; continue; }
+    }
+    for(let c=0;c<7;c++){
+      const pile = state.tableau[c];
+      if(pile.length){
+        const i = pile.length-1;
+        if(autoMoveToFoundation('tableau',c,i)){ progress = true; movedAny = true; break; }
+      }
+    }
+  }
+  return movedAny;
 }
 
 function checkWin(){
@@ -874,6 +999,19 @@ document.getElementById('btn-newgame').addEventListener('click', newGame);
 document.getElementById('win-newgame').addEventListener('click', ()=>{
   document.getElementById('winmask').classList.remove('show');
   newGame();
+});
+document.getElementById('btn-undo').addEventListener('click', undoMove);
+document.getElementById('btn-automove').addEventListener('click', ()=>{ clearSelection(); autoMoveAll(); });
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{ fitBoard(); }, 100);
 });
 
 /* =========================================================
