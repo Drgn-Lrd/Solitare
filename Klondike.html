@@ -21,8 +21,8 @@
     --card-w: clamp(50px, 8.6vw, 100px);
     --card-h: calc(var(--card-w) * 1.42);
     --gap: clamp(6px, 1.2vw, 14px);
-    --face-scale: 0.92;
-    --back-scale: 2.2;
+    --face-scale: 1.0;
+    --back-scale: 3.4;
     font-size: 16px;
   }
   *{box-sizing:border-box;}
@@ -46,6 +46,7 @@
     position: sticky; top:0; z-index: 50;
   }
   .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-text{ display:flex; flex-direction:column; gap:2px; align-items:flex-start; }
   .brand .crest{
     width:34px; height:34px; border-radius:50%;
     background: radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
@@ -59,8 +60,43 @@
     text-shadow: 0 1px 0 #000, 0 0 18px rgba(232,200,115,0.25);
   }
   .brand small{ display:block; letter-spacing:3px; font-size:9px; color:#c9b89a; opacity:.8; margin-top:-2px;}
+  .newgame-btn{ margin-top:3px; padding:4px 12px; font-size:11px; }
 
   .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
+
+  .bottombar{
+    display:flex; justify-content:center; align-items:stretch; gap: clamp(10px,4vw,28px);
+    padding: 8px clamp(10px,4vw,28px) calc(8px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(0deg, #150d05, #150d0500 100%);
+    border-top: 1px solid #3a2812;
+    flex-shrink:0;
+  }
+  .bottombtn{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    background: var(--panel); border:1px solid var(--panel-line); border-radius:14px;
+    color: var(--brass-light); font-family:inherit; cursor:pointer;
+    padding: 8px 18px; min-width:76px;
+    transition: background .15s ease, transform .15s ease, opacity .15s ease;
+  }
+  .bottombtn:active{ transform: scale(.94); }
+  .bottombtn .bicon{ font-size:19px; line-height:1; }
+  .bottombtn .blabel{ font-size:10px; letter-spacing:1px; color:#dce9df; }
+  .bottombtn.disabled{ opacity:0.4; pointer-events:none; }
+
+  .hint-toast{
+    position:fixed; left:50%; bottom: 84px; transform: translateX(-50%) translateY(10px);
+    background: rgba(14,47,36,0.95); border:1px solid var(--panel-line); color:var(--ivory);
+    padding:9px 18px; border-radius:20px; font-size:13px; letter-spacing:.5px;
+    opacity:0; pointer-events:none; transition: opacity .25s ease, transform .25s ease;
+    z-index:150; max-width:88vw; text-align:center;
+  }
+  .hint-toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  @keyframes pulseGlow{
+    0%,100%{ box-shadow: 0 0 0 3px rgba(126,230,168,0); }
+    50%{ box-shadow: 0 0 0 4px rgba(126,230,168,0.9), 0 0 18px rgba(126,230,168,0.7); }
+  }
+  .hint-pulse{ animation: pulseGlow 0.7s ease-in-out 2; }
   .chip{
     background: var(--panel);
     border: 1px solid var(--panel-line);
@@ -158,10 +194,10 @@
   }
   .card.dragging{ cursor:grabbing; z-index:999 !important; filter: drop-shadow(0 10px 14px rgba(0,0,0,.55)); transition:none; }
   .card.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 4px 10px rgba(0,0,0,.5); }
-  .face, .back-img-wrap{ position:absolute; inset:0; border-radius:9px; overflow:hidden; background:var(--ivory); }
+  .face, .back-img-wrap{ position:absolute; inset:0; border-radius:9px; overflow:hidden; background:transparent; }
   .back-img-wrap{ background:#0d3358; }
   .card-face-img, .card-back-img{
-    width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; user-select:none;
+    width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; user-select:none;
   }
   .card-face-img{ transform: scale(var(--face-scale)); transform-origin:center; }
   .card-back-img{ transform: scale(var(--back-scale)); transform-origin:center; }
@@ -244,17 +280,15 @@
 <header>
   <div class="brand">
     <div class="crest">♠</div>
-    <div>
+    <div class="brand-text">
       <h1>Klondike</h1>
       <small>Solitaire</small>
+      <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
     </div>
   </div>
   <div class="hud">
     <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
     <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
-    <button class="iconbtn" id="btn-undo" title="Undo">↺</button>
-    <button class="textbtn" id="btn-automove" title="Send eligible top cards home">Auto Move</button>
-    <button class="textbtn" id="btn-newgame">New Game</button>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
@@ -281,10 +315,38 @@
   </div>
 </div>
 
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+  <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+  <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+</div>
+
 <div class="winmask" id="winmask">
   <h2>You Win!</h2>
   <p id="win-sub">Cleared in — </p>
   <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+</div>
+
+<div class="winmask" id="nomovesmask">
+  <h2>No More Moves</h2>
+  <p>Looks like the game is stuck.</p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="nomoves-undo">Undo Last Move</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="nomoves-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
 </div>
 
 <div class="overlay" id="help-overlay">
@@ -296,6 +358,7 @@
       <li>Double-tap a card to send it straight to its foundation if possible.</li>
       <li>Tap the stock pile to draw new cards.</li>
       <li><b>Undo</b> reverses your last move, one step at a time.</li>
+      <li><b>Hint</b> highlights one move you can currently make.</li>
       <li><b>Auto Move</b> sends any currently eligible top cards to their foundations — it won't play the rest of the game for you, and you can still pull cards back off a foundation onto the tableau.</li>
     </ul>
     <div class="modal-actions">
@@ -489,6 +552,7 @@ function newGame(){
     state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
   }
   document.getElementById('winmask').classList.remove('show');
+  document.getElementById('nomovesmask').classList.remove('show');
   updateUndoButton();
   renderAll();
 }
@@ -534,9 +598,11 @@ function fitBoard(){
   const stage = document.querySelector('.stage');
   const frame = document.querySelector('.table-frame');
   const felt = document.querySelector('.table-felt');
+  const bottombar = document.querySelector('.bottombar');
   if(!header || !stage || !frame || !felt) return;
 
   const headerH = header.getBoundingClientRect().height;
+  const bottombarH = bottombar ? bottombar.getBoundingClientRect().height : 0;
   const stageCS = getComputedStyle(stage);
   const frameCS = getComputedStyle(frame);
   const feltCS = getComputedStyle(felt);
@@ -548,7 +614,7 @@ function fitBoard(){
              + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
              + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
 
-  const availH = window.innerHeight - headerH - vPad - 10;
+  const availH = window.innerHeight - headerH - bottombarH - vPad - 10;
   const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
 
   const maxStack = Math.max(7, ...state.tableau.map(c=>c.length));
@@ -573,7 +639,8 @@ function renderAll(){
   renderWaste();
   renderFoundations();
   renderTableau();
-  checkWin();
+  const won = checkWin();
+  if(!won) checkNoMoves();
 }
 
 function makeCardEl(card, pileType, pileKey, index){
@@ -778,6 +845,121 @@ function checkWin(){
       ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
       : (state.showScore ? ('Score '+state.score) : 'Well played.');
     document.getElementById('winmask').classList.add('show');
+    return true;
+  }
+  return false;
+}
+
+/* =========================================================
+   MOVE SCANNER: hints + no-moves detection
+   ========================================================= */
+function findAnyMove(){
+  if(state.waste.length){
+    const i = state.waste.length-1;
+    const c = state.waste[i];
+    for(const s of SUITS){
+      if(canPlaceOnFoundation(c, state.foundations[s], s)) return {type:'waste-foundation', from:'waste', fromKey:'waste', index:i, to:s};
+    }
+    for(let t=0;t<7;t++){
+      if(canPlaceOnTableau(c, state.tableau[t])) return {type:'waste-tableau', from:'waste', fromKey:'waste', index:i, to:t};
+    }
+  }
+  for(let c=0;c<7;c++){
+    const pile = state.tableau[c];
+    for(let i=0;i<pile.length;i++){
+      if(!pile[i].faceUp) continue;
+      const card = pile[i];
+      if(i===pile.length-1){
+        for(const s of SUITS){
+          if(canPlaceOnFoundation(card, state.foundations[s], s)) return {type:'tableau-foundation', from:'tableau', fromKey:c, index:i, to:s};
+        }
+      }
+      for(let t=0;t<7;t++){
+        if(t===c) continue;
+        if(canPlaceOnTableau(card, state.tableau[t])) return {type:'tableau-tableau', from:'tableau', fromKey:c, index:i, to:t};
+      }
+    }
+  }
+  for(const s of SUITS){
+    const f = state.foundations[s];
+    if(f.length){
+      const top = f[f.length-1];
+      for(let t=0;t<7;t++){
+        if(canPlaceOnTableau(top, state.tableau[t])) return {type:'foundation-tableau', from:'foundation', fromKey:s, index:f.length-1, to:t};
+      }
+    }
+  }
+  if(state.stock.length>0) return {type:'draw'};
+  if(state.stock.length===0 && state.waste.length>0) return {type:'recycle'};
+  return null;
+}
+
+function checkNoMoves(){
+  const mask = document.getElementById('nomovesmask');
+  if(!mask) return;
+  const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
+  if(total===52){ mask.classList.remove('show'); return; }
+  const move = findAnyMove();
+  if(!move){
+    mask.classList.add('show');
+  } else {
+    mask.classList.remove('show');
+  }
+}
+
+function showToast(msg, ms){
+  const t = document.getElementById('hint-toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._h);
+  showToast._h = setTimeout(()=> t.classList.remove('show'), ms || 2200);
+}
+
+function pulse(el){
+  if(!el) return;
+  el.classList.remove('hint-pulse');
+  void el.offsetWidth;
+  el.classList.add('hint-pulse');
+  setTimeout(()=> el.classList.remove('hint-pulse'), 1500);
+}
+
+function findCardEl(pileType, pileKey, index){
+  return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
+}
+
+function showHint(){
+  const move = findAnyMove();
+  if(!move){ showToast("No moves left — try Undo or New Game."); return; }
+  const suitName = {S:'spades',H:'hearts',D:'diamonds',C:'clubs'};
+  switch(move.type){
+    case 'draw':
+      showToast('Draw from the stock.');
+      pulse(document.getElementById('pile-stock'));
+      break;
+    case 'recycle':
+      showToast('Tap the stock to reshuffle the waste back in.');
+      pulse(document.getElementById('pile-stock'));
+      break;
+    case 'waste-foundation':
+      showToast('Send the waste card to its foundation.');
+      pulse(findCardEl('waste','waste',move.index));
+      break;
+    case 'waste-tableau':
+      showToast('Move the waste card onto column '+(move.to+1)+'.');
+      pulse(findCardEl('waste','waste',move.index));
+      break;
+    case 'tableau-foundation':
+      showToast('Send the top card of column '+(move.fromKey+1)+' to its foundation.');
+      pulse(findCardEl('tableau',move.fromKey,move.index));
+      break;
+    case 'tableau-tableau':
+      showToast('Move from column '+(move.fromKey+1)+' onto column '+(move.to+1)+'.');
+      pulse(findCardEl('tableau',move.fromKey,move.index));
+      break;
+    case 'foundation-tableau':
+      showToast('You can move the '+suitName[move.fromKey]+' foundation card onto column '+(move.to+1)+'.');
+      pulse(findCardEl('foundation',move.fromKey,move.index));
+      break;
   }
 }
 
@@ -940,15 +1122,15 @@ SUITS.forEach(s=>{
     }
   });
 });
-document.querySelectorAll('.tcol').forEach(col=>{
-  col.addEventListener('click', (e)=>{
-    if(e.target.closest('.card')) return;
-    if(state.selected){
-      const sel = state.selected;
-      tryMove(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index));
-      clearSelection();
-    }
-  });
+document.getElementById('tableau').addEventListener('click', (e)=>{
+  if(e.target.closest('.card')) return;
+  const col = e.target.closest('.tcol');
+  if(!col) return;
+  if(state.selected){
+    const sel = state.selected;
+    tryMove(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index));
+    clearSelection();
+  }
 });
 
 /* =========================================================
@@ -995,13 +1177,31 @@ document.getElementById('settings-apply').addEventListener('click', ()=>{
   overlay.classList.remove('show');
   newGame();
 });
-document.getElementById('btn-newgame').addEventListener('click', newGame);
 document.getElementById('win-newgame').addEventListener('click', ()=>{
   document.getElementById('winmask').classList.remove('show');
   newGame();
 });
 document.getElementById('btn-undo').addEventListener('click', undoMove);
 document.getElementById('btn-automove').addEventListener('click', ()=>{ clearSelection(); autoMoveAll(); });
+document.getElementById('btn-hint').addEventListener('click', ()=>{ clearSelection(); showHint(); });
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{
+  confirmOverlay.classList.remove('show');
+  newGame();
+});
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('nomoves-undo').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  undoMove();
+});
+document.getElementById('nomoves-newgame').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  newGame();
+});
 
 const helpOverlay = document.getElementById('help-overlay');
 document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
