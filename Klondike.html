@@ -1,17 +1,16 @@
 <!DOCTYPE html>
 <!--
   LAST EDIT:
-  - Corrected click-to-move highlighting per feedback: it now tracks the
-    cursor live (mousemove) rather than lighting up every legal target at
-    once on selection. Click a card, then move the mouse — whichever pile
-    it's hovering over (with ~26px of padding around each pile's box, more
-    forgiving than exact pixel hit-testing) lights up only if the move is
-    actually legal there. Drag behavior is unchanged.
-  - Reverted the card-back/face-set folder-scanning feature added
-    experimentally last turn — shelved per request until the user has all
-    the static art assets ready. Back-cover picker is back to the simple
-    static 4-swatch version (back_6/7/9/10), no GitHub API calls, no
-    face-set picker.
+  - Added image preloading to fix cards being blank when first flipped
+    (draw pile reveal, or a tableau card exposed after moving the stack
+    on top of it). A fresh <img> pointed at a file it hasn't loaded yet
+    has real fetch+decode latency before anything paints — that's the
+    blank window, and clicking the card didn't actually fix it, it just
+    triggered a re-render that landed after the browser's cache had
+    already warmed up from the first attempt. preloadAllCardImages() now
+    fires all 52 face images + every back image as background Image()
+    requests the moment the page loads, before any card is ever dealt,
+    so by the time one is revealed mid-game its file is already cached.
 -->
 <html lang="en">
 <head>
@@ -1438,9 +1437,30 @@ window.addEventListener('resize', ()=>{
   resizeTimer = setTimeout(()=>{ fitBoard(); }, 100);
 });
 
+// Preload every card face + back image right away, before any card is
+// ever dealt or flipped. A card being blank for a moment (or until you
+// click it and trigger a re-render) is decode/fetch latency on a
+// brand-new <img> element the first time that specific file is needed —
+// warming the browser's cache for everything up front avoids that mid-game.
+const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
+function preloadAllCardImages(){
+  const urls = [];
+  for(const s of SUITS){
+    for(const r of RANKS){
+      urls.push(cardImgSrc({rank:r, suit:s}));
+    }
+  }
+  KNOWN_BACK_FILES.forEach(f=> urls.push('cards/'+f));
+  urls.forEach(url=>{
+    const img = new Image();
+    img.src = url;
+  });
+}
+
 /* =========================================================
    INIT
    ========================================================= */
+preloadAllCardImages();
 ensureTableauCols();
 newGame();
 
