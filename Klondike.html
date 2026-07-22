@@ -1,16 +1,20 @@
 <!DOCTYPE html>
 <!--
   LAST EDIT:
-  - Added image preloading to fix cards being blank when first flipped
-    (draw pile reveal, or a tableau card exposed after moving the stack
-    on top of it). A fresh <img> pointed at a file it hasn't loaded yet
-    has real fetch+decode latency before anything paints — that's the
-    blank window, and clicking the card didn't actually fix it, it just
-    triggered a re-render that landed after the browser's cache had
-    already warmed up from the first attempt. preloadAllCardImages() now
-    fires all 52 face images + every back image as background Image()
-    requests the moment the page loads, before any card is ever dealt,
-    so by the time one is revealed mid-game its file is already cached.
+  - Added the classic Windows-Solitaire "card cascade" win animation:
+    when all 52 cards land in the foundations, every card launches one
+    after another from its foundation pile, arcs across the screen
+    under simple gravity, bounces off the bottom a few times losing
+    height each bounce, then fades out. The "You Win" dialog now waits
+    ~1.4s before appearing so the cascade gets a moment to play solo
+    first. See startWinCascade()/spawnCascadeCard() and the
+    CASCADE_STAGGER_MS/CASCADE_GRAVITY/CASCADE_BOUNCE_DAMP constants if
+    you want to tune the timing or bounciness.
+  - Did a full documentation pass across the whole file (CSS and JS) —
+    every section and most functions now explain what they do and why,
+    including concrete "change this to do X" pointers (resizing cards,
+    recoloring the felt/wood, adding a new card back, adjusting the
+    image zoom knobs, etc). This was purely comments, no logic changed.
 -->
 <html lang="en">
 <head>
@@ -18,24 +22,67 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Klondike</title>
 <style>
+  /* =========================================================
+     THEME VARIABLES
+     Everything here is a CSS custom property ("--name"), which means it's
+     defined once and reused everywhere via var(--name). Change a value
+     here and it updates the whole page — this is the first place to look
+     if you want to reskin colors or resize cards.
+     ========================================================= */
   :root{
+    /* Felt table background (a radial gradient from --felt-1 in the
+       center fading to --felt-2 at the edges — see .table-felt below). */
     --felt-1:#0e4432;
     --felt-2:#082c21;
+    /* Wood-grain rail around the table (.table-frame gradient below). */
     --wood-1:#7a5230;
     --wood-2:#4a2f18;
     --wood-3:#2c1c0e;
+    /* Gold/brass accent used for borders, buttons, corner index text, etc.
+       --brass is the darker shade, --brass-light the highlight shade. */
     --brass:#c9a24b;
     --brass-light:#e8c873;
+    /* Card face background and the two suit-color text colors. */
     --ivory:#faf6ec;
-    --navy:#16233f;
-    --burgundy:#8c1f3b;
+    --navy:#16233f;      /* spades/clubs (fallback text only — real card
+                            art has its own colors baked in) */
+    --burgundy:#8c1f3b;  /* hearts/diamonds fallback text */
+    /* Header/settings-panel background + border tones. */
     --panel:#0e2f24;
     --panel-line:#1c5340;
+
+    /* --- CARD SIZE ---
+       --card-w is the single source of truth for how big cards are.
+       clamp(min, preferred, max) means: never smaller than 50px, never
+       bigger than 100px, and in between scale with 8.6% of viewport
+       width. This is the FALLBACK value used before JavaScript measures
+       the screen — see fitBoard() further down, which overwrites this
+       variable at runtime to fit your exact window/phone size.
+       --card-h is derived automatically as a fixed ratio of the width —
+       1.4523 matches the real aspect ratio of the ace_of_spades.svg
+       artwork (242.67 / 167.09), so cards aren't stretched or squished.
+       If you swap in card art with a different aspect ratio, update
+       this ratio (and CARD_RATIO in the JS section below — they must
+       match) rather than fighting it with object-fit tricks. */
     --card-w: clamp(50px, 8.6vw, 100px);
     --card-h: calc(var(--card-w) * 1.4523);
-    --gap: clamp(6px, 1.2vw, 14px);
+    --gap: clamp(6px, 1.2vw, 14px); /* space between piles/columns */
+
+    /* --- IMAGE FIT TUNING ---
+       Card art is displayed with object-fit:cover (always fills the
+       card shape completely, cropping overflow — see .card-face-img
+       below). These two knobs let you zoom in/out on top of that if a
+       particular image file has extra blank margin baked into it (this
+       happened with an early card-back photo that had lots of padding
+       around a smaller centered picture — bumping --back-scale up
+       cropped that padding away). 1.0 = no extra zoom. Try values like
+       1.1–1.5 if a new image you add looks like it has a visible border
+       of empty space around the art.
+       Example: to zoom in 20% on card FRONTS only, change:
+         --face-scale: 1.0;   ->   --face-scale: 1.2; */
     --face-scale: 1.0;
     --back-scale: 1.0;
+
     font-size: 16px;
   }
   *{box-sizing:border-box;}
@@ -51,6 +98,15 @@
   html{ overflow:hidden; }
   body{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; }
 
+  /* =========================================================
+     HEADER (top bar)
+     A flex row: brand/title on the left, score+time chips and buttons
+     on the right (.hud). html/body are set up above as a full-height
+     flex column (header, then .stage, then .bottombar) so the felt
+     table can stretch to fill whatever's left after the header and
+     bottom bar — see fitBoard() in the script for how card size is
+     computed to match.
+     ========================================================= */
   header{
     display:flex; align-items:center; justify-content:space-between;
     padding: 10px clamp(10px,3vw,28px);
@@ -77,6 +133,11 @@
 
   .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
 
+  /* Bottom action bar: Undo / Hint / Auto Move. Deliberately placed at
+     the very bottom of the screen (not the header) so they're within
+     easy thumb reach on a phone held in one hand. env(safe-area-inset-
+     bottom) adds extra padding on phones with a home-indicator bar
+     (iPhones etc.) so buttons don't sit under it. */
   .bottombar{
     display:flex; justify-content:center; align-items:stretch; gap: clamp(10px,4vw,28px);
     padding: 8px clamp(10px,4vw,28px) calc(8px + env(safe-area-inset-bottom, 0px));
@@ -96,6 +157,9 @@
   .bottombtn .blabel{ font-size:10px; letter-spacing:1px; color:#dce9df; }
   .bottombtn.disabled{ opacity:0.4; pointer-events:none; }
 
+  /* Small popup message used by the Hint button (e.g. "Draw from the
+     stock") — fades in near the bottom bar, auto-hides after a couple
+     seconds (see showToast() in the script). */
   .hint-toast{
     position:fixed; left:50%; bottom: 84px; transform: translateX(-50%) translateY(10px);
     background: rgba(14,47,36,0.95); border:1px solid var(--panel-line); color:var(--ivory);
@@ -105,11 +169,17 @@
   }
   .hint-toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
 
+  /* Pulsing green glow used by Hint to point at a specific card — see
+     pulse() in the script, which adds this class for ~1.5s then removes
+     it. Runs twice (the "2" in the animation shorthand below). */
   @keyframes pulseGlow{
     0%,100%{ box-shadow: 0 0 0 3px rgba(126,230,168,0); }
     50%{ box-shadow: 0 0 0 4px rgba(126,230,168,0.9), 0 0 18px rgba(126,230,168,0.7); }
   }
   .hint-pulse{ animation: pulseGlow 0.7s ease-in-out 2; }
+
+  /* SCORE/TIME pill chips in the header (hidden unless the matching
+     Settings toggle is on — see applyHudVisibility() in the script). */
   .chip{
     background: var(--panel);
     border: 1px solid var(--panel-line);
@@ -119,6 +189,7 @@
     min-width: 64px; justify-content:center;
   }
   .chip b{ color: var(--brass-light); font-weight:600; }
+  /* Round icon-only button (Settings gear, Help "?"). */
   .iconbtn{
     width:36px; height:36px; border-radius:50%;
     border:1px solid var(--panel-line);
@@ -130,6 +201,7 @@
   }
   .iconbtn:hover{ background:#123a2c; transform: translateY(-1px); }
   .iconbtn:active{ transform: scale(.92); }
+  /* Pill-shaped text button (New Game, Cancel/Apply, etc). */
   .textbtn{
     border:1px solid var(--panel-line); background:var(--panel); color:var(--ivory);
     padding:7px 14px; border-radius:20px; cursor:pointer; font-family:inherit;
@@ -137,12 +209,19 @@
   }
   .textbtn:hover{ background:#123a2c; }
 
+  /* .stage > .table-frame > .table-felt is a set of nested flex
+     containers, each with flex:1, so the felt playing surface stretches
+     to fill exactly the space left over after the header and bottom
+     bar — this is what lets the table resize itself to any screen
+     without leaving a big empty gap or needing the page to scroll. */
   .stage{
     padding: clamp(8px,1.6vw,18px) clamp(8px,2.4vw,22px) clamp(8px,1.6vw,16px);
     max-width: 1240px; margin: 0 auto;
     display:flex; flex-direction:column;
     flex:1; min-height:0; width:100%;
   }
+  /* Wood-grain rail around the table. To change the wood color, edit
+     --wood-1/--wood-2/--wood-3 in :root above rather than here. */
   .table-frame{
     border-radius: 22px;
     padding: clamp(10px,1.6vw,18px);
@@ -157,6 +236,8 @@
     content:""; position:absolute; inset:6px; border-radius:16px;
     border: 1.5px solid rgba(232,200,115,0.35); pointer-events:none;
   }
+  /* The green felt itself. To change the felt color, edit --felt-1/
+     --felt-2 in :root above. */
   .table-felt{
     border-radius: 14px;
     background-image:
@@ -166,13 +247,25 @@
     flex:1; min-height:0; width:100%;
   }
 
+  /* .top-row = stock/waste + the 4 foundation slots.
+     .tableau-row = the 7 playing columns below it. */
   .row{ display:flex; gap: var(--gap); }
   .top-row{ justify-content:space-between; margin-bottom: clamp(10px,2vw,20px); }
   .foundations{ display:flex; gap: var(--gap); }
   .stockwaste{ display:flex; gap: var(--gap); }
   .tableau-row{ display:flex; gap: var(--gap); }
+  /* One of the 7 playing columns. flex:1 makes all 7 share the row
+     width equally. Its height is set dynamically in JS (renderTableau)
+     to exactly fit however many cards are currently stacked in it —
+     see the .tcol.drop-ok rule below for why the drag-highlight glow
+     has an explicit width instead of just using this box's edges. */
   .tcol{ flex:1; min-width:0; position:relative; }
 
+  /* .pile = the box a card sits in. .pile.slot is the faint dashed-
+     looking placeholder shown for an EMPTY pile (stock outline, empty
+     foundation, empty tableau column) — once a real card is placed
+     there it's drawn on top and the slot underneath is simply hidden
+     from view, not removed. */
   .pile{
     width: var(--card-w); height: var(--card-h);
     border-radius: 9px;
@@ -184,10 +277,21 @@
     background: rgba(0,0,0,0.14);
     box-shadow: inset 0 0 10px rgba(0,0,0,0.4);
   }
+  /* The faint suit symbol (♠♥♦♣) or stock "↺" shown inside an empty slot. */
   .pile.slot .slot-mark{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     font-size: calc(var(--card-w)*0.42); color: rgba(232,200,115,0.3);
   }
+  /* Green "you can drop here" glow. Two versions: .pile.slot.drop-ok is
+     used for foundations (cards live directly inside the slot element,
+     so glowing the slot itself is enough). .tcol.drop-ok is used for
+     tableau columns instead, because column cards are separate sibling
+     elements stacked on top of the (now-hidden) slot placeholder — see
+     resolveDropTarget() in the script for why that distinction matters.
+     Its size is set explicitly to --card-w rather than 100% because a
+     .tcol stretches wider than a card to fill its equal flex share of
+     the row; sizing off the parent box would make the glow visibly
+     wider than the actual card stack. */
   .pile.slot.drop-ok{ border-color:#7ee6a8; box-shadow: 0 0 14px #7ee6a888, inset 0 0 10px rgba(0,0,0,0.35);}
   .tcol.drop-ok::after{
     content:""; position:absolute; left:-4px; top:-4px;
@@ -200,7 +304,16 @@
   .tcol{ min-height: var(--card-h); transition: height .2s ease; }
   .pile{ transition: width .2s ease, height .2s ease; }
 
-  /* ---------- Cards (real image assets) ---------- */
+  /* =========================================================
+     CARDS (real image assets)
+     Every card on the table is a .card div containing EITHER a .face
+     (front, showing cardImgSrc()) or a .back-img-wrap (back, showing
+     backImgSrc()) — see buildFaceEl()/buildBackEl() in the script. The
+     actual artwork is a plain <img> — object-fit:cover in
+     .card-face-img/.card-back-img below makes it always fill the card
+     shape completely regardless of the source image's own aspect ratio,
+     cropping any overflow rather than leaving empty gaps.
+     ========================================================= */
   .card{
     position:absolute; left:0; top:0;
     width: var(--card-w); height: var(--card-h);
@@ -215,12 +328,19 @@
   .card.dragging{ cursor:grabbing; z-index:999 !important; filter: drop-shadow(0 10px 14px rgba(0,0,0,.55)); transition:none; }
   .card.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 4px 10px rgba(0,0,0,.5); }
   .face, .back-img-wrap{ position:absolute; inset:0; border-radius:9px; overflow:hidden; background:transparent; }
-  .back-img-wrap{ background:#0d3358; }
+  .back-img-wrap{ background:#0d3358; } /* shows briefly while the back image itself is loading */
   .card-face-img, .card-back-img{
     width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; user-select:none;
   }
+  /* Extra zoom controlled by the --face-scale/--back-scale variables
+     up in :root — see the comment there for when/why to change these. */
   .card-face-img{ transform: scale(var(--face-scale)); transform-origin:center; }
   .card-back-img{ transform: scale(var(--back-scale)); transform-origin:center; }
+
+  /* Shown INSTEAD of the real artwork if a card's image file 404s (e.g.
+     you renamed/removed a file, or are previewing without the cards/
+     folder available) — see the onFinalFail callback in buildFaceEl().
+     Draws a plain rank+suit card face using text instead of a photo. */
   .img-fallback{
     position:absolute; inset:0; background:var(--ivory); border-radius:9px; overflow:hidden;
   }
@@ -229,6 +349,15 @@
     gap:calc(var(--card-w)*0.05);
     font-size:calc(var(--card-w)*0.26); font-weight:bold; opacity:0.85;
   }
+  /* Corner rank+suit badge. Default layout is VERTICAL (rank above the
+     suit glyph) for a fully visible card. The .stacked variant switches
+     to horizontal (rank beside the glyph) — used for a tableau card
+     that has another card overlapping it from below, where only a thin
+     strip near the top stays visible; a vertical layout there would get
+     clipped down to just the rank number, hiding the suit entirely
+     (bad for colorblind accessibility, since color alone wouldn't tell
+     you the suit either). See the `covered` flag threaded through
+     makeCardEl -> buildFaceEl in the script. */
   .img-fallback .fc-corner{
     position:absolute; left:6%; top:5%; font-size:calc(var(--card-w)*0.17);
     font-weight:bold; line-height:1.1;
@@ -249,7 +378,27 @@
   .winmask h2{ font-size: clamp(28px,6vw,52px); color: var(--brass-light); letter-spacing:4px; font-variant:small-caps; margin:0; text-shadow:0 0 30px rgba(232,200,115,.5);}
   .winmask p{ color:#cfe6d8; letter-spacing:2px;}
 
-  /* ---------- Settings modal ---------- */
+  /* ---------- Win cascade (bouncing cards) ---------- */
+  /* z-index 150 = above the game board, below .winmask (200) — the
+     "You Win" dialog fades in on top of the cascade after a short delay,
+     like the cascade playing solo for a beat before the dialog dims it. */
+  #cascade-layer{
+    position:fixed; inset:0; z-index:150; overflow:hidden; pointer-events:none;
+  }
+  .cascade-card{
+    position:fixed; cursor:default; will-change: left, top;
+  }
+
+  /* =========================================================
+     SETTINGS MODAL
+     .overlay is the dark backdrop (shared by Settings, Help, the New
+     Game confirm dialog, and the game-over dialog — see the matching
+     <div class="overlay" id="..."> blocks in the HTML). .modal is the
+     actual green card-shaped panel inside it. .segmented is the
+     Draw 1/Draw 3 style toggle-button-row (reused for anything with a
+     small fixed set of choices). .switch/.slider is the on/off toggle
+     used for Show Timer / Show Score.
+     ========================================================= */
   .overlay{
     position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100;
     display:none; align-items:center; justify-content:center;
@@ -275,7 +424,7 @@
   .toggrow{ display:flex; align-items:center; justify-content:space-between; padding:4px 0; }
   .toggrow span{ font-size:14px; color:#e7f2ea;}
   .switch{ position:relative; width:46px; height:26px; flex-shrink:0; }
-  .switch input{ opacity:0; width:0; height:0; }
+  .switch input{ opacity:0; width:0; height:0; } /* the real checkbox is invisible; .slider draws the visible pill */
   .slider{
     position:absolute; inset:0; background:#12402f; border-radius:20px; cursor:pointer;
     transition:.2s; border:1px solid var(--panel-line);
@@ -291,6 +440,14 @@
   .fieldnote{ font-size:11px; color:#e0b95c; margin-top:8px; letter-spacing:.3px; line-height:1.4; }
   .primary{ background: linear-gradient(180deg, var(--brass-light), var(--brass)); color:#2a1e05; border:none; font-weight:bold;}
 
+  /* Card-back picker in Settings: one .backswatch thumbnail per option.
+     TO ADD A NEW CARD BACK: drop the image file in your cards/ folder,
+     then add one more line here following the same pattern —
+       <div class="backswatch" data-val="NAME"><img src="cards/back_NAME.ext"></div>
+     (see the <div class="backpicker" id="back-picker"> block further
+     down in the HTML). data-val is what gets stored as state.backStyle
+     and passed to backImgSrc() in the script — no other code changes
+     needed. */
   .backpicker{ display:flex; gap:10px; flex-wrap:wrap; }
   .backswatch{
     width:52px; height:74px; border-radius:7px; cursor:pointer;
@@ -299,8 +456,10 @@
     background:#0d3358;
   }
   .backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .backswatch.active{ border-color: #7ee6a8; }
+  .backswatch.active{ border-color: #7ee6a8; } /* currently-selected back */
 
+  /* Small-phone tweaks: hide the "Solitaire" subtitle and shrink the
+     score/time chips so the header doesn't get cramped. */
   @media (max-width:560px){
     .brand small{ display:none; }
     .chip{ padding:5px 9px; font-size:11px; min-width:52px;}
@@ -309,6 +468,10 @@
 </head>
 <body>
 
+<!-- HEADER: brand/title + relocated New Game button on the left,
+     score/time chips + Help/Settings icons on the right. See the
+     "HEADER" comment in the CSS for the overall page layout this fits
+     into (header -> .stage -> .bottombar, all flex children of body). -->
 <header>
   <div class="brand">
     <div class="crest">♠</div>
@@ -326,6 +489,12 @@
   </div>
 </header>
 
+<!-- THE TABLE: stock+waste, the 4 foundation slots, then the 7 tableau
+     columns (built dynamically by ensureTableauCols() in the script —
+     #tableau starts empty here on purpose). Every .pile.slot below is
+     just the EMPTY placeholder look; actual cards get inserted by
+     JavaScript on every render (see renderStock/renderWaste/
+     renderFoundations/renderTableau). -->
 <div class="stage">
   <div class="table-frame">
     <div class="table-felt">
@@ -347,20 +516,27 @@
   </div>
 </div>
 
+<!-- Hint message bubble — empty until showToast() fills it in. -->
 <div class="hint-toast" id="hint-toast"></div>
 
+<!-- Thumb-reachable action bar (see the .bottombar CSS comment for why
+     this lives at the bottom of the screen rather than in the header). -->
 <div class="bottombar">
   <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
   <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
   <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
 </div>
 
+<!-- Win dialog — shown by checkWin() a beat after the cascade animation
+     starts (see startWinCascade() in the script). -->
 <div class="winmask" id="winmask">
   <h2>You Win!</h2>
   <p id="win-sub">Cleared in — </p>
   <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
 </div>
 
+<!-- Stuck-game dialog — shown by checkNoMoves() when findAnyMove()
+     can't find anything left to do. -->
 <div class="winmask" id="nomovesmask">
   <h2>No More Moves</h2>
   <p>Looks like the game is stuck.</p>
@@ -370,6 +546,8 @@
   </div>
 </div>
 
+<!-- Confirmation for the header's New Game button, so an accidental tap
+     can't silently wipe an in-progress game. -->
 <div class="overlay" id="confirm-overlay">
   <div class="modal" style="text-align:center;">
     <h3>Start New Game?</h3>
@@ -450,22 +628,34 @@
 
 /* =========================================================
    CARD ASSET PATHS  (files live in /cards next to index.html)
+   'A'/'J'/'Q'/'K' are the ranks used internally (rankValue() below
+   turns them into 1/11/12/13 for comparisons). 'S'/'H'/'D'/'C' are the
+   suits. Filenames on disk use full words instead (see rankFile/
+   suitFile), matching the convention of the actual card-art files:
+     cards/<rank>_of_<suit>.svg   e.g. cards/king_of_hearts.svg
+     cards/back_<name>.png        e.g. cards/back_10.png
    ========================================================= */
 const SUITS = ['S','H','D','C'];
 const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-function rankValue(r){ return RANKS.indexOf(r)+1; }
-function isRed(suit){ return suit==='H'||suit==='D'; }
+function rankValue(r){ return RANKS.indexOf(r)+1; }        // 'A'->1, '10'->10, 'K'->13 — used to compare ranks
+function isRed(suit){ return suit==='H'||suit==='D'; }     // hearts/diamonds are red, spades/clubs are black
 function suitGlyph(suit){ return {S:'♠',H:'♥',D:'♦',C:'♣'}[suit]; }
 
-const RANK_FILE = {A:'ace', J:'jack', Q:'queen', K:'king'};
+// Internal code -> filename word. TO ADD A CARD BACK: just drop the
+// file in cards/ and add its filename to KNOWN_BACK_FILES further down
+// (search for that name) plus one line in the HTML's #back-picker.
+const RANK_FILE = {A:'ace', J:'jack', Q:'queen', K:'king'}; // 2-10 use the digit itself, no lookup needed
 function rankFile(rank){ return RANK_FILE[rank] || rank; }
 const SUIT_FILE = {S:'spades', H:'hearts', D:'diamonds', C:'clubs'};
 function suitFile(suit){ return SUIT_FILE[suit]; }
 function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.svg'; }
 function backImgSrc(style){ return 'cards/back_'+style+'.png'; }
 
-// Local cards/ folder only — no external fallback. If a file 404s, the
-// corner-index text fallback in buildFaceEl kicks in instead.
+// Point an <img> at a local file; if it 404s, call onFinalFail instead
+// (buildFaceEl below uses this to fall back to a plain text/corner-index
+// card face — see .img-fallback in the CSS). No external fallback on
+// purpose — keeps the game working offline and never depends on a
+// third-party host being up.
 function loadCardImage(img, localPath, onFinalFail){
   img.src = localPath;
   img.addEventListener('error', function onErr(){
@@ -476,7 +666,14 @@ function loadCardImage(img, localPath, onFinalFail){
 
 /* =========================================================
    CARD MODEL
+   A "card" throughout this file is just a plain object:
+     { id: 'c7', rank:'K', suit:'H', faceUp:true }
+   id is a stable identifier used to find that exact card's DOM element
+   later (see makeCardEl/findCardEl) — it never changes even as the
+   card moves between piles.
    ========================================================= */
+// One of every rank/suit combo, all face-down, in a fixed A-K per-suit
+// order (shuffle() below is what randomizes it for an actual game).
 function buildDeck(){
   const deck = [];
   let id = 0;
@@ -487,6 +684,9 @@ function buildDeck(){
   }
   return deck;
 }
+// Standard Fisher-Yates shuffle: walk backward through the array,
+// swapping each card with a random earlier (or same) position. Every
+// possible ordering is equally likely.
 function shuffle(arr){
   for(let i=arr.length-1;i>0;i--){
     const j = Math.floor(Math.random()*(i+1));
@@ -495,6 +695,11 @@ function shuffle(arr){
   return arr;
 }
 
+// Builds the DOM for a face-up card: an <img> pointed at its artwork,
+// with a text/corner-index fallback wired up in case that file is
+// missing. `covered` (true/false) controls whether the fallback's
+// corner badges lay out vertically or horizontally — see the CSS
+// comment on .img-fallback .fc-corner for why that matters.
 function buildFaceEl(card, covered){
   const wrap = document.createElement('div');
   wrap.className = 'face';
@@ -515,6 +720,8 @@ function buildFaceEl(card, covered){
   wrap.appendChild(img);
   return wrap;
 }
+// Builds the DOM for a face-down card: just the currently-selected back
+// image (state.backStyle, changed via the Settings back-picker).
 function buildBackEl(){
   const wrap = document.createElement('div');
   wrap.className = 'back-img-wrap';
@@ -529,24 +736,48 @@ function buildBackEl(){
 
 /* =========================================================
    GAME STATE
+   `state` is the single source of truth for everything about the
+   current game — every render function reads from it, and every move
+   function writes to it. `pendingSettings` is a separate scratch copy
+   used only while the Settings dialog is open (see the SETTINGS MODAL
+   section far below) — it lets Cancel throw away changes without ever
+   having touched the real `state`.
    ========================================================= */
 const state = {
-  drawCount: 1,
-  showTimer: false,
-  showScore: false,
-  backStyle: '10',
-  stock: [], waste: [],
-  foundations: {S:[],H:[],D:[],C:[]},
-  tableau: [[],[],[],[],[],[],[]],
+  drawCount: 1,        // 1 or 3 — how many cards Draw reveals from the stock at once
+  showTimer: false,     // whether the TIME chip is visible + the clock is running
+  showScore: false,     // whether the SCORE chip is visible
+  backStyle: '10',      // which card-back image is active (matches a data-val in #back-picker)
+  stock: [],             // face-down draw pile (cards get popped off the end and flipped into waste)
+  waste: [],             // face-up cards drawn from the stock, most recent at the end of the array
+  foundations: {S:[],H:[],D:[],C:[]}, // the 4 "build up A->K by suit" piles you're trying to fill
+  tableau: [[],[],[],[],[],[],[]],    // the 7 playing columns
   score: 0,
   seconds: 0,
-  timerHandle: null,
-  selected: null,
-  undoStack: []
+  timerHandle: null,   // setInterval() id for the running clock, so it can be cleared/replaced
+  selected: null,       // click-to-move: {pileType, pileKey, index} of the currently picked-up card, or null
+  undoStack: [],        // list of JSON snapshots, one per move made — see pushUndo/undoMove below
+  cascadePlayed: false  // guards the win-cascade animation so it only ever fires once per game
 };
+
+// Every array/object in `state` uses these SAME shapes everywhere:
+//   a "pile" is always a plain array of card objects, bottom card first.
+//   pileType is always one of: 'stock' | 'waste' | 'foundation' | 'tableau'
+//   pileKey is the specific pile: a suit letter for foundations ('S'),
+//   a column number 0-6 for tableau, or the literal string 'waste'/'stock'.
+//   See findPileArray() further down, which turns (pileType, pileKey)
+//   into the actual array to read/modify.
 
 const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'10' };
 
+// ---- UNDO ----
+// Simple but effective: every successful move (see pushUndo() calls in
+// tryMove/drawFromStock) saves a full JSON snapshot of the board BEFORE
+// that move happens. Undo just pops the most recent snapshot and
+// restores it wholesale. JSON.stringify/parse is used instead of just
+// copying references so the snapshot is a true independent copy — later
+// changes to `state.tableau` etc. can't accidentally corrupt an old
+// snapshot sitting in the stack.
 function snapshotForUndo(){
   return JSON.stringify({
     stock: state.stock, waste: state.waste,
@@ -556,7 +787,7 @@ function snapshotForUndo(){
 }
 function pushUndo(){
   state.undoStack.push(snapshotForUndo());
-  if(state.undoStack.length > 200) state.undoStack.shift();
+  if(state.undoStack.length > 200) state.undoStack.shift(); // cap memory use in a very long game
   updateUndoButton();
 }
 function undoMove(){
@@ -568,11 +799,18 @@ function undoMove(){
   clearSelection();
   renderAll();
 }
+// Dims the Undo button when there's nothing to undo yet, instead of
+// disabling it outright (still clickable, just visually muted).
 function updateUndoButton(){
   const btn = document.getElementById('btn-undo');
   if(btn) btn.style.opacity = state.undoStack.length ? '1' : '0.4';
 }
 
+// Deals a fresh game: shuffles a new deck, resets every pile and the
+// score/timer/undo history, then deals the classic Klondike layout —
+// column 0 gets 1 card, column 1 gets 2, ... column 6 gets 7, with only
+// the LAST card dealt into each column face-up (the rest face-down
+// underneath it).
 function newGame(){
   clearInterval(state.timerHandle);
   state.drawCount = pendingSettings.drawCount;
@@ -587,11 +825,14 @@ function newGame(){
   state.seconds = 0;
   state.selected = null;
   state.undoStack = [];
+  state.cascadePlayed = false;
+  const oldCascade = document.getElementById('cascade-layer');
+  if(oldCascade) oldCascade.remove(); // in case a previous game's win animation is still running
 
   for(let col=0; col<7; col++){
     for(let i=0;i<=col;i++){
       const card = state.stock.pop();
-      card.faceUp = (i===col);
+      card.faceUp = (i===col); // only the top card of each column starts face-up
       state.tableau[col].push(card);
     }
   }
@@ -604,11 +845,15 @@ function newGame(){
   renderAll();
 }
 
+// Score never goes below 0 (a big foundation-to-tableau penalty
+// shouldn't be able to push you into negative territory).
 function addScore(n){
   state.score = Math.max(0, state.score + n);
   renderHUD();
 }
 
+// Just updates the two header chip labels — doesn't touch anything else,
+// safe to call as often as needed.
 function renderHUD(){
   document.getElementById('score-val').textContent = state.score;
   const m = Math.floor(state.seconds/60), s = state.seconds%60;
@@ -617,7 +862,20 @@ function renderHUD(){
 
 /* =========================================================
    RENDER BOARD
+   Rendering here is intentionally "dumb and complete" rather than
+   trying to patch the DOM incrementally: every call to renderAll()
+   wipes out and rebuilds every visible card from scratch based on
+   whatever `state` currently says. This is simpler and less bug-prone
+   than tracking exactly what changed, at some performance cost — see
+   preloadAllCardImages() further down, which exists specifically to
+   make sure that rebuilding doesn't cause a fresh network fetch each
+   time.
    ========================================================= */
+// The 7 column <div>s are created once (checked via child count) and
+// then left alone forever — only the CARDS inside them get rebuilt on
+// every render. This matters for the drag/click code, which attaches
+// event listeners assuming these column elements are stable and won't
+// be replaced mid-interaction.
 function ensureTableauCols(){
   const row = document.getElementById('tableau');
   if(row.children.length===7) return;
@@ -632,14 +890,37 @@ function ensureTableauCols(){
   }
 }
 
+// OVERLAP_FRAC controls how much of each tableau card peeks out above
+// the one below it, as a fraction of card height (0.183 ≈ how a real
+// dealt column looks — enough to read the rank, not so much it wastes
+// space). CARD_RATIO must always match --card-h's multiplier in the
+// CSS :root block — they're kept in sync manually since CSS custom
+// properties can't be read directly as numbers without this kind of
+// getComputedStyle() round-trip.
 const OVERLAP_FRAC = 0.183;
 const CARD_RATIO = 1.4523;
+// Reads the CURRENT --card-w (which fitBoard() below updates on load/
+// resize) and derives every other size a render function needs: card
+// height, vertical overlap between stacked tableau cards, and the
+// horizontal "fan" offset between waste cards in Draw 3 mode.
 function cardMetrics(){
   const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w')) || 80;
   const h = w * CARD_RATIO;
   return { w, h, overlap: h*OVERLAP_FRAC, fan: w*0.22 };
 }
 
+// Solves for the biggest card size that fits the CURRENT screen without
+// needing to scroll — this is what makes the game "fill the screen" on
+// both a tall phone and a wide desktop monitor instead of using one
+// fixed size for everyone. Runs on page load, on window resize, and
+// again at the start of every render (since a tableau column growing
+// past ~7 cards deep needs slightly smaller cards to keep fitting).
+// The core idea: figure out how much space is actually available
+// (window size minus header/bottom-bar/padding), then solve two
+// candidate card widths — one that would fill the available HEIGHT
+// exactly (accounting for the tallest current tableau stack), one that
+// would fill the available WIDTH exactly (7 columns + their gaps) —
+// and use whichever is smaller, clamped to a sane min/max range.
 function fitBoard(){
   const header = document.querySelector('header');
   const stage = document.querySelector('.stage');
@@ -654,6 +935,8 @@ function fitBoard(){
   const frameCS = getComputedStyle(frame);
   const feltCS = getComputedStyle(felt);
 
+  // Total padding eaten up by the nested .stage > .table-frame >
+  // .table-felt boxes, so it can be subtracted from the raw window size.
   const vPad = parseFloat(stageCS.paddingTop)+parseFloat(stageCS.paddingBottom)
              + parseFloat(frameCS.paddingTop)+parseFloat(frameCS.paddingBottom)
              + parseFloat(feltCS.paddingTop)+parseFloat(feltCS.paddingBottom);
@@ -662,22 +945,34 @@ function fitBoard(){
              + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
 
   const availH = window.innerHeight - headerH - bottombarH - vPad - 10;
-  const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
+  const availW = Math.min(window.innerWidth, 1240) - hPad - 8; // 1240 caps growth on ultra-wide monitors
 
+  // "How tall is the tallest column right now" (never less than 7, the
+  // deepest a fresh deal ever gets, so cards don't start oversized).
   const maxStack = Math.max(7, ...state.tableau.map(c=>c.length));
-  const topRowGap = 18;
+  const topRowGap = 18; // gap between the stock/foundation row and the tableau row
+  // Solving cardH*(2 + (maxStack-1)*OVERLAP_FRAC) + topRowGap = availH for cardH:
   const denom = 2 + (maxStack-1)*OVERLAP_FRAC;
   const cardHByHeight = (availH - topRowGap) / denom;
   const cardWByHeight = cardHByHeight / CARD_RATIO;
 
-  const gapPx = 10;
+  const gapPx = 10; // approximate gap between columns (matches --gap closely enough for this math)
   const cardWByWidth = (availW - gapPx*6) / 7;
 
   let cardW = Math.min(cardWByHeight, cardWByWidth);
+  // Hard floor/ceiling: never unreadably tiny, and never comically huge
+  // on a very tall, very wide desktop window (see chat history — this
+  // used to be 140 and looked oversized on desktop).
   cardW = Math.max(44, Math.min(cardW, 104));
   document.documentElement.style.setProperty('--card-w', cardW+'px');
 }
 
+// The main render entry point — called after literally every state
+// change (a move, a draw, an undo, a settings change, a resize). Order
+// matters a little: fitBoard() must run before the pile renderers so
+// they lay cards out using the freshly-computed card size, and
+// checkWin()/checkNoMoves() must run last since they need the final
+// board state to decide whether to pop up a win/stuck dialog.
 function renderAll(){
   purgeStrayCards();
   ensureTableauCols();
@@ -691,6 +986,10 @@ function renderAll(){
   if(!won) checkNoMoves();
 }
 
+// Creates one card's actual DOM element (used by every renderX function
+// below). Stashes pile location in data-* attributes so later code
+// (drag/click handlers, findCardEl()) can figure out "where is this
+// card and can it move" just by reading the element back.
 function makeCardEl(card, pileType, pileKey, index, covered){
   const el = document.createElement('div');
   el.className = 'card';
@@ -703,6 +1002,10 @@ function makeCardEl(card, pileType, pileKey, index, covered){
   return el;
 }
 
+// Stock pile: only ever shows its own TOP card face-down (or nothing,
+// if empty) — clicking it draws (see drawFromStock()). We build a
+// "fake" minimal card object here since real card identity doesn't
+// matter for a face-down display, just its rank/suit for the image path.
 function renderStock(){
   const p = document.getElementById('pile-stock');
   p.querySelectorAll('.card').forEach(e=>e.remove());
@@ -713,6 +1016,10 @@ function renderStock(){
     p.appendChild(el);
   }
 }
+// Waste pile: shows the last `drawCount` cards fanned out slightly to
+// the right (so in Draw 3 mode you can see all 3, but only the
+// frontmost/rightmost one is actually clickable — see the `cursor` line
+// and attachCardEvents()'s isTop check).
 function renderWaste(){
   const p = document.getElementById('pile-waste');
   p.querySelectorAll('.card').forEach(e=>e.remove());
@@ -725,10 +1032,12 @@ function renderWaste(){
     const card = state.waste[i];
     const el = makeCardEl(card,'waste','waste',i);
     el.style.left = ((i-startIdx) * metrics.fan) + 'px';
-    if(i < n-1){ el.style.cursor='default'; }
+    if(i < n-1){ el.style.cursor='default'; } // only the frontmost fanned card is draggable
     p.appendChild(el);
   }
 }
+// Foundations: only the TOP card of each suit pile is ever shown (the
+// rest are implied to be stacked underneath in order).
 function renderFoundations(){
   for(const s of SUITS){
     const p = document.getElementById('f-'+s);
@@ -741,6 +1050,12 @@ function renderFoundations(){
     }
   }
 }
+// Tableau: every card in every column gets its own element, offset
+// downward by `overlap` pixels per position so they cascade visually.
+// Each column's height is set explicitly in JS (rather than relying on
+// CSS) to exactly match however deep that specific column currently is
+// — this is what prevents a long build-up of cards from visually
+// spilling out past the felt's edge.
 function renderTableau(){
   const metrics = cardMetrics();
   for(let c=0;c<7;c++){
@@ -748,6 +1063,9 @@ function renderTableau(){
     col.querySelectorAll('.card').forEach(e=>e.remove());
     const pile = state.tableau[c];
     pile.forEach((card, i)=>{
+      // "covered" (i < pile.length-1) = something else is stacked on
+      // top of this card — only relevant for the fallback rendering's
+      // corner-badge orientation, see buildFaceEl().
       const el = makeCardEl(card,'tableau',c,i, i<pile.length-1);
       el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
@@ -758,13 +1076,26 @@ function renderTableau(){
 
 /* =========================================================
    GAME RULES
+   The two functions below are THE Klondike rules — every other function
+   in the file (hints, drag/drop, click-to-move, auto-move) ultimately
+   just calls these to check "is this move legal", never duplicates the
+   logic itself. If you ever wanted to house-rule something (e.g. allow
+   any card on an empty column instead of only Kings), these two
+   functions are the only place you'd need to change it.
    ========================================================= */
+// Tableau rule: a card can go on an empty column only if it's a King
+// (classic Klondike). Otherwise it must sit on a card one rank higher
+// AND the opposite color (red on black or black on red) — same-suit or
+// same-color stacking is never allowed.
 function canPlaceOnTableau(card, destPile){
   if(destPile.length===0) return card.rank==='K';
   const top = destPile[destPile.length-1];
   if(!top.faceUp) return false;
   return (isRed(card.suit) !== isRed(top.suit)) && (rankValue(card.rank) === rankValue(top.rank)-1);
 }
+// Foundation rule: must match that foundation's suit, must be an Ace if
+// the pile is still empty, otherwise must be exactly one rank higher
+// than whatever's currently on top (building up A,2,3...K in that suit).
 function canPlaceOnFoundation(card, destPile, suit){
   if(card.suit!==suit) return false;
   if(destPile.length===0) return card.rank==='A';
@@ -772,9 +1103,15 @@ function canPlaceOnFoundation(card, destPile, suit){
   return rankValue(card.rank) === rankValue(top.rank)+1;
 }
 
+// Clicking the stock pile calls this. Two cases: normal draw (pop
+// `drawCount` cards off the stock, flip them face-up into the waste),
+// or — once the stock is empty — clicking again "redeals": the whole
+// waste pile flips back into the stock face-down, in reverse order, so
+// drawing from it again reproduces the same sequence you'll see if you
+// keep cycling through.
 function drawFromStock(){
   if(state.stock.length===0){
-    if(state.waste.length===0) return;
+    if(state.waste.length===0) return; // nothing to draw or redeal — no-op
     pushUndo();
     state.stock = state.waste.reverse().map(c=>({...c, faceUp:false}));
     state.waste = [];
@@ -791,6 +1128,11 @@ function drawFromStock(){
   renderAll();
 }
 
+// After removing card(s) from a tableau column, whatever's now on top
+// might still be face-down (it was buried under the cards that just
+// left) — flip it up automatically and award the classic +5 "revealed a
+// new card" bonus. Klondike's tableau always keeps exactly the topmost
+// run face-up; this is what maintains that invariant after every move.
 function flipNewTopIfNeeded(col){
   const pile = state.tableau[col];
   if(pile.length){
@@ -799,6 +1141,9 @@ function flipNewTopIfNeeded(col){
   }
 }
 
+// Every move function below refers to piles abstractly as
+// (pileType, pileKey) rather than passing arrays around directly —
+// this is the one place that turns that pair into the real array.
 function findPileArray(pileType, key){
   if(pileType==='waste') return state.waste;
   if(pileType==='tableau') return state.tableau[key];
@@ -806,6 +1151,25 @@ function findPileArray(pileType, key){
   return null;
 }
 
+/* =========================================================
+   MOVE VALIDATION & EXECUTION
+   Three layers, each built on the one below it:
+     canMoveExact    — "is EXACTLY this slice of cards a legal move?"
+                        (pure check, never changes anything)
+     canMoveWithWiden — "is there SOME legal slice starting at or before
+                        this index?" (still pure, adds misclick forgiveness)
+     tryMove/tryMoveAuto — actually PERFORMS the move if it's legal
+   Every interaction path (drag, click-to-move, auto-move, hints) goes
+   through these same functions, so the rules only ever need to be
+   right in one place.
+   ========================================================= */
+// Checks whether moving fromPile[fromIndex..end] to (toType, toKey) is
+// legal RIGHT NOW, without changing anything. Covers every rule at once:
+// only the top card of waste/foundation can move; every card in the
+// slice must be face-up; a multi-card tableau slice must itself be a
+// valid alternating-color descending run; foundations only ever accept
+// exactly one card at a time; and finally defers to canPlaceOnTableau/
+// canPlaceOnFoundation for the actual destination rule.
 function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
   const fromPile = findPileArray(fromType, fromKey);
   if(!fromPile) return false;
@@ -823,10 +1187,10 @@ function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
   }
   const card = movingCards[0];
   if(toType==='foundation'){
-    if(movingCards.length!==1) return false;
+    if(movingCards.length!==1) return false; // can never drop a multi-card run on a foundation
     return canPlaceOnFoundation(card, state.foundations[toKey], toKey);
   } else if(toType==='tableau'){
-    if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false;
+    if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false; // can't "move" onto your own column
     return canPlaceOnTableau(card, state.tableau[toKey]);
   }
   return false;
@@ -849,12 +1213,19 @@ function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
   return -1;
 }
 
+// The only function that actually MUTATES piles for a normal move.
+// Re-validates with canMoveExact first (so it's always safe to call
+// speculatively) then: removes the card(s) from the source, adds them
+// to the destination, updates score, flips a newly-exposed tableau
+// card if needed, and re-renders. Scoring follows standard Klondike:
+// +10 to a foundation, +5 waste->tableau, -15 pulling a card back off a
+// foundation onto the tableau (score never goes below 0 — see addScore).
 function tryMove(fromType, fromKey, fromIndex, toType, toKey){
   if(!canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return false;
   const fromPile = findPileArray(fromType, fromKey);
   const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
   const card = movingCards[0];
-  pushUndo();
+  pushUndo(); // snapshot BEFORE mutating, so Undo can restore this exact prior state
   if(toType==='foundation'){
     const destPile = state.foundations[toKey];
     fromPile.splice(fromIndex, movingCards.length);
@@ -873,12 +1244,19 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
 }
 
 // Same as tryMove, but forgiving of a misclick into the middle of a run.
+// This is what both drag-and-drop and click-to-move actually call —
+// tryMove itself is only used directly by autoMoveToFoundation, where
+// widening never applies (moving a single top card, nothing to widen).
 function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
   const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
   if(idx<0) return false;
   return tryMove(fromType, fromKey, idx, toType, toKey);
 }
 
+// Used by both double-tap-to-send-home and the Auto Move button: tries
+// to send ONE specific top card to whichever foundation suit it
+// matches, if any. Only ever considers the very top card of its pile
+// (you can't foundation-move a card that's buried).
 function autoMoveToFoundation(fromType, fromKey, fromIndex){
   const fromPile = findPileArray(fromType, fromKey);
   if(!fromPile) return false;
@@ -893,6 +1271,15 @@ function autoMoveToFoundation(fromType, fromKey, fromIndex){
   return false;
 }
 
+// Powers the "Auto Move" button: repeatedly scans the waste top and
+// every tableau column's top card, sending anything that legally CAN
+// go to a foundation, and keeps looping as long as SOMETHING moved
+// (since sending one card home can expose a new card that can also go
+// home). The `guard` counter is just a safety net against an infinite
+// loop if some future change introduces a bug — 300 passes is far more
+// than any real game could ever need. This intentionally does NOT try
+// to win the game for you — it only ever moves cards that are already
+// fully legal to send to a foundation right now.
 function autoMoveAll(){
   let movedAny = false;
   let guard = 0;
@@ -919,20 +1306,131 @@ function checkWin(){
   const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
   if(total===52){
     clearInterval(state.timerHandle);
-    const m = Math.floor(state.seconds/60), s = state.seconds%60;
-    document.getElementById('win-sub').textContent = state.showTimer
-      ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
-      : (state.showScore ? ('Score '+state.score) : 'Well played.');
-    document.getElementById('winmask').classList.add('show');
+    if(!state.cascadePlayed){
+      state.cascadePlayed = true;
+      startWinCascade();
+      const m = Math.floor(state.seconds/60), s = state.seconds%60;
+      document.getElementById('win-sub').textContent = state.showTimer
+        ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+        : (state.showScore ? ('Score '+state.score) : 'Well played.');
+      // Let the cascade play on its own for a beat before the dialog
+      // dims the table — matches the classic "cards bounce first, then
+      // the win dialog appears" feel instead of covering it immediately.
+      setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+    }
     return true;
   }
   return false;
 }
 
 /* =========================================================
+   WIN CASCADE ANIMATION
+   The classic "cards bounce across the screen" celebration. Every card
+   currently sitting in a foundation pile gets its own little floating
+   copy that launches from that foundation's position, arcs through the
+   air under simple gravity, bounces off the bottom of the screen a few
+   times (losing height each bounce, like a real dropped card), and
+   fades out once it settles or drifts off an edge. Cards launch one
+   after another (staggered by CASCADE_STAGGER_MS) rather than all at
+   once, which is what gives it the "cascading" look rather than a
+   single burst.
+   ========================================================= */
+const CASCADE_STAGGER_MS = 90;   // delay between each card launching
+const CASCADE_GRAVITY = 0.35;    // how fast cards accelerate downward
+const CASCADE_BOUNCE_DAMP = 0.62; // energy kept after each bounce (0-1)
+
+function startWinCascade(){
+  const layer = document.createElement('div');
+  layer.id = 'cascade-layer';
+  document.body.appendChild(layer);
+
+  // Order the cards bottom-to-top through each pile, cycling round-robin
+  // across the four suits — just gives a nicer mixed-suit visual order
+  // than dumping one whole suit at a time.
+  const order = [];
+  const maxLen = Math.max(0, ...SUITS.map(s=>state.foundations[s].length));
+  for(let i=0;i<maxLen;i++){
+    for(const s of SUITS){
+      if(state.foundations[s][i]) order.push(state.foundations[s][i]);
+    }
+  }
+
+  order.forEach((card, i)=>{
+    setTimeout(()=> spawnCascadeCard(layer, card), i*CASCADE_STAGGER_MS);
+  });
+
+  // Remove the whole layer once every card has had plenty of time to
+  // finish bouncing and fading out.
+  setTimeout(()=>{ layer.remove(); }, order.length*CASCADE_STAGGER_MS + 6000);
+}
+
+function spawnCascadeCard(layer, card){
+  const suitEl = document.getElementById('f-'+card.suit);
+  if(!suitEl) return;
+  const startRect = suitEl.getBoundingClientRect();
+  const metrics = cardMetrics();
+
+  const el = document.createElement('div');
+  el.className = 'card cascade-card';
+  el.style.width = metrics.w+'px';
+  el.style.height = metrics.h+'px';
+  el.style.left = startRect.left+'px';
+  el.style.top = startRect.top+'px';
+  el.appendChild(buildFaceEl(card, false));
+  layer.appendChild(el);
+
+  // Simple projectile motion: horizontal speed stays constant, vertical
+  // speed increases each frame (gravity) until the card would go below
+  // the floor line, at which point it "bounces" (velocity flips and
+  // shrinks). A random initial kick left/right and upward gives each
+  // card a slightly different arc so they don't all move identically.
+  let x = startRect.left, y = startRect.top;
+  let vx = (Math.random()<0.5 ? -1 : 1) * (2.5 + Math.random()*1.8);
+  let vy = -7 - Math.random()*3;
+  const floorY = window.innerHeight - metrics.h - 8;
+  let bounces = 0;
+
+  function frame(){
+    vy += CASCADE_GRAVITY;
+    x += vx;
+    y += vy;
+    if(y >= floorY){
+      y = floorY;
+      vy = -vy*CASCADE_BOUNCE_DAMP;
+      bounces++;
+      // Once it's basically stopped bouncing (or bounced enough times),
+      // fade it out in place instead of animating forever.
+      if(Math.abs(vy) < 2.2 || bounces > 6){
+        el.style.transition = 'opacity .6s ease';
+        el.style.opacity = '0';
+        setTimeout(()=> el.remove(), 650);
+        return;
+      }
+    }
+    if(x < -metrics.w-60 || x > window.innerWidth+60){
+      el.remove();
+      return;
+    }
+    el.style.left = x+'px';
+    el.style.top = y+'px';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* =========================================================
    MOVE SCANNER: hints + no-moves detection
+   findAnyMove() is the single function both the Hint button and the
+   "No More Moves" game-over check are built on — it searches the WHOLE
+   board for one legal, genuinely useful move and returns a description
+   of it (or null if there's truly nothing left to do). Checked in
+   priority order: sending something to a foundation first (always
+   progress), then a productive tableau shuffle, then drawing/recycling
+   the stock as a last resort — and only if that could actually help
+   (see the stockCouldHelp check near the bottom).
    ========================================================= */
 function findAnyMove(){
+  // 1) Can the current waste card go anywhere?
   if(state.waste.length){
     const i = state.waste.length-1;
     const c = state.waste[i];
@@ -943,6 +1441,8 @@ function findAnyMove(){
       if(canPlaceOnTableau(c, state.tableau[t])) return {type:'waste-tableau', from:'waste', fromKey:'waste', index:i, to:t};
     }
   }
+  // 2) Walk every tableau column looking for a foundation move (top card
+  //    only) or a useful tableau-to-tableau shuffle.
   for(let c=0;c<7;c++){
     const pile = state.tableau[c];
     for(let i=0;i<pile.length;i++){
@@ -979,9 +1479,13 @@ function findAnyMove(){
     if(state.stock.length>0) return {type:'draw'};
     if(state.stock.length===0 && state.waste.length>0) return {type:'recycle'};
   }
-  return null;
+  return null; // truly nothing left to do — game is stuck
 }
 
+// Called at the end of every render (see renderAll). If the board is
+// fully cleared this is skipped (checkWin already handled it); otherwise
+// asks findAnyMove() whether anything is playable and shows/hides the
+// "No More Moves" dialog accordingly.
 function checkNoMoves(){
   const mask = document.getElementById('nomovesmask');
   if(!mask) return;
@@ -995,6 +1499,10 @@ function checkNoMoves(){
   }
 }
 
+// Tiny message bubble near the bottom bar (see .hint-toast in the CSS).
+// showToast._h stashes the pending timeout ON the function itself so a
+// second call cancels/replaces the first fade-out instead of stacking up
+// multiple timers.
 function showToast(msg, ms){
   const t = document.getElementById('hint-toast');
   t.textContent = msg;
@@ -1003,18 +1511,29 @@ function showToast(msg, ms){
   showToast._h = setTimeout(()=> t.classList.remove('show'), ms || 2200);
 }
 
+// Briefly glows an element green twice (see @keyframes pulseGlow in the
+// CSS) to draw the eye to it. Removing then re-adding the class (with
+// the `void el.offsetWidth` in between) forces the browser to restart
+// the animation even if this same element was just pulsed a moment ago
+// — without that trick, re-adding an already-present class is a no-op
+// and the animation wouldn't visibly restart.
 function pulse(el){
   if(!el) return;
   el.classList.remove('hint-pulse');
-  void el.offsetWidth;
+  void el.offsetWidth; // forces a style recalculation, "resetting" the animation
   el.classList.add('hint-pulse');
   setTimeout(()=> el.classList.remove('hint-pulse'), 1500);
 }
 
+// Looks up a specific card's current DOM element by its pile location
+// (matches the data-* attributes set in makeCardEl).
 function findCardEl(pileType, pileKey, index){
   return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
 }
 
+// Hint button handler: finds one move via findAnyMove(), then translates
+// its {type, ...} descriptor into a human-readable message + which
+// element to pulse-highlight.
 function showHint(){
   const move = findAnyMove();
   if(!move){ showToast("No moves left — try Undo or New Game."); return; }
@@ -1048,12 +1567,32 @@ function showHint(){
 
 /* =========================================================
    INTERACTION: click-select + pointer drag
+   Two independent ways to move a card, both funneling into the same
+   tryMoveAuto() from the rules section above:
+     1. DRAG: pointerdown on a card, move the mouse/finger far enough to
+        count as a drag, drop it on a pile (see beginVisualDrag /
+        updateVisualDrag / endVisualDrag).
+     2. CLICK-TO-MOVE: click a card to "pick it up" (state.selected),
+        then click a destination pile — or just hover the mouse over one
+        or click the same card again to cancel (see handleTapSelect and
+        updateSelectHoverHighlight).
+   Both share the SAME pointerdown handler (attachCardEvents) and only
+   diverge once we know whether the pointer actually moved far enough to
+   count as a drag.
    ========================================================= */
-let dragCtx = null;
-let dragMoved = false;
-let lastTapTime = 0;
-let lastTapKey = '';
+let dragCtx = null;      // {el, card, pileType, pileKey, index, startX, startY} while a pointer is down on a card
+let dragMoved = false;   // did this pointerdown turn into an actual drag (vs. a click)?
+let lastTapTime = 0;     // for double-tap/double-click detection
+let lastTapKey = '';     // which card was last tapped, so a double-tap must hit the SAME card twice
 
+// Attaches the ONE listener every movable card needs: pointerdown, which
+// just records "something started here" into dragCtx. Everything after
+// that (deciding if it becomes a drag or a click, handling the actual
+// move) happens in the GLOBAL listeners below, not here — see the
+// comment above dragCtx for why. Cards that can't currently move (face-
+// down, or buried in waste/foundation) get a plain cursor and no
+// listener at all — the stock pile is handled separately since clicking
+// it always draws rather than picks anything up.
 function attachCardEvents(el, card, pileType, pileKey, index){
   if(pileType==='stock'){ el.style.cursor='pointer'; return; }
   const fromPile = findPileArray(pileType, pileKey);
@@ -1062,9 +1601,13 @@ function attachCardEvents(el, card, pileType, pileKey, index){
   if(!movable){ el.style.cursor='default'; return; }
 
   el.addEventListener('pointerdown', (e)=>{
-    if(e.button!==undefined && e.button!==0) return;
+    if(e.button!==undefined && e.button!==0) return; // ignore right/middle mouse clicks
     dragMoved = false;
     dragCtx = { el, card, pileType, pileKey, index, startX:e.clientX, startY:e.clientY };
+    // setPointerCapture keeps this pointer's move/up events routing to
+    // THIS card even after it gets repositioned/reparented during a
+    // drag — without it, the browser would just check whatever's
+    // visually under the cursor at each moment.
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
   });
 }
@@ -1076,10 +1619,15 @@ function attachCardEvents(el, card, pileType, pileKey, index){
 document.addEventListener('pointermove', (e)=>{
   lastPointer.x = e.clientX; lastPointer.y = e.clientY;
   if(!dragCtx){
+    // Not dragging anything — if a card is picked up via click-to-move,
+    // this is what makes the hover highlight follow the mouse.
     if(state.selected) updateSelectHoverHighlight(e.clientX, e.clientY);
     return;
   }
   const dx = e.clientX-dragCtx.startX, dy = e.clientY-dragCtx.startY;
+  // Require a few pixels of real movement before it counts as a drag —
+  // otherwise every ordinary click would register as a zero-distance
+  // "drag" and never reach the click/double-click handling below.
   if(!dragMoved && Math.hypot(dx,dy) < 6) return;
   if(!dragMoved){
     dragMoved = true;
@@ -1111,6 +1659,10 @@ function resolveHoverTargetPadded(x, y, padding){
   }
   return null;
 }
+// Called on every mouse move while a card is selected (click-to-move
+// mode, not dragging): lights up whatever pile the cursor is currently
+// over, but ONLY if canMoveWithWiden confirms it's actually a legal
+// destination — hovering an invalid pile shows no highlight at all.
 function updateSelectHoverHighlight(x, y){
   clearDropHighlights();
   if(!state.selected) return;
@@ -1123,6 +1675,13 @@ function updateSelectHoverHighlight(x, y){
   }
 }
 
+// The other half of attachCardEvents's pointerdown: decides what a
+// completed gesture meant. If the pointer actually moved (dragMoved),
+// hand off to endVisualDrag to resolve the drop. Otherwise it was a
+// plain tap/click — check whether it's a DOUBLE tap on the same card
+// within 320ms (send it straight to its foundation via
+// autoMoveToFoundation) or a single tap (hand off to handleTapSelect
+// for the pick-up/pick-a-destination flow).
 document.addEventListener('pointerup', (e)=>{
   if(!dragCtx) return;
   const ctx = dragCtx;
@@ -1143,17 +1702,35 @@ document.addEventListener('pointerup', (e)=>{
   dragCtx = null; dragMoved = false;
 });
 
+// Browsers fire pointercancel instead of pointerup in some situations
+// (e.g. a touch gesture gets interpreted as a page-scroll instead) —
+// treat it as "abandon the drag" rather than leaving things stuck.
 document.addEventListener('pointercancel', ()=>{
   if(!dragCtx) return;
   cancelVisualDrag();
   dragCtx = null; dragMoved = false;
 });
 
+// If the browser tab/window loses focus mid-drag (alt-tab, etc.) there's
+// no guarantee a pointerup will ever arrive — clean up immediately
+// rather than leaving a card stuck floating.
 window.addEventListener('blur', ()=>{
   if(dragCtx){ cancelVisualDrag(); dragCtx = null; dragMoved = false; }
 });
 
-let dragEls = [];
+let dragEls = []; // the actual floating DOM element(s) for the card(s) currently being dragged
+// Fires once a pointerdown has moved far enough to count as a real
+// drag. Finds the actual DOM element(s) for the card being grabbed (and,
+// for a tableau card, everything stacked on top of it too), then
+// reparents each one to <body> with position:fixed so it can follow the
+// cursor freely across the whole page instead of being constrained
+// inside its original pile container. pointerEvents:none is the fix for
+// a real bug this project hit: without it, the dragged card itself is
+// the topmost element under the cursor, so drop-target detection
+// (elementFromPoint, in resolveDropTarget below) would find the dragged
+// card instead of whatever pile is underneath it, and every drop would
+// silently fail. Pointer capture (set in attachCardEvents) means move/up
+// events keep reaching this element regardless.
 function beginVisualDrag(pileType, pileKey, index){
   const pile = findPileArray(pileType, pileKey);
   const cards = pileType==='tableau' ? pile.slice(index) : [pile[index]];
@@ -1173,6 +1750,11 @@ function beginVisualDrag(pileType, pileKey, index){
   });
   document.querySelectorAll('.pile.slot').forEach(p=>p.classList.remove('drop-ok'));
 }
+// Called continuously while dragging: moves every dragged card element
+// by the same (dx, dy) offset from where it started (so a multi-card
+// drag keeps its cards stacked together visually), then re-checks
+// what's currently under the cursor and highlights it — but only if
+// canMoveWithWiden confirms the move would actually be legal there.
 function updateVisualDrag(dx, dy){
   dragEls.forEach(d=>{
     d.el.style.left = (d.baseLeft+dx)+'px';
@@ -1185,7 +1767,7 @@ function updateVisualDrag(dx, dy){
     if(idx>=0) target.highlightEl.classList.add('drop-ok');
   }
 }
-let lastPointer = {x:0,y:0};
+let lastPointer = {x:0,y:0}; // tracked by the global pointermove listener above, read here and in updateSelectHoverHighlight
 
 function clearDropHighlights(){
   document.querySelectorAll('.pile.slot.drop-ok').forEach(p=>p.classList.remove('drop-ok'));
@@ -1208,6 +1790,10 @@ function resolveDropTarget(x,y){
   return null;
 }
 
+// Restores every dragged element back to normal layout (clears the
+// position:fixed inline styles) and removes it from <body> if it's
+// still sitting there directly — after this, the next renderAll() will
+// draw the "real" card fresh in its correct location either way.
 function cleanupDragEls(){
   dragEls.forEach(d=>{
     d.el.classList.remove('dragging');
@@ -1224,6 +1810,12 @@ function purgeStrayCards(){
   document.querySelectorAll('body > .card').forEach(el=>el.remove());
 }
 
+// Called on pointerup once we know a drag actually happened. Figures out
+// what's under the drop point, attempts the move (with misclick
+// widening via tryMoveAuto), then always cleans up the dragged
+// element(s) — if the move failed, renderAll() puts everything back
+// exactly where it was (since `state` was never touched by a failed
+// attempt).
 function endVisualDrag(x,y){
   const target = resolveDropTarget(x,y);
   clearDropHighlights();
@@ -1234,11 +1826,15 @@ function endVisualDrag(x,y){
   cleanupDragEls();
   if(!success) renderAll();
 }
+// Used for pointercancel/window-blur — abandon the drag with no attempt
+// to move anything.
 function cancelVisualDrag(){
   cleanupDragEls();
   renderAll();
 }
 
+// Deselects whatever's currently picked up for click-to-move (if
+// anything) and clears any leftover highlight.
 function clearSelection(){
   if(state.selected){
     document.querySelectorAll('.card.selected').forEach(e=>e.classList.remove('selected'));
@@ -1246,6 +1842,19 @@ function clearSelection(){
   }
   clearDropHighlights();
 }
+// The click-to-move state machine. Called every time a movable card is
+// clicked (from the pointerup handler above) or a pile is clicked (see
+// the three click listeners just below). Three cases:
+//   1. Nothing selected yet -> pick this card up (highlight it, store
+//      it in state.selected).
+//   2. Something's already selected and you clicked the SAME card again
+//      -> treat it as "never mind", deselect.
+//   3. Something's already selected and you clicked a DIFFERENT card ->
+//      try to move the selection onto whatever pile that card belongs
+//      to (tryMoveAuto handles validating + widening); if that fails,
+//      fall through and just select the newly-clicked card instead
+//      (lets you change your mind about which card to move without an
+//      extra click to deselect first).
 function handleTapSelect(pileType, pileKey, index){
   if(state.selected){
     const sel = state.selected;
@@ -1268,10 +1877,15 @@ function handleTapSelect(pileType, pileKey, index){
   });
 }
 
+// Stock pile: always just draws (see drawFromStock), regardless of
+// whether a card happens to be selected elsewhere.
 document.getElementById('pile-stock').addEventListener('click', ()=>{ clearSelection(); drawFromStock(); });
+// Foundation piles: clicking one while a card is selected tries to
+// complete the move there — this is what lets you click-to-move onto an
+// EMPTY foundation, which otherwise has no card element to click on.
 SUITS.forEach(s=>{
   document.getElementById('f-'+s).addEventListener('click', (e)=>{
-    if(e.target.closest('.card')) return;
+    if(e.target.closest('.card')) return; // clicks on an actual card are handled by handleTapSelect instead
     if(state.selected){
       const sel = state.selected;
       tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'foundation', s);
@@ -1279,6 +1893,10 @@ SUITS.forEach(s=>{
     }
   });
 });
+// Tableau columns: same idea, but delegated from the single #tableau
+// container (rather than binding one listener per column) so it keeps
+// working correctly no matter when the column elements were created —
+// see ensureTableauCols(), which builds them once on first render.
 document.getElementById('tableau').addEventListener('click', (e)=>{
   if(e.target.closest('.card')) return;
   const col = e.target.closest('.tcol');
@@ -1292,30 +1910,50 @@ document.getElementById('tableau').addEventListener('click', (e)=>{
 
 /* =========================================================
    SETTINGS MODAL
+   Most settings preview LIVE the instant you change them (card back,
+   timer/score visibility, and draw count if you haven't drawn any cards
+   yet this game) rather than waiting for a confirm button — see the
+   individual change handlers further down. `settingsSnapshot` is what
+   makes Cancel able to undo all of that: it's a copy of every setting
+   taken the moment the dialog opens, and revertToSnapshot() just
+   restores it wholesale.
    ========================================================= */
 const overlay = document.getElementById('settings-overlay');
 let settingsSnapshot = null;
 
+// (Re)starts the once-per-second clock if showTimer is on, or stops it
+// if not. Always clears any existing interval first so this is safe to
+// call repeatedly without ever stacking up multiple timers.
 function syncTimerInterval(){
   clearInterval(state.timerHandle);
   if(state.showTimer){
     state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
   }
 }
+// Shows/hides the two header chips based on current settings.
 function applyHudVisibility(){
   document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
   document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
 }
 
+// Puts the green "active" border around whichever back-picker swatch
+// matches the currently-selected back.
 function refreshBackPicker(){
   document.querySelectorAll('.backswatch').forEach(sw=>{
     sw.classList.toggle('active', sw.dataset.val===pendingSettings.backStyle);
   });
 }
+// Shows the little warning note under Draw 1/Draw 3 if cards have
+// already been drawn this game (meaning a draw-count change can't take
+// effect live and will need a fresh New Game instead — see the #seg-draw
+// click handler below for where this is enforced).
 function refreshDrawNote(){
   const canApplyNow = state.waste.length===0;
   document.getElementById('draw-note').style.display = canApplyNow ? 'none' : 'block';
 }
+// Runs every time the gear icon is clicked: takes the "before" snapshot
+// for Cancel to fall back to, syncs the dialog's controls to match
+// whatever's currently active, and shows it.
 function openSettings(){
   settingsSnapshot = {
     drawCount: state.drawCount, showTimer: state.showTimer,
@@ -1335,6 +1973,10 @@ function openSettings(){
   refreshDrawNote();
   overlay.classList.add('show');
 }
+// Cancel button (and clicking the dark backdrop): throws away anything
+// changed while the dialog was open by restoring every setting back to
+// what openSettings() recorded, then re-syncs the timer/HUD/board to
+// match.
 function revertToSnapshot(){
   if(!settingsSnapshot) return;
   state.drawCount = settingsSnapshot.drawCount;
@@ -1357,6 +1999,10 @@ document.getElementById('settings-cancel').addEventListener('click', ()=>{
 });
 overlay.addEventListener('click', (e)=>{ if(e.target===overlay){ revertToSnapshot(); overlay.classList.remove('show'); } });
 
+// Draw 1 / Draw 3 buttons. TO ADD A NEW DRAW-COUNT OPTION (rare, but if
+// you wanted e.g. "Draw 2"): add a matching <button data-val="2"> in the
+// HTML's #seg-draw and it'll just work — this handler reads data-val
+// generically rather than hardcoding 1 vs 3.
 document.querySelectorAll('#seg-draw button').forEach(b=>{
   b.addEventListener('click', ()=>{
     pendingSettings.drawCount = Number(b.dataset.val);
@@ -1380,6 +2026,9 @@ document.getElementById('tog-score').addEventListener('change', (e)=>{
   applyHudVisibility();
 });
 
+// Card-back swatches: clicking one applies it immediately (no need to
+// hit Apply first) — see the CSS comment on .backswatch for how to add
+// a new one.
 document.querySelectorAll('.backswatch').forEach(sw=>{
   sw.addEventListener('click', ()=>{
     pendingSettings.backStyle = sw.dataset.val;
@@ -1389,12 +2038,17 @@ document.querySelectorAll('.backswatch').forEach(sw=>{
   });
 });
 
+// "Apply": everything above already live-applies as you interact with
+// it, so this button's only real job is to clear settingsSnapshot
+// (meaning there's nothing left to revert to) and close the dialog —
+// the current game continues exactly as it now stands.
 document.getElementById('settings-apply').addEventListener('click', ()=>{
-  // Everything safe has already been live-applied as the player interacted;
-  // this just locks it in (updates the "before" snapshot) and closes.
   settingsSnapshot = null;
   overlay.classList.remove('show');
 });
+// "Apply & New Game": same, but also deals a fresh game — this is the
+// only way to change draw count mid-game if cards have already been
+// drawn (newGame() re-reads drawCount from pendingSettings).
 document.getElementById('settings-newgame').addEventListener('click', ()=>{
   settingsSnapshot = null;
   overlay.classList.remove('show');
@@ -1408,6 +2062,9 @@ document.getElementById('btn-undo').addEventListener('click', undoMove);
 document.getElementById('btn-automove').addEventListener('click', ()=>{ clearSelection(); autoMoveAll(); });
 document.getElementById('btn-hint').addEventListener('click', ()=>{ clearSelection(); showHint(); });
 
+// The header's New Game button doesn't start a game directly — it opens
+// a confirm dialog first, since it's easy to tap by accident and would
+// otherwise silently wipe an in-progress game.
 const confirmOverlay = document.getElementById('confirm-overlay');
 document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
 document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
@@ -1417,6 +2074,7 @@ document.getElementById('confirm-yes').addEventListener('click', ()=>{
 });
 confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
 
+// The two buttons on the "No More Moves" dialog (see checkNoMoves()).
 document.getElementById('nomoves-undo').addEventListener('click', ()=>{
   document.getElementById('nomovesmask').classList.remove('show');
   undoMove();
@@ -1426,11 +2084,16 @@ document.getElementById('nomoves-newgame').addEventListener('click', ()=>{
   newGame();
 });
 
+// "How to Play" popup — purely informational, no game-state changes.
 const helpOverlay = document.getElementById('help-overlay');
 document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
 document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
 helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
 
+// Re-run the screen-fit sizing math on window resize. Debounced by
+// 100ms (clearing/restarting the timer on every event) so dragging a
+// desktop window's edge around doesn't recalculate on every single
+// pixel of movement — only once things settle briefly.
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
@@ -1442,6 +2105,9 @@ window.addEventListener('resize', ()=>{
 // click it and trigger a re-render) is decode/fetch latency on a
 // brand-new <img> element the first time that specific file is needed —
 // warming the browser's cache for everything up front avoids that mid-game.
+// TO ADD A NEW CARD BACK: add its filename here too, so it gets
+// preloaded the same way as the built-in ones (this list should always
+// match the data-val values in the HTML's #back-picker).
 const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
 function preloadAllCardImages(){
   const urls = [];
@@ -1451,6 +2117,9 @@ function preloadAllCardImages(){
     }
   }
   KNOWN_BACK_FILES.forEach(f=> urls.push('cards/'+f));
+  // `new Image()` creates an element that's never inserted into the
+  // page — just setting its .src is enough to make the browser fetch
+  // and cache the file, without it ever being visible anywhere.
   urls.forEach(url=>{
     const img = new Image();
     img.src = url;
@@ -1459,6 +2128,11 @@ function preloadAllCardImages(){
 
 /* =========================================================
    INIT
+   Runs once, the moment the page loads. Order matters here: images
+   start loading in the background immediately, the 7 empty tableau
+   columns get created, and THEN newGame() deals an actual game (which
+   itself triggers the first renderAll() and starts the timer if
+   enabled).
    ========================================================= */
 preloadAllCardImages();
 ensureTableauCols();
