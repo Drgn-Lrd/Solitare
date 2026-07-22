@@ -3,15 +3,429 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Instant browser redirect for GitHub Pages -->
-    <meta http-equiv="refresh" content="0; url=Klondike.html">
-    <title>Solitaire</title>
-    <script>
-        // JS Fallback in case meta refresh is disabled
-        window.location.replace("Klondike.html");
-    </script>
+    <title>Solitaire Suite</title>
+    <style>
+        :root {
+            --bg-color: #082d18;
+            --card-bg: #0e3d23;
+            --card-hover: #155230;
+            --accent-gold: #fbc02d;
+            --text-light: #eceff1;
+            --text-dim: #90a4ae;
+            --border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-light);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 32px 16px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            letter-spacing: 1px;
+            color: var(--accent-gold);
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            margin-bottom: 8px;
+        }
+
+        header p {
+            color: var(--text-dim);
+            font-size: 1.05rem;
+        }
+
+        .picker-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .game-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+
+        .game-card:hover {
+            transform: translateY(-4px);
+            background-color: var(--card-hover);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .game-title {
+            font-size: 1.35rem;
+            font-weight: bold;
+        }
+
+        .badge {
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .badge-ready { background-color: #2e7d32; color: #e8f5e9; }
+        .badge-dev { background-color: #f57c00; color: #fff3e0; }
+
+        .preview-area {
+            height: 110px;
+            background: rgba(0,0,0,0.25);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            position: relative;
+            border: 1px inset rgba(255,255,255,0.05);
+        }
+
+        .game-desc {
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            line-height: 1.4;
+        }
+
+        /* --- Preview Graphics --- */
+
+        .klondike-preview { display: flex; gap: 6px; }
+        .mini-card {
+            width: 28px; height: 40px; background: #fff; border-radius: 3px;
+            border: 1px solid #ccc; box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+        }
+        .mini-card.red { color: #d32f2f; font-weight: bold; font-size: 10px; padding: 2px; }
+        .mini-card.black { color: #212121; font-weight: bold; font-size: 10px; padding: 2px; }
+
+        .king-tile {
+            width: 64px; height: 84px; background: #fff; border-radius: 6px;
+            border: 2px solid #333; box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+
+        .peaks-graphic { display: flex; gap: 4px; align-items: flex-end; }
+        .peak-card { width: 22px; height: 32px; background: #e0e0e0; border-radius: 2px; border: 1px solid #aaa; }
+        .golf-graphic { display: flex; align-items: center; gap: 12px; }
+
+        /* --- Modal Styling --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+            backdrop-filter: blur(3px);
+        }
+
+        .modal-card {
+            background: #102a1c;
+            color: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 380px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            overflow: hidden;
+            text-align: center;
+            animation: popIn 0.2s ease-out;
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-header {
+            background: #081a11;
+            padding: 16px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: var(--accent-gold);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-body {
+            padding: 24px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .modal-body p {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .btn-modal {
+            background-color: #00a65a;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 16px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            transition: opacity 0.15s ease;
+        }
+
+        .btn-modal:hover { opacity: 0.9; }
+
+        /* Toast Notice */
+        #toast {
+            display: none;
+            position: fixed;
+            bottom: 24px;
+            background: #d32f2f;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            z-index: 3000;
+        }
+    </style>
 </head>
 <body>
-    <p>Loading Solitaire... If you are not redirected, <a href="Klondike.html">click here</a>.</p>
+
+    <header>
+        <h1>Solitaire Suite</h1>
+        <p>Select a game to start playing</p>
+    </header>
+
+    <div class="picker-grid">
+
+        <!-- Klondike (Direct Page Redirect) -->
+        <div class="game-card" onclick="launchGame('Klondike.html')">
+            <div>
+                <div class="card-header">
+                    <span class="game-title">Klondike</span>
+                    <span class="badge badge-ready">Play Now</span>
+                </div>
+                <div class="preview-area">
+                    <div class="klondike-preview">
+                        <div class="mini-card red">A♦</div>
+                        <div class="mini-card black">K♠</div>
+                        <div class="mini-card red">Q♥</div>
+                    </div>
+                </div>
+            </div>
+            <p class="game-desc">The classic solitaire experience. Build 7 columns down in alternating colors and stack foundations by suit.</p>
+        </div>
+
+        <!-- FreeCell (Interactive King) -->
+        <div class="game-card" onclick="showDevModal('FreeCell')">
+            <div>
+                <div class="card-header">
+                    <span class="game-title">FreeCell</span>
+                    <span class="badge badge-dev">In Dev</span>
+                </div>
+                <div class="preview-area">
+                    <div class="king-tile">
+                        <svg width="48" height="60" viewBox="0 0 100 120" id="king-face">
+                            <path d="M 10 35 L 25 10 L 50 25 L 75 10 L 90 35 Z" fill="#fbc02d" stroke="#333" stroke-width="3"/>
+                            <circle cx="50" cy="25" r="4" fill="#d32f2f"/>
+                            <rect x="20" y="35" width="60" height="50" rx="8" fill="#ffcc80" stroke="#333" stroke-width="3"/>
+                            <path d="M 20 65 Q 50 100 80 65" fill="#5d4037" stroke="#333" stroke-width="3"/>
+                            <ellipse cx="38" cy="50" rx="7" ry="5" fill="#ffffff" stroke="#333" stroke-width="2"/>
+                            <ellipse cx="62" cy="50" rx="7" ry="5" fill="#ffffff" stroke="#333" stroke-width="2"/>
+                            <circle class="pupil" id="pupil-left" cx="38" cy="50" r="3" fill="#212121"/>
+                            <circle class="pupil" id="pupil-right" cx="62" cy="50" r="3" fill="#212121"/>
+                            <path d="M 35 62 Q 50 55 65 62" fill="none" stroke="#333" stroke-width="3"/>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <p class="game-desc">Open-board strategy with 4 free reserve cells. Nearly every deal is solvable with smart planning.</p>
+        </div>
+
+        <!-- TriPeaks -->
+        <div class="game-card" onclick="showDevModal('TriPeaks')">
+            <div>
+                <div class="card-header">
+                    <span class="game-title">TriPeaks</span>
+                    <span class="badge badge-dev">In Dev</span>
+                </div>
+                <div class="preview-area">
+                    <div class="peaks-graphic">
+                        <div class="peak-card" style="height:25px;"></div>
+                        <div class="peak-card" style="height:35px;"></div>
+                        <div class="peak-card" style="height:25px;"></div>
+                    </div>
+                </div>
+            </div>
+            <p class="game-desc">Clear three overlapping pyramids by picking cards one rank higher or lower than the waste pile.</p>
+        </div>
+
+        <!-- Golf -->
+        <div class="game-card" onclick="showDevModal('Golf')">
+            <div>
+                <div class="card-header">
+                    <span class="game-title">Golf</span>
+                    <span class="badge badge-dev">In Dev</span>
+                </div>
+                <div class="preview-area">
+                    <div class="golf-graphic">
+                        <div class="mini-card black">7♣</div>
+                        <span style="color:#aaa; font-size:12px;">➔</span>
+                        <div class="mini-card red">8♥</div>
+                    </div>
+                </div>
+            </div>
+            <p class="game-desc">Fast-paced card matching. Clear 35 tableau cards onto the waste pile in sequential order.</p>
+        </div>
+
+        <!-- Yukon -->
+        <div class="game-card" onclick="showDevModal('Yukon')">
+            <div>
+                <div class="card-header">
+                    <span class="game-title">Yukon</span>
+                    <span class="badge badge-dev">In Dev</span>
+                </div>
+                <div class="preview-area">
+                    <div class="klondike-preview">
+                        <div class="mini-card black">10♠</div>
+                        <div class="mini-card red" style="margin-left:-12px; margin-top:8px;">9♥</div>
+                    </div>
+                </div>
+            </div>
+            <p class="game-desc">No stock draw pile. Move any group of face-up cards across 7 columns regardless of sequence order.</p>
+        </div>
+
+        <!-- Pyramid -->
+        <div class="game-card" onclick="showDevModal('Pyramid')">
+            <div>
+                <div class="card-header">
+                    <span class="game-title">Pyramid</span>
+                    <span class="badge badge-dev">In Dev</span>
+                </div>
+                <div class="preview-area">
+                    <div style="text-align:center;">
+                        <div class="mini-card red" style="display:inline-block; margin-bottom: 2px;">K♠</div><br>
+                        <div class="mini-card black" style="display:inline-block;">7♦</div>
+                        <div class="mini-card red" style="display:inline-block;">6♣</div>
+                    </div>
+                </div>
+            </div>
+            <p class="game-desc">Pair exposed cards that sum to 13 to disassemble the 28-card pyramid structure.</p>
+        </div>
+
+    </div>
+
+    <!-- Development Modal -->
+    <div class="modal-overlay" id="dev-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                🛠️ Under Construction
+            </div>
+            <div class="modal-body">
+                <h3 id="modal-game-title" style="color: var(--text-light);">Game Title</h3>
+                <p>This solitaire variant is currently in development! Check back soon for updates.</p>
+                <button class="btn-modal" onclick="closeDevModal()">Got It</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast">Requested game was not found. Returned to home.</div>
+
+    <script>
+        // --- Navigation Engine ---
+        function launchGame(targetUrl) {
+            window.location.href = targetUrl;
+        }
+
+        function showDevModal(gameName) {
+            document.getElementById('modal-game-title').innerText = gameName;
+            document.getElementById('dev-modal').style.display = 'flex';
+        }
+
+        function closeDevModal() {
+            document.getElementById('dev-modal').style.display = 'none';
+        }
+
+        // Check if user redirected here due to missing game
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('notFound') === 'true') {
+            const toast = document.getElementById('toast');
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 3500);
+            
+            // Clean up URL parameter
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        // --- FreeCell Interactive Pupil Tracking ---
+        const pupilLeft = document.getElementById('pupil-left');
+        const pupilRight = document.getElementById('pupil-right');
+        const leftAnchor = { x: 38, y: 50 };
+        const rightAnchor = { x: 62, y: 50 };
+        const maxRadius = 3.5;
+
+        document.addEventListener('mousemove', (e) => {
+            trackEye(pupilLeft, leftAnchor, e.clientX, e.clientY);
+            trackEye(pupilRight, rightAnchor, e.clientX, e.clientY);
+        });
+
+        document.addEventListener('mouseleave', () => {
+            pupilLeft.setAttribute('cx', leftAnchor.x);
+            pupilLeft.setAttribute('cy', leftAnchor.y);
+            pupilRight.setAttribute('cx', rightAnchor.x);
+            pupilRight.setAttribute('cy', rightAnchor.y);
+        });
+
+        function trackEye(pupilEl, anchor, mouseX, mouseY) {
+            const rect = pupilEl.getBoundingClientRect();
+            const eyeCenterX = rect.left + rect.width / 2;
+            const eyeCenterY = rect.top + rect.height / 2;
+
+            const deltaX = mouseX - eyeCenterX;
+            const deltaY = mouseY - eyeCenterY;
+            const angle = Math.atan2(deltaY, deltaX);
+            const distance = Math.min(Math.hypot(deltaX, deltaY) / 15, maxRadius);
+
+            pupilEl.setAttribute('cx', anchor.x + Math.cos(angle) * distance);
+            pupilEl.setAttribute('cy', anchor.y + Math.sin(angle) * distance);
+        }
+    </script>
 </body>
 </html>
