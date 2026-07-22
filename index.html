@@ -161,6 +161,7 @@
             padding: 1px 1px;
             line-height: 1;
             position: relative;
+            flex-shrink: 0;
         }
         .m-card.back {
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
@@ -190,7 +191,7 @@
             flex-direction: column;
         }
 
-        /* --- TriPeaks Precise Grid --- */
+        /* --- TriPeaks & Pyramid Grids --- */
         .tripeaks-container {
             display: flex;
             flex-direction: column;
@@ -203,6 +204,21 @@
             justify-content: center;
             position: relative;
             width: 100%;
+        }
+
+        .pyramid-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            margin-top: -2px;
+        }
+
+        .p-row {
+            display: flex;
+            justify-content: center;
+            gap: 2px;
+            margin-bottom: -18px;
         }
 
         /* --- Backgrounds --- */
@@ -315,19 +331,12 @@
                                     
                                     <!-- Rotating Head Group (Default Faces Left) -->
                                     <g id="king-head-group">
-                                        <!-- Crown -->
                                         <path d="M 12 12 L 16 22 L 26 16 L 36 22 L 40 12 L 32 14 L 26 8 L 20 14 Z" fill="#ffd700" stroke="#000" stroke-width="1.5"/>
-                                        <!-- Face / Head Base -->
                                         <path d="M 16 22 Q 14 32 18 42 L 34 42 Q 40 32 36 22 Z" fill="#ffdbac" stroke="#000" stroke-width="1.5"/>
-                                        <!-- Mustache/Beard facing Left -->
                                         <path d="M 12 42 L 38 42 L 42 48 L 8 48 Z" fill="#ffffff" stroke="#000" stroke-width="1.5"/>
                                         <path d="M 6 48 L 48 48 L 48 66 L 6 66 Z" fill="#b22222" stroke="#000" stroke-width="1.5"/>
                                         <path d="M 10 48 L 14 66 M 20 48 L 24 66 M 30 48 L 34 66" stroke="#ffd700" stroke-width="2"/>
-                                        
-                                        <!-- Left-Facing Nose & Mouth -->
                                         <path d="M 20 30 Q 14 32 20 35" fill="none" stroke="#000" stroke-width="1.5"/>
-                                        
-                                        <!-- Eye -->
                                         <ellipse cx="24" cy="28" rx="4" ry="3" fill="#ffffff" stroke="#000" stroke-width="1"/>
                                         <circle id="pupil-win95" cx="23" cy="28" r="1.8" fill="#000000"/>
                                         <path d="M 26 25 L 21 24" stroke="#000" stroke-width="1.5"/>
@@ -370,29 +379,24 @@
                     </div>
                     <div class="deal-layer" style="align-items:center;">
                         <div class="tripeaks-container">
-                            <!-- Row 1: 3 Peaks (Centered over columns 2, 5, 8) -->
                             <div class="tp-row" style="margin-bottom:-18px; gap: 48px;">
                                 <div class="m-card back"></div>
                                 <div class="m-card back"></div>
                                 <div class="m-card back"></div>
                             </div>
-                            <!-- Row 2: 6 Cards -->
                             <div class="tp-row" style="margin-bottom:-18px; gap: 6px;">
                                 <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div></div>
                                 <div style="display:flex; gap:2px; margin-left: 10px;"><div class="m-card back"></div><div class="m-card back"></div></div>
                                 <div style="display:flex; gap:2px; margin-left: 10px;"><div class="m-card back"></div><div class="m-card back"></div></div>
                             </div>
-                            <!-- Row 3: 9 Cards -->
                             <div class="tp-row" style="margin-bottom:-18px; gap: 10px;">
                                 <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
                                 <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
                                 <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
                             </div>
-                            <!-- Row 4: 10 Solid Cards Across Base -->
                             <div class="tp-row" id="tripeaks-row" style="gap:2px;"></div>
                         </div>
 
-                        <!-- Stock & Waste Pile -->
                         <div style="display:flex; gap:12px; margin-top:8px;">
                             <div class="m-card back-red"></div>
                             <div class="m-card black" style="border:2px solid #fbc02d;">6♠</div>
@@ -420,7 +424,7 @@
                     </div>
                     <div class="deal-layer">
                         <div id="golf-tableau" style="display:flex; justify-content:space-between; width:100%; margin-top:2px;"></div>
-                        <div style="display:flex; gap:12px; margin-top:8px; align-self:center;">
+                        <div style="display:flex; gap:12px; margin-top:4px; align-self:center;">
                             <div class="m-card back"></div>
                             <div class="m-card red" style="border:2px solid #fff;">3♥</div>
                         </div>
@@ -450,7 +454,7 @@
                     </div>
                 </div>
             </div>
-            <p class="game-desc">No stock draw pile. Move any group of face-up cards across 7 columns regardless of sequence.</p>
+            <p class="game-desc">7 tableau stacks with ascending face-down cards topped with 5 face-up cards. Build foundations up by suit.</p>
         </div>
 
         <!-- 6. PYRAMID -->
@@ -468,20 +472,15 @@
                         </svg>
                     </div>
                     <div class="deal-layer" style="align-items:center;">
-                        <div style="display:flex; flex-direction:column; align-items:center; gap:1px; margin-top:2px;">
-                            <div class="m-card red">K♠</div>
-                            <div style="display:flex; gap:2px;"><div class="m-card black">7♣</div><div class="m-card red">6♥</div></div>
-                            <div style="display:flex; gap:2px;"><div class="m-card red">Q♦</div><div class="m-card black">10♠</div><div class="m-card red">3♥</div></div>
-                            <div style="display:flex; gap:2px;"><div class="m-card black">A♣</div><div class="m-card red">5♦</div><div class="m-card black">8♠</div><div class="m-card red">J♥</div></div>
-                        </div>
-                        <div style="display:flex; gap:8px; margin-top:6px;">
+                        <div class="pyramid-container" id="pyramid-tableau"></div>
+                        <div style="display:flex; gap:8px; margin-top:16px;">
                             <div class="m-card back"></div>
                             <div class="m-card slot"></div>
                         </div>
                     </div>
                 </div>
             </div>
-            <p class="game-desc">Pair exposed cards that sum to 13 to disassemble the 28-card pyramid structure.</p>
+            <p class="game-desc">Pair exposed cards that sum to 13 to disassemble the 28-card, 7-row pyramid structure.</p>
         </div>
 
     </div>
@@ -578,18 +577,17 @@
         }
 
         function renderExtras() {
-            // TriPeaks Bottom Row - 10 Cards
+            // TriPeaks Bottom Row
             const triContainer = document.getElementById('tripeaks-row');
             if (triContainer) {
                 const deck = getShuffledDeck();
                 triContainer.innerHTML = '';
                 for (let i = 0; i < 10; i++) {
-                    const card = createCardEl(deck.pop());
-                    triContainer.appendChild(card);
+                    triContainer.appendChild(createCardEl(deck.pop()));
                 }
             }
 
-            // Golf Tableau
+            // Golf Tableau (5 cards per tableau across 7 columns)
             const golfContainer = document.getElementById('golf-tableau');
             if (golfContainer) {
                 const deck = getShuffledDeck();
@@ -597,16 +595,16 @@
                 for (let c = 0; c < 7; c++) {
                     const cascade = document.createElement('div');
                     cascade.className = 'cascade-col';
-                    for (let r = 0; r < 4; r++) {
+                    for (let r = 0; r < 5; r++) {
                         const card = createCardEl(deck.pop());
-                        if (r > 0) card.style.marginTop = '-21px';
+                        if (r > 0) card.style.marginTop = '-22px';
                         cascade.appendChild(card);
                     }
                     golfContainer.appendChild(cascade);
                 }
             }
 
-            // Yukon Tableau
+            // Yukon Tableau (7 Stacks: 1st has 1 card; 2nd..7th have 1..6 face-down + 5 face-up)
             const yukonContainer = document.getElementById('yukon-tableau');
             if (yukonContainer) {
                 const deck = getShuffledDeck();
@@ -614,12 +612,36 @@
                 for (let c = 0; c < 7; c++) {
                     const cascade = document.createElement('div');
                     cascade.className = 'cascade-col';
-                    for (let r = 0; r < 3; r++) {
-                        const card = (c > 0 && r === 0) ? createBackEl() : createCardEl(deck.pop());
-                        if (r > 0) card.style.marginTop = '-21px';
+                    const faceDownCount = c; // 0, 1, 2, 3, 4, 5, 6
+                    const faceUpCount = (c === 0) ? 1 : 5; // 1 card for first col, 5 face-up for rest
+
+                    for (let fd = 0; fd < faceDownCount; fd++) {
+                        const back = createBackEl();
+                        if (fd > 0) back.style.marginTop = '-23px';
+                        cascade.appendChild(back);
+                    }
+
+                    for (let fu = 0; fu < faceUpCount; fu++) {
+                        const card = createCardEl(deck.pop());
+                        if (faceDownCount > 0 || fu > 0) card.style.marginTop = '-23px';
                         cascade.appendChild(card);
                     }
                     yukonContainer.appendChild(cascade);
+                }
+            }
+
+            // Pyramid Tableau (7 rows, 28 cards total)
+            const pyramidContainer = document.getElementById('pyramid-tableau');
+            if (pyramidContainer) {
+                const deck = getShuffledDeck();
+                pyramidContainer.innerHTML = '';
+                for (let row = 1; row <= 7; row++) {
+                    const rowDiv = document.createElement('div');
+                    rowDiv.className = 'p-row';
+                    for (let col = 0; col < row; col++) {
+                        rowDiv.appendChild(createCardEl(deck.pop()));
+                    }
+                    pyramidContainer.appendChild(rowDiv);
                 }
             }
         }
@@ -656,16 +678,12 @@
             const deltaX = mouseX - headCenterX;
             const deltaY = mouseY - headCenterY;
 
-            // Turn whole face if moving significantly left or right
             if (deltaX > 40) {
-                // Look Right (flip face horizontally)
                 headGroupEl.style.transform = 'scaleX(-1) translateX(-30px)';
             } else {
-                // Default Face Left
                 headGroupEl.style.transform = 'none';
             }
 
-            // Move pupil for subtle vertical/horizontal eye tracking
             const angle = Math.atan2(deltaY, deltaX);
             const distance = Math.min(Math.hypot(deltaX, deltaY) / 20, maxRadiusWin95);
 
