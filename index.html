@@ -195,13 +195,12 @@
         .tripeaks-container {
             display: flex;
             flex-direction: column;
-            align-items: center;
-            width: 100%;
+            align-items: flex-start;
+            width: 218px;
         }
 
         .tp-row {
             display: flex;
-            justify-content: center;
             position: relative;
             width: 100%;
         }
@@ -368,36 +367,45 @@
                 </div>
                 <div class="preview-canvas">
                     <div class="bg-layer tripeaks-bg">
-                        <svg style="width:100%; height:100%;" viewBox="0 0 500 200" preserveAspectRatio="none">
-                            <polygon points="30,200 130,50 230,200" fill="#3b4d61"/>
-                            <polygon points="130,50 110,80 130,90 145,75 160,95 130,50" fill="#ffffff"/>
-                            <polygon points="150,200 270,20 390,200" fill="#2c3e50"/>
-                            <polygon points="270,20 240,60 270,75 290,55 310,80 270,20" fill="#ffffff"/>
-                            <polygon points="300,200 400,60 490,200" fill="#3b4d61"/>
-                            <polygon points="400,60 380,90 400,100 415,85 430,105 400,60" fill="#ffffff"/>
+                        <svg style="width:100%; height:100%;" viewBox="0 0 100 100" preserveAspectRatio="none">
+                            <!-- Mountain 1 (Center at 20%) -->
+                            <polygon points="0,100 20,28 40,100" fill="#2c3e50" opacity="0.9"/>
+                            <polygon points="20,28 15,45 20,50 23,43 25,52 20,28" fill="#ffffff"/>
+                            
+                            <!-- Mountain 2 (Center at 50%) -->
+                            <polygon points="25,100 50,18 75,100" fill="#1b2a47" opacity="0.95"/>
+                            <polygon points="50,18 43,38 50,44 54,36 58,47 50,18" fill="#ffffff"/>
+                            
+                            <!-- Mountain 3 (Center at 80%) -->
+                            <polygon points="60,100 80,28 100,100" fill="#2c3e50" opacity="0.9"/>
+                            <polygon points="80,28 75,45 80,50 83,43 85,52 80,28" fill="#ffffff"/>
                         </svg>
                     </div>
                     <div class="deal-layer" style="align-items:center;">
                         <div class="tripeaks-container">
-                            <div class="tp-row" style="margin-bottom:-18px; gap: 48px;">
+                            <!-- Row 1: 3 Cards (Peak Tops) -->
+                            <div class="tp-row" style="margin-bottom:-18px; padding-left:33px; gap:46px;">
                                 <div class="m-card back"></div>
                                 <div class="m-card back"></div>
                                 <div class="m-card back"></div>
                             </div>
-                            <div class="tp-row" style="margin-bottom:-18px; gap: 6px;">
+                            <!-- Row 2: 6 Cards (3 Pairs) -->
+                            <div class="tp-row" style="margin-bottom:-18px; padding-left:22px; gap:24px;">
                                 <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div></div>
-                                <div style="display:flex; gap:2px; margin-left: 10px;"><div class="m-card back"></div><div class="m-card back"></div></div>
-                                <div style="display:flex; gap:2px; margin-left: 10px;"><div class="m-card back"></div><div class="m-card back"></div></div>
+                                <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div></div>
+                                <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div></div>
                             </div>
-                            <div class="tp-row" style="margin-bottom:-18px; gap: 10px;">
-                                <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
-                                <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
-                                <div style="display:flex; gap:2px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
+                            <!-- Row 3: 9 Cards -->
+                            <div class="tp-row" style="margin-bottom:-18px; padding-left:11px; gap:2px;">
+                                <div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div>
+                                <div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div>
+                                <div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div>
                             </div>
+                            <!-- Row 4: 10 Cards Base -->
                             <div class="tp-row" id="tripeaks-row" style="gap:2px;"></div>
                         </div>
 
-                        <div style="display:flex; gap:12px; margin-top:8px;">
+                        <div style="display:flex; gap:12px; margin-top:6px;">
                             <div class="m-card back-red"></div>
                             <div class="m-card black" style="border:2px solid #fbc02d;">6♠</div>
                         </div>
@@ -604,7 +612,7 @@
                 }
             }
 
-            // Yukon Tableau (7 Stacks: 1st has 1 card; 2nd..7th have 1..6 face-down + 5 face-up)
+            // Yukon Tableau
             const yukonContainer = document.getElementById('yukon-tableau');
             if (yukonContainer) {
                 const deck = getShuffledDeck();
@@ -612,8 +620,8 @@
                 for (let c = 0; c < 7; c++) {
                     const cascade = document.createElement('div');
                     cascade.className = 'cascade-col';
-                    const faceDownCount = c; // 0, 1, 2, 3, 4, 5, 6
-                    const faceUpCount = (c === 0) ? 1 : 5; // 1 card for first col, 5 face-up for rest
+                    const faceDownCount = c;
+                    const faceUpCount = (c === 0) ? 1 : 5;
 
                     for (let fd = 0; fd < faceDownCount; fd++) {
                         const back = createBackEl();
@@ -630,7 +638,7 @@
                 }
             }
 
-            // Pyramid Tableau (7 rows, 28 cards total)
+            // Pyramid Tableau
             const pyramidContainer = document.getElementById('pyramid-tableau');
             if (pyramidContainer) {
                 const deck = getShuffledDeck();
