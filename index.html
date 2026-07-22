@@ -6,13 +6,13 @@
     <title>Solitaire Suite</title>
     <style>
         :root {
-            --bg-color: #082d18;
-            --card-bg: #0e3d23;
-            --card-hover: #155230;
+            --bg-color: #061c0f;
+            --card-bg: #0b2e19;
+            --card-hover: #124024;
             --accent-gold: #fbc02d;
             --text-light: #eceff1;
             --text-dim: #90a4ae;
-            --border-color: rgba(255, 255, 255, 0.12);
+            --border-color: rgba(255, 255, 255, 0.15);
         }
 
         * {
@@ -25,6 +25,7 @@
 
         body {
             background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 50% 20%, #0d3d20 0%, #04120a 100%);
             color: var(--text-light);
             min-height: 100vh;
             display: flex;
@@ -35,35 +36,36 @@
 
         header {
             text-align: center;
-            margin-bottom: 36px;
+            margin-bottom: 32px;
         }
 
         header h1 {
-            font-size: 2.5rem;
-            letter-spacing: 1px;
+            font-size: 2.6rem;
+            letter-spacing: 2px;
             color: var(--accent-gold);
-            text-shadow: 0 2px 8px rgba(0,0,0,0.5);
-            margin-bottom: 8px;
+            text-shadow: 0 3px 10px rgba(0,0,0,0.7);
+            margin-bottom: 6px;
+            text-transform: uppercase;
         }
 
         header p {
             color: var(--text-dim);
-            font-size: 1.05rem;
+            font-size: 1.1rem;
         }
 
         .picker-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+            gap: 24px;
             width: 100%;
-            max-width: 1100px;
+            max-width: 1150px;
         }
 
         .game-card {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px;
+            border-radius: 14px;
+            padding: 18px;
             text-decoration: none;
             color: inherit;
             display: flex;
@@ -72,110 +74,186 @@
             position: relative;
             overflow: hidden;
             transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
             cursor: pointer;
         }
 
         .game-card:hover {
-            transform: translateY(-4px);
+            transform: translateY(-5px);
             background-color: var(--card-hover);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+            box-shadow: 0 12px 28px rgba(0,0,0,0.6);
         }
 
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
 
         .game-title {
-            font-size: 1.35rem;
-            font-weight: bold;
+            font-size: 1.4rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
         }
 
         .badge {
             font-size: 0.75rem;
-            padding: 4px 8px;
+            padding: 4px 10px;
             border-radius: 12px;
             font-weight: bold;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .badge-ready { background-color: #2e7d32; color: #e8f5e9; }
-        .badge-dev { background-color: #f57c00; color: #fff3e0; }
+        .badge-ready { background-color: #2e7d32; color: #e8f5e9; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+        .badge-dev { background-color: #e65100; color: #fff3e0; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 
-        .preview-area {
-            height: 110px;
-            background: rgba(0,0,0,0.25);
-            border-radius: 8px;
+        /* --- Custom Themed Visual Canvas Areas --- */
+        .preview-canvas {
+            height: 180px;
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: inset 0 0 12px rgba(0,0,0,0.5);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 16px;
-            position: relative;
-            border: 1px inset rgba(255,255,255,0.05);
+        }
+
+        .bg-layer {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 1;
+        }
+
+        .deal-layer {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 2;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
 
         .game-desc {
             font-size: 0.9rem;
             color: var(--text-dim);
-            line-height: 1.4;
+            line-height: 1.45;
         }
 
-        /* --- Preview Graphics --- */
-
-        .klondike-preview { display: flex; gap: 6px; }
-        .mini-card {
-            width: 28px; height: 40px; background: #fff; border-radius: 3px;
-            border: 1px solid #ccc; box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+        /* --- Reusable Mini Card Components --- */
+        .m-card {
+            width: 22px;
+            height: 32px;
+            background: #ffffff;
+            border-radius: 2px;
+            border: 1px solid #222;
+            box-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+            font-size: 9px;
+            font-weight: bold;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            padding: 1px 2px;
+            line-height: 1;
+            position: relative;
         }
-        .mini-card.red { color: #d32f2f; font-weight: bold; font-size: 10px; padding: 2px; }
-        .mini-card.black { color: #212121; font-weight: bold; font-size: 10px; padding: 2px; }
+        .m-card.back {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border: 1px solid #fff;
+        }
+        .m-card.back-red {
+            background: linear-gradient(135deg, #870000 0%, #190a05 100%);
+            border: 1px solid #ffaaaa;
+        }
+        .m-card.slot {
+            background: rgba(255,255,255,0.15);
+            border: 1px dashed rgba(255,255,255,0.4);
+            box-shadow: none;
+        }
+        .red { color: #d32f2f; }
+        .black { color: #111; }
 
-        .king-tile {
-            width: 64px; height: 84px; background: #fff; border-radius: 6px;
-            border: 2px solid #333; box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        /* --- 1. Klondike Layout --- */
+        .klondike-bg {
+            background: radial-gradient(circle, #0b532c 0%, #032110 100%);
         }
 
-        .peaks-graphic { display: flex; gap: 4px; align-items: flex-end; }
-        .peak-card { width: 22px; height: 32px; background: #e0e0e0; border-radius: 2px; border: 1px solid #aaa; }
-        .golf-graphic { display: flex; align-items: center; gap: 12px; }
+        /* --- 2. FreeCell Layout --- */
+        .freecell-bg {
+            background: #008080; /* Win95 Teal */
+        }
+        .king-tile-win95 {
+            width: 22px;
+            height: 32px;
+            background: #c0c0c0;
+            border: 1px solid #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* --- 3. TriPeaks Theme & Layout --- */
+        .tripeaks-bg {
+            background: linear-gradient(to bottom, #1a2a6c, #b21f1f, #fdbb2d);
+        }
+        .mountains-svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- 4. Golf Theme & Layout --- */
+        .golf-bg {
+            background: linear-gradient(to bottom, #4bacb8 0%, #76b852 40%, #8DC26F 100%);
+        }
+
+        /* --- 5. Yukon Theme & Layout --- */
+        .yukon-bg {
+            background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364);
+        }
+
+        /* --- 6. Pyramid Theme & Layout --- */
+        .pyramid-bg {
+            background: linear-gradient(to bottom, #3a1c71, #d76d77, #ffaf7b);
+        }
 
         /* --- Modal Styling --- */
         .modal-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.75);
             z-index: 2000;
             justify-content: center;
             align-items: center;
             padding: 16px;
-            backdrop-filter: blur(3px);
+            backdrop-filter: blur(4px);
         }
 
         .modal-card {
-            background: #102a1c;
+            background: #0c2617;
             color: #ffffff;
             border: 1px solid var(--border-color);
             border-radius: 12px;
             width: 100%;
             max-width: 380px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
             overflow: hidden;
             text-align: center;
             animation: popIn 0.2s ease-out;
         }
 
         @keyframes popIn {
-            from { transform: scale(0.9); opacity: 0; }
+            from { transform: scale(0.85); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
         }
 
         .modal-header {
-            background: #081a11;
+            background: #05140b;
             padding: 16px;
             font-size: 1.1rem;
             font-weight: bold;
@@ -197,7 +275,7 @@
         }
 
         .btn-modal {
-            background-color: #00a65a;
+            background-color: #2e7d32;
             border: none;
             border-radius: 6px;
             padding: 10px 16px;
@@ -205,22 +283,18 @@
             font-weight: bold;
             color: white;
             cursor: pointer;
-            transition: opacity 0.15s ease;
         }
 
-        .btn-modal:hover { opacity: 0.9; }
-
-        /* Toast Notice */
         #toast {
             display: none;
             position: fixed;
             bottom: 24px;
-            background: #d32f2f;
+            background: #c62828;
             color: white;
             padding: 12px 20px;
             border-radius: 20px;
             font-size: 0.9rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
             z-index: 3000;
         }
     </style>
@@ -229,120 +303,268 @@
 
     <header>
         <h1>Solitaire Suite</h1>
-        <p>Select a game to start playing</p>
+        <p>Select a game to launch</p>
     </header>
 
     <div class="picker-grid">
 
-        <!-- Klondike (Direct Page Redirect) -->
+        <!-- 1. KLONDIKE -->
         <div class="game-card" onclick="launchGame('Klondike.html')">
             <div>
                 <div class="card-header">
                     <span class="game-title">Klondike</span>
                     <span class="badge badge-ready">Play Now</span>
                 </div>
-                <div class="preview-area">
-                    <div class="klondike-preview">
-                        <div class="mini-card red">A♦</div>
-                        <div class="mini-card black">K♠</div>
-                        <div class="mini-card red">Q♥</div>
+                <div class="preview-canvas">
+                    <div class="bg-layer klondike-bg"></div>
+                    <div class="deal-layer">
+                        <!-- Top Row: Stock/Waste & Foundations -->
+                        <div style="display:flex; justify-content:space-between; width:100%;">
+                            <div style="display:flex; gap:4px;">
+                                <div class="m-card back-red"></div>
+                                <div class="m-card red">9♥</div>
+                            </div>
+                            <div style="display:flex; gap:4px;">
+                                <div class="m-card slot">♠</div>
+                                <div class="m-card slot">♥</div>
+                                <div class="m-card slot">♣</div>
+                                <div class="m-card slot">♦</div>
+                            </div>
+                        </div>
+                        <!-- Tableau Cascades (1 to 7) -->
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; margin-top:8px;">
+                            <div class="m-card red">A♦</div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:6px; left:0;">10♠</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:6px; left:0;">J♥</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:6px; left:0;">8♣</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:6px; left:0;">Q♦</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:6px; left:0;">4♠</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:6px; left:0;">K♥</div></div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <p class="game-desc">The classic solitaire experience. Build 7 columns down in alternating colors and stack foundations by suit.</p>
+            <p class="game-desc">The classic 7-column experience. Build down in alternating colors and stack foundations by suit.</p>
         </div>
 
-        <!-- FreeCell (Interactive King) -->
+        <!-- 2. FREECELL -->
         <div class="game-card" onclick="showDevModal('FreeCell')">
             <div>
                 <div class="card-header">
                     <span class="game-title">FreeCell</span>
                     <span class="badge badge-dev">In Dev</span>
                 </div>
-                <div class="preview-area">
-                    <div class="king-tile">
-                        <svg width="48" height="60" viewBox="0 0 100 120" id="king-face">
-                            <path d="M 10 35 L 25 10 L 50 25 L 75 10 L 90 35 Z" fill="#fbc02d" stroke="#333" stroke-width="3"/>
-                            <circle cx="50" cy="25" r="4" fill="#d32f2f"/>
-                            <rect x="20" y="35" width="60" height="50" rx="8" fill="#ffcc80" stroke="#333" stroke-width="3"/>
-                            <path d="M 20 65 Q 50 100 80 65" fill="#5d4037" stroke="#333" stroke-width="3"/>
-                            <ellipse cx="38" cy="50" rx="7" ry="5" fill="#ffffff" stroke="#333" stroke-width="2"/>
-                            <ellipse cx="62" cy="50" rx="7" ry="5" fill="#ffffff" stroke="#333" stroke-width="2"/>
-                            <circle class="pupil" id="pupil-left" cx="38" cy="50" r="3" fill="#212121"/>
-                            <circle class="pupil" id="pupil-right" cx="62" cy="50" r="3" fill="#212121"/>
-                            <path d="M 35 62 Q 50 55 65 62" fill="none" stroke="#333" stroke-width="3"/>
-                        </svg>
+                <div class="preview-canvas">
+                    <div class="bg-layer freecell-bg"></div>
+                    <div class="deal-layer">
+                        <!-- Top Bar: 4 FreeCells & 4 Foundations with Win95 King -->
+                        <div style="display:flex; justify-content:space-between; width:100%;">
+                            <div style="display:flex; gap:3px;">
+                                <div class="m-card slot"></div>
+                                <div class="king-tile-win95">
+                                    <svg width="20" height="28" viewBox="0 0 60 72" id="king-face">
+                                        <rect x="2" y="2" width="56" height="68" fill="#c0c0c0" stroke="#000" stroke-width="2"/>
+                                        <rect x="4" y="4" width="52" height="64" fill="#ffffff" />
+                                        <path d="M 6 48 L 54 48 L 54 66 L 6 66 Z" fill="#b22222" stroke="#000" stroke-width="1.5"/>
+                                        <path d="M 12 48 L 18 66 M 24 48 L 30 66 M 36 48 L 42 66" stroke="#ffd700" stroke-width="2"/>
+                                        <path d="M 16 42 L 44 42 L 48 48 L 12 48 Z" fill="#ffffff" stroke="#000" stroke-width="1.5"/>
+                                        <path d="M 20 22 Q 18 32 22 42 L 38 42 Q 44 32 40 22 Z" fill="#ffdbac" stroke="#000" stroke-width="1.5"/>
+                                        <path d="M 16 12 L 20 22 L 30 16 L 40 22 L 44 12 L 36 14 L 30 8 L 24 14 Z" fill="#ffd700" stroke="#000" stroke-width="1.5"/>
+                                        <ellipse cx="34" cy="28" rx="4" ry="3" fill="#ffffff" stroke="#000" stroke-width="1"/>
+                                        <circle id="pupil-win95" cx="35" cy="28" r="1.8" fill="#000000"/>
+                                        <path d="M 36 25 L 31 24" stroke="#000" stroke-width="1.5"/>
+                                        <path d="M 37 28 Q 42 31 36 34" fill="none" stroke="#000" stroke-width="1.5"/>
+                                    </svg>
+                                </div>
+                                <div class="m-card slot"></div>
+                                <div class="m-card slot"></div>
+                            </div>
+                            <div style="display:flex; gap:3px;">
+                                <div class="m-card slot">♠</div>
+                                <div class="m-card slot">♥</div>
+                                <div class="m-card slot">♣</div>
+                                <div class="m-card slot">♦</div>
+                            </div>
+                        </div>
+                        <!-- 8 Columns All Face-Up Cascades -->
+                        <div style="display:flex; justify-content:space-between; width:100%; margin-top:6px;">
+                            <div class="m-card black">7♠</div>
+                            <div class="m-card red">K♥</div>
+                            <div class="m-card black">2♣</div>
+                            <div class="m-card red">J♦</div>
+                            <div class="m-card black">9♠</div>
+                            <div class="m-card red">4♥</div>
+                            <div class="m-card black">Q♣</div>
+                            <div class="m-card red">A♦</div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <p class="game-desc">Open-board strategy with 4 free reserve cells. Nearly every deal is solvable with smart planning.</p>
+            <p class="game-desc">Open-board strategy with 4 reserve cells. Almost every deal is solvable with smart planning.</p>
         </div>
 
-        <!-- TriPeaks -->
+        <!-- 3. TRIPEAKS -->
         <div class="game-card" onclick="showDevModal('TriPeaks')">
             <div>
                 <div class="card-header">
                     <span class="game-title">TriPeaks</span>
                     <span class="badge badge-dev">In Dev</span>
                 </div>
-                <div class="preview-area">
-                    <div class="peaks-graphic">
-                        <div class="peak-card" style="height:25px;"></div>
-                        <div class="peak-card" style="height:35px;"></div>
-                        <div class="peak-card" style="height:25px;"></div>
+                <div class="preview-canvas">
+                    <!-- Mountain Range Background -->
+                    <div class="bg-layer tripeaks-bg">
+                        <svg class="mountains-svg" viewBox="0 0 500 200" preserveAspectRatio="none">
+                            <!-- Mountain 1 -->
+                            <polygon points="30,200 130,50 230,200" fill="#3b4d61"/>
+                            <polygon points="130,50 110,80 130,90 145,75 160,95 130,50" fill="#ffffff"/>
+                            <!-- Mountain 2 (Center High) -->
+                            <polygon points="150,200 270,20 390,200" fill="#2c3e50"/>
+                            <polygon points="270,20 240,60 270,75 290,55 310,80 270,20" fill="#ffffff"/>
+                            <!-- Mountain 3 -->
+                            <polygon points="300,200 400,60 490,200" fill="#3b4d61"/>
+                            <polygon points="400,60 380,90 400,100 415,85 430,105 400,60" fill="#ffffff"/>
+                        </svg>
+                    </div>
+                    <!-- Overlapping 3-Peak Card Deal Layout -->
+                    <div class="deal-layer" style="align-items:center;">
+                        <!-- Peak Rows -->
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:2px; margin-top:2px;">
+                            <!-- Row 1: 3 Tops -->
+                            <div style="display:flex; gap:40px;">
+                                <div class="m-card back"></div>
+                                <div class="m-card back"></div>
+                                <div class="m-card back"></div>
+                            </div>
+                            <!-- Row 2: 6 Cards -->
+                            <div style="display:flex; gap:16px; margin-top:-14px;">
+                                <div class="m-card back"></div><div class="m-card back"></div>
+                                <div class="m-card back"></div><div class="m-card back"></div>
+                                <div class="m-card back"></div><div class="m-card back"></div>
+                            </div>
+                            <!-- Row 3: 9 Face Up Cards -->
+                            <div style="display:flex; gap:4px; margin-top:-14px;">
+                                <div class="m-card red">5♥</div><div class="m-card black">8♠</div>
+                                <div class="m-card red">K♦</div><div class="m-card black">3♣</div>
+                                <div class="m-card red">J♥</div><div class="m-card black">10♠</div>
+                                <div class="m-card red">7♦</div><div class="m-card black">Q♣</div>
+                            </div>
+                        </div>
+                        <!-- Stock & Waste Pile -->
+                        <div style="display:flex; gap:12px; margin-bottom:2px;">
+                            <div class="m-card back-red"></div>
+                            <div class="m-card black" style="border:2px solid #fbc02d;">6♠</div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <p class="game-desc">Clear three overlapping pyramids by picking cards one rank higher or lower than the waste pile.</p>
+            <p class="game-desc">Clear three overlapping peaks by picking cards one rank higher or lower than the waste pile.</p>
         </div>
 
-        <!-- Golf -->
+        <!-- 4. GOLF -->
         <div class="game-card" onclick="showDevModal('Golf')">
             <div>
                 <div class="card-header">
                     <span class="game-title">Golf</span>
                     <span class="badge badge-dev">In Dev</span>
                 </div>
-                <div class="preview-area">
-                    <div class="golf-graphic">
-                        <div class="mini-card black">7♣</div>
-                        <span style="color:#aaa; font-size:12px;">➔</span>
-                        <div class="mini-card red">8♥</div>
+                <div class="preview-canvas">
+                    <!-- Golf Course Backdrop -->
+                    <div class="bg-layer golf-bg">
+                        <svg width="100%" height="100%" viewBox="0 0 300 180" preserveAspectRatio="none">
+                            <path d="M 0 100 Q 150 70 300 110 L 300 180 L 0 180 Z" fill="#588c3e"/>
+                            <!-- Flagstick & Hole -->
+                            <line x1="250" y1="60" x2="250" y2="120" stroke="#ffffff" stroke-width="2"/>
+                            <polygon points="250,60 225,70 250,80" fill="#d32f2f"/>
+                            <ellipse cx="250" cy="120" rx="6" ry="2" fill="#222"/>
+                        </svg>
+                    </div>
+                    <!-- 7 Columns of 5 Cards Deal -->
+                    <div class="deal-layer" style="align-items:center;">
+                        <div style="display:flex; justify-content:space-between; width:100%; margin-top:4px;">
+                            <div class="m-card black">4♣</div>
+                            <div class="m-card red">J♥</div>
+                            <div class="m-card black">9♠</div>
+                            <div class="m-card red">2♦</div>
+                            <div class="m-card black">K♠</div>
+                            <div class="m-card red">7♥</div>
+                            <div class="m-card black">10♣</div>
+                        </div>
+                        <div style="display:flex; gap:12px; margin-bottom:2px;">
+                            <div class="m-card back"></div>
+                            <div class="m-card red" style="border:2px solid #fff;">3♥</div>
+                        </div>
                     </div>
                 </div>
             </div>
             <p class="game-desc">Fast-paced card matching. Clear 35 tableau cards onto the waste pile in sequential order.</p>
         </div>
 
-        <!-- Yukon -->
+        <!-- 5. YUKON -->
         <div class="game-card" onclick="showDevModal('Yukon')">
             <div>
                 <div class="card-header">
                     <span class="game-title">Yukon</span>
                     <span class="badge badge-dev">In Dev</span>
                 </div>
-                <div class="preview-area">
-                    <div class="klondike-preview">
-                        <div class="mini-card black">10♠</div>
-                        <div class="mini-card red" style="margin-left:-12px; margin-top:8px;">9♥</div>
+                <div class="preview-canvas">
+                    <!-- Northern Wilderness Backdrop -->
+                    <div class="bg-layer yukon-bg">
+                        <svg width="100%" height="100%" viewBox="0 0 300 180" preserveAspectRatio="none">
+                            <!-- Aurora Light Effect -->
+                            <path d="M 0 40 Q 100 10 200 50 T 300 20 L 300 0 L 0 0 Z" fill="rgba(46, 204, 113, 0.25)"/>
+                            <!-- Pine Tree Silhouettes -->
+                            <polygon points="20,180 35,120 50,180" fill="#081419"/>
+                            <polygon points="40,180 60,100 80,180" fill="#050d12"/>
+                            <polygon points="240,180 260,110 280,180" fill="#081419"/>
+                        </svg>
+                    </div>
+                    <!-- 7 Columns (No Stock, All Dealt) -->
+                    <div class="deal-layer">
+                        <div style="display:flex; justify-content:space-between; width:100%;">
+                            <div class="m-card red">K♦</div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">8♠</div><div class="m-card red" style="position:absolute; top:16px;">7♥</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">Q♣</div><div class="m-card red" style="position:absolute; top:16px;">J♦</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:8px;">10♥</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">A♠</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:8px;">5♦</div></div>
+                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">9♣</div></div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <p class="game-desc">No stock draw pile. Move any group of face-up cards across 7 columns regardless of sequence order.</p>
+            <p class="game-desc">No stock draw pile. Move any group of face-up cards across 7 columns regardless of sequence.</p>
         </div>
 
-        <!-- Pyramid -->
+        <!-- 6. PYRAMID -->
         <div class="game-card" onclick="showDevModal('Pyramid')">
             <div>
                 <div class="card-header">
                     <span class="game-title">Pyramid</span>
                     <span class="badge badge-dev">In Dev</span>
                 </div>
-                <div class="preview-area">
-                    <div style="text-align:center;">
-                        <div class="mini-card red" style="display:inline-block; margin-bottom: 2px;">K♠</div><br>
-                        <div class="mini-card black" style="display:inline-block;">7♦</div>
-                        <div class="mini-card red" style="display:inline-block;">6♣</div>
+                <div class="preview-canvas">
+                    <!-- Egyptian Desert Backdrop -->
+                    <div class="bg-layer pyramid-bg">
+                        <svg width="100%" height="100%" viewBox="0 0 300 180" preserveAspectRatio="none">
+                            <!-- Sun -->
+                            <circle cx="150" cy="70" r="35" fill="#fbc02d" opacity="0.6"/>
+                            <!-- Pyramid Silhouette -->
+                            <polygon points="70,180 170,80 270,180" fill="#4a2311" opacity="0.85"/>
+                            <polygon points="170,80 270,180 220,180" fill="#2d1307" opacity="0.85"/>
+                        </svg>
+                    </div>
+                    <!-- 28-Card Pyramid Layout (7 Tiers) -->
+                    <div class="deal-layer" style="align-items:center;">
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:1px; margin-top:2px;">
+                            <div class="m-card red">K♠</div>
+                            <div style="display:flex; gap:2px;"><div class="m-card black">7♣</div><div class="m-card red">6♥</div></div>
+                            <div style="display:flex; gap:2px;"><div class="m-card red">Q♦</div><div class="m-card black">10♠</div><div class="m-card red">3♥</div></div>
+                            <div style="display:flex; gap:2px;"><div class="m-card black">A♣</div><div class="m-card red">5♦</div><div class="m-card black">8♠</div><div class="m-card red">J♥</div></div>
+                        </div>
+                        <div style="display:flex; gap:8px; margin-bottom:2px;">
+                            <div class="m-card back"></div>
+                            <div class="m-card slot"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -383,34 +605,31 @@
             document.getElementById('dev-modal').style.display = 'none';
         }
 
-        // Check if user redirected here due to missing game
+        // Return handling if game not found
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('notFound') === 'true') {
             const toast = document.getElementById('toast');
             toast.style.display = 'block';
             setTimeout(() => { toast.style.display = 'none'; }, 3500);
-            
-            // Clean up URL parameter
             window.history.replaceState({}, document.title, window.location.pathname);
         }
 
-        // --- FreeCell Interactive Pupil Tracking ---
-        const pupilLeft = document.getElementById('pupil-left');
-        const pupilRight = document.getElementById('pupil-right');
-        const leftAnchor = { x: 38, y: 50 };
-        const rightAnchor = { x: 62, y: 50 };
-        const maxRadius = 3.5;
+        // --- Win95 FreeCell King Eye Tracking ---
+        const pupilWin95 = document.getElementById('pupil-win95');
+        const win95Anchor = { x: 35, y: 28 };
+        const maxRadiusWin95 = 2.2;
 
         document.addEventListener('mousemove', (e) => {
-            trackEye(pupilLeft, leftAnchor, e.clientX, e.clientY);
-            trackEye(pupilRight, rightAnchor, e.clientX, e.clientY);
+            if (pupilWin95) {
+                trackEye(pupilWin95, win95Anchor, e.clientX, e.clientY);
+            }
         });
 
         document.addEventListener('mouseleave', () => {
-            pupilLeft.setAttribute('cx', leftAnchor.x);
-            pupilLeft.setAttribute('cy', leftAnchor.y);
-            pupilRight.setAttribute('cx', rightAnchor.x);
-            pupilRight.setAttribute('cy', rightAnchor.y);
+            if (pupilWin95) {
+                pupilWin95.setAttribute('cx', win95Anchor.x);
+                pupilWin95.setAttribute('cy', win95Anchor.y);
+            }
         });
 
         function trackEye(pupilEl, anchor, mouseX, mouseY) {
@@ -421,7 +640,7 @@
             const deltaX = mouseX - eyeCenterX;
             const deltaY = mouseY - eyeCenterY;
             const angle = Math.atan2(deltaY, deltaX);
-            const distance = Math.min(Math.hypot(deltaX, deltaY) / 15, maxRadius);
+            const distance = Math.min(Math.hypot(deltaX, deltaY) / 18, maxRadiusWin95);
 
             pupilEl.setAttribute('cx', anchor.x + Math.cos(angle) * distance);
             pupilEl.setAttribute('cy', anchor.y + Math.sin(angle) * distance);
