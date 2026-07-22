@@ -317,14 +317,12 @@ function autoMoveAll(){
    and expected here, not a bug to guard against.
    ========================================================= */
 function findAnyMove(){
+  // 1) Foundation moves first — always genuine progress, and free.
   for(let i=0;i<4;i++){
     if(!state.freecells[i].length) continue;
     const card = state.freecells[i][0];
     for(const s of SUITS){
       if(canPlaceOnFoundation(card, state.foundations[s], s)) return {type:'freecell-foundation', fromKey:i, index:0, to:s};
-    }
-    for(let t=0;t<8;t++){
-      if(canPlaceOnTableau(card, state.tableau[t])) return {type:'freecell-tableau', fromKey:i, index:0, to:t};
     }
   }
   for(let c=0;c<8;c++){
@@ -334,19 +332,43 @@ function findAnyMove(){
     for(const s of SUITS){
       if(canPlaceOnFoundation(top, state.foundations[s], s)) return {type:'tableau-foundation', fromKey:c, index:pile.length-1, to:s};
     }
-    for(let i=0;i<4;i++){
-      if(!state.freecells[i].length) return {type:'tableau-freecell', fromKey:c, index:pile.length-1, to:i};
-    }
-    // Tableau-to-tableau: only suggest if it's not just relocating an
-    // entire single-card (or whole) column with nothing gained — same
-    // "avoid dead shuffles" spirit as Klondike's hint scanner.
+  }
+  // 2) Tableau-to-tableau shuffles next — checked BEFORE free-cell
+  //    parking on purpose. Parking a card costs you a free cell (a
+  //    limited resource you may need later); a shuffle that's already
+  //    legal without spending one is strictly better and should always
+  //    be suggested first. Only suggest if it's not just relocating an
+  //    entire single-card (or whole) column with nothing gained — same
+  //    "avoid dead shuffles" spirit as Klondike's hint scanner.
+  for(let c=0;c<8;c++){
+    const pile = state.tableau[c];
     for(let i=0;i<pile.length;i++){
       if(i===0) continue;
-      const card = pile[i];
       for(let t=0;t<8;t++){
         if(t===c) continue;
         if(canMoveExact('tableau', c, i, 'tableau', t)) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
       }
+    }
+  }
+  // 3) Freeing an already-parked card back onto the tableau — this
+  //    gives you a free cell back, so it's worth suggesting before
+  //    spending one on a brand new park.
+  for(let i=0;i<4;i++){
+    if(!state.freecells[i].length) continue;
+    const card = state.freecells[i][0];
+    for(let t=0;t<8;t++){
+      if(canPlaceOnTableau(card, state.tableau[t])) return {type:'freecell-tableau', fromKey:i, index:0, to:t};
+    }
+  }
+  // 4) Last resort: park a tableau top card in an open free cell. This
+  //    is the only move type that actually costs you something (one
+  //    fewer free cell for later), so it's only ever suggested once
+  //    nothing better is available.
+  for(let c=0;c<8;c++){
+    const pile = state.tableau[c];
+    if(!pile.length) continue;
+    for(let i=0;i<4;i++){
+      if(!state.freecells[i].length) return {type:'tableau-freecell', fromKey:c, index:pile.length-1, to:i};
     }
   }
   return null;
