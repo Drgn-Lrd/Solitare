@@ -109,9 +109,8 @@
         .badge-ready { background-color: #2e7d32; color: #e8f5e9; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
         .badge-dev { background-color: #e65100; color: #fff3e0; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 
-        /* --- Custom Themed Visual Canvas Areas --- */
         .preview-canvas {
-            height: 180px;
+            height: 190px;
             border-radius: 10px;
             position: relative;
             overflow: hidden;
@@ -133,10 +132,11 @@
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
             z-index: 2;
-            padding: 8px;
+            padding: 6px;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: flex-start;
+            gap: 6px;
         }
 
         .game-desc {
@@ -145,20 +145,20 @@
             line-height: 1.45;
         }
 
-        /* --- Reusable Mini Card Components --- */
+        /* --- Mini Card Primitives --- */
         .m-card {
-            width: 22px;
-            height: 32px;
+            width: 20px;
+            height: 28px;
             background: #ffffff;
             border-radius: 2px;
             border: 1px solid #222;
-            box-shadow: 1px 1px 4px rgba(0,0,0,0.5);
-            font-size: 9px;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+            font-size: 8px;
             font-weight: bold;
             display: flex;
             align-items: flex-start;
             justify-content: flex-start;
-            padding: 1px 2px;
+            padding: 1px 1px;
             line-height: 1;
             position: relative;
         }
@@ -171,132 +171,65 @@
             border: 1px solid #ffaaaa;
         }
         .m-card.slot {
-            background: rgba(255,255,255,0.15);
-            border: 1px dashed rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.12);
+            border: 1px dashed rgba(255,255,255,0.35);
             box-shadow: none;
+            color: rgba(255,255,255,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
         }
         .red { color: #d32f2f; }
         .black { color: #111; }
 
-        /* --- 1. Klondike Layout --- */
-        .klondike-bg {
-            background: radial-gradient(circle, #0b532c 0%, #032110 100%);
+        /* Cascading Stack Containers */
+        .cascade-col {
+            position: relative;
+            width: 20px;
+            display: flex;
+            flex-direction: column;
         }
 
-        /* --- 2. FreeCell Layout --- */
-        .freecell-bg {
-            background: #008080; /* Win95 Teal */
-        }
-        .king-tile-win95 {
-            width: 22px;
-            height: 32px;
+        /* --- Backgrounds --- */
+        .klondike-bg { background: radial-gradient(circle, #0b532c 0%, #032110 100%); }
+        .freecell-bg { background: #008080; }
+        .tripeaks-bg { background: linear-gradient(to bottom, #1a2a6c, #b21f1f, #fdbb2d); }
+        .golf-bg { background: linear-gradient(to bottom, #4bacb8 0%, #76b852 40%, #8DC26F 100%); }
+        .yukon-bg { background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364); }
+        .pyramid-bg { background: linear-gradient(to bottom, #3a1c71, #d76d77, #ffaf7b); }
+
+        .king-tile-center {
+            width: 20px;
+            height: 28px;
             background: #c0c0c0;
             border: 1px solid #000;
             display: flex;
             align-items: center;
             justify-content: center;
+            margin: 0 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
         }
 
-        /* --- 3. TriPeaks Theme & Layout --- */
-        .tripeaks-bg {
-            background: linear-gradient(to bottom, #1a2a6c, #b21f1f, #fdbb2d);
-        }
-        .mountains-svg {
-            width: 100%;
-            height: 100%;
-        }
-
-        /* --- 4. Golf Theme & Layout --- */
-        .golf-bg {
-            background: linear-gradient(to bottom, #4bacb8 0%, #76b852 40%, #8DC26F 100%);
-        }
-
-        /* --- 5. Yukon Theme & Layout --- */
-        .yukon-bg {
-            background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364);
-        }
-
-        /* --- 6. Pyramid Theme & Layout --- */
-        .pyramid-bg {
-            background: linear-gradient(to bottom, #3a1c71, #d76d77, #ffaf7b);
-        }
-
-        /* --- Modal Styling --- */
+        /* --- Modal & Toast --- */
         .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.75);
-            z-index: 2000;
-            justify-content: center;
-            align-items: center;
-            padding: 16px;
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.75); z-index: 2000;
+            justify-content: center; align-items: center; padding: 16px;
             backdrop-filter: blur(4px);
         }
-
         .modal-card {
-            background: #0c2617;
-            color: #ffffff;
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            width: 100%;
-            max-width: 380px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-            overflow: hidden;
-            text-align: center;
+            background: #0c2617; color: #ffffff; border: 1px solid var(--border-color);
+            border-radius: 12px; width: 100%; max-width: 380px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow: hidden; text-align: center;
             animation: popIn 0.2s ease-out;
         }
-
-        @keyframes popIn {
-            from { transform: scale(0.85); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
-        }
-
-        .modal-header {
-            background: #05140b;
-            padding: 16px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: var(--accent-gold);
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .modal-body {
-            padding: 24px 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .modal-body p {
-            color: var(--text-dim);
-            font-size: 0.95rem;
-            line-height: 1.5;
-        }
-
-        .btn-modal {
-            background-color: #2e7d32;
-            border: none;
-            border-radius: 6px;
-            padding: 10px 16px;
-            font-size: 0.95rem;
-            font-weight: bold;
-            color: white;
-            cursor: pointer;
-        }
-
-        #toast {
-            display: none;
-            position: fixed;
-            bottom: 24px;
-            background: #c62828;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-            z-index: 3000;
-        }
+        @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .modal-header { background: #05140b; padding: 16px; font-size: 1.1rem; font-weight: bold; color: var(--accent-gold); border-bottom: 1px solid var(--border-color); }
+        .modal-body { padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; }
+        .modal-body p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.5; }
+        .btn-modal { background-color: #2e7d32; border: none; border-radius: 6px; padding: 10px 16px; font-size: 0.95rem; font-weight: bold; color: white; cursor: pointer; }
+        #toast { display: none; position: fixed; bottom: 24px; background: #c62828; color: white; padding: 12px 20px; border-radius: 20px; font-size: 0.9rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 3000; }
     </style>
 </head>
 <body>
@@ -320,27 +253,19 @@
                     <div class="deal-layer">
                         <!-- Top Row: Stock/Waste & Foundations -->
                         <div style="display:flex; justify-content:space-between; width:100%;">
-                            <div style="display:flex; gap:4px;">
+                            <div style="display:flex; gap:3px;">
                                 <div class="m-card back-red"></div>
-                                <div class="m-card red">9♥</div>
+                                <div class="m-card slot"></div>
                             </div>
-                            <div style="display:flex; gap:4px;">
+                            <div style="display:flex; gap:3px;">
                                 <div class="m-card slot">♠</div>
                                 <div class="m-card slot">♥</div>
                                 <div class="m-card slot">♣</div>
                                 <div class="m-card slot">♦</div>
                             </div>
                         </div>
-                        <!-- Tableau Cascades (1 to 7) -->
-                        <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%; margin-top:8px;">
-                            <div class="m-card red">A♦</div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:6px; left:0;">10♠</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:6px; left:0;">J♥</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:6px; left:0;">8♣</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:6px; left:0;">Q♦</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:6px; left:0;">4♠</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:6px; left:0;">K♥</div></div>
-                        </div>
+                        <!-- Tableau Cascades (1 to 7 Cards, Directly Beneath Top Bar) -->
+                        <div id="klondike-tableau" style="display:flex; justify-content:space-between; width:100%; margin-top:2px;"></div>
                     </div>
                 </div>
             </div>
@@ -357,46 +282,42 @@
                 <div class="preview-canvas">
                     <div class="bg-layer freecell-bg"></div>
                     <div class="deal-layer">
-                        <!-- Top Bar: 4 FreeCells & 4 Foundations with Win95 King -->
-                        <div style="display:flex; justify-content:space-between; width:100%;">
-                            <div style="display:flex; gap:3px;">
+                        <!-- Top Bar: 4 FreeCells - Win95 King Tile - 4 Foundations -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                            <div style="display:flex; gap:2px;">
                                 <div class="m-card slot"></div>
-                                <div class="king-tile-win95">
-                                    <svg width="20" height="28" viewBox="0 0 60 72" id="king-face">
-                                        <rect x="2" y="2" width="56" height="68" fill="#c0c0c0" stroke="#000" stroke-width="2"/>
-                                        <rect x="4" y="4" width="52" height="64" fill="#ffffff" />
-                                        <path d="M 6 48 L 54 48 L 54 66 L 6 66 Z" fill="#b22222" stroke="#000" stroke-width="1.5"/>
-                                        <path d="M 12 48 L 18 66 M 24 48 L 30 66 M 36 48 L 42 66" stroke="#ffd700" stroke-width="2"/>
-                                        <path d="M 16 42 L 44 42 L 48 48 L 12 48 Z" fill="#ffffff" stroke="#000" stroke-width="1.5"/>
-                                        <path d="M 20 22 Q 18 32 22 42 L 38 42 Q 44 32 40 22 Z" fill="#ffdbac" stroke="#000" stroke-width="1.5"/>
-                                        <path d="M 16 12 L 20 22 L 30 16 L 40 22 L 44 12 L 36 14 L 30 8 L 24 14 Z" fill="#ffd700" stroke="#000" stroke-width="1.5"/>
-                                        <ellipse cx="34" cy="28" rx="4" ry="3" fill="#ffffff" stroke="#000" stroke-width="1"/>
-                                        <circle id="pupil-win95" cx="35" cy="28" r="1.8" fill="#000000"/>
-                                        <path d="M 36 25 L 31 24" stroke="#000" stroke-width="1.5"/>
-                                        <path d="M 37 28 Q 42 31 36 34" fill="none" stroke="#000" stroke-width="1.5"/>
-                                    </svg>
-                                </div>
+                                <div class="m-card slot"></div>
                                 <div class="m-card slot"></div>
                                 <div class="m-card slot"></div>
                             </div>
-                            <div style="display:flex; gap:3px;">
+
+                            <!-- King Tile Positioned in the Middle -->
+                            <div class="king-tile-center">
+                                <svg width="18" height="24" viewBox="0 0 60 72" id="king-face">
+                                    <rect x="2" y="2" width="56" height="68" fill="#c0c0c0" stroke="#000" stroke-width="2"/>
+                                    <rect x="4" y="4" width="52" height="64" fill="#ffffff" />
+                                    <path d="M 6 48 L 54 48 L 54 66 L 6 66 Z" fill="#b22222" stroke="#000" stroke-width="1.5"/>
+                                    <path d="M 12 48 L 18 66 M 24 48 L 30 66 M 36 48 L 42 66" stroke="#ffd700" stroke-width="2"/>
+                                    <path d="M 16 42 L 44 42 L 48 48 L 12 48 Z" fill="#ffffff" stroke="#000" stroke-width="1.5"/>
+                                    <path d="M 20 22 Q 18 32 22 42 L 38 42 Q 44 32 40 22 Z" fill="#ffdbac" stroke="#000" stroke-width="1.5"/>
+                                    <path d="M 16 12 L 20 22 L 30 16 L 40 22 L 44 12 L 36 14 L 30 8 L 24 14 Z" fill="#ffd700" stroke="#000" stroke-width="1.5"/>
+                                    <ellipse cx="34" cy="28" rx="4" ry="3" fill="#ffffff" stroke="#000" stroke-width="1"/>
+                                    <circle id="pupil-win95" cx="35" cy="28" r="1.8" fill="#000000"/>
+                                    <path d="M 36 25 L 31 24" stroke="#000" stroke-width="1.5"/>
+                                    <path d="M 37 28 Q 42 31 36 34" fill="none" stroke="#000" stroke-width="1.5"/>
+                                </svg>
+                            </div>
+
+                            <div style="display:flex; gap:2px;">
                                 <div class="m-card slot">♠</div>
                                 <div class="m-card slot">♥</div>
                                 <div class="m-card slot">♣</div>
                                 <div class="m-card slot">♦</div>
                             </div>
                         </div>
-                        <!-- 8 Columns All Face-Up Cascades -->
-                        <div style="display:flex; justify-content:space-between; width:100%; margin-top:6px;">
-                            <div class="m-card black">7♠</div>
-                            <div class="m-card red">K♥</div>
-                            <div class="m-card black">2♣</div>
-                            <div class="m-card red">J♦</div>
-                            <div class="m-card black">9♠</div>
-                            <div class="m-card red">4♥</div>
-                            <div class="m-card black">Q♣</div>
-                            <div class="m-card red">A♦</div>
-                        </div>
+
+                        <!-- 8 Tableau Columns (All 52 Cards Dealt Face Up) -->
+                        <div id="freecell-tableau" style="display:flex; justify-content:space-between; width:100%; margin-top:2px;"></div>
                     </div>
                 </div>
             </div>
@@ -411,46 +332,23 @@
                     <span class="badge badge-dev">In Dev</span>
                 </div>
                 <div class="preview-canvas">
-                    <!-- Mountain Range Background -->
                     <div class="bg-layer tripeaks-bg">
-                        <svg class="mountains-svg" viewBox="0 0 500 200" preserveAspectRatio="none">
-                            <!-- Mountain 1 -->
+                        <svg style="width:100%; height:100%;" viewBox="0 0 500 200" preserveAspectRatio="none">
                             <polygon points="30,200 130,50 230,200" fill="#3b4d61"/>
                             <polygon points="130,50 110,80 130,90 145,75 160,95 130,50" fill="#ffffff"/>
-                            <!-- Mountain 2 (Center High) -->
                             <polygon points="150,200 270,20 390,200" fill="#2c3e50"/>
                             <polygon points="270,20 240,60 270,75 290,55 310,80 270,20" fill="#ffffff"/>
-                            <!-- Mountain 3 -->
                             <polygon points="300,200 400,60 490,200" fill="#3b4d61"/>
                             <polygon points="400,60 380,90 400,100 415,85 430,105 400,60" fill="#ffffff"/>
                         </svg>
                     </div>
-                    <!-- Overlapping 3-Peak Card Deal Layout -->
                     <div class="deal-layer" style="align-items:center;">
-                        <!-- Peak Rows -->
                         <div style="display:flex; flex-direction:column; align-items:center; gap:2px; margin-top:2px;">
-                            <!-- Row 1: 3 Tops -->
-                            <div style="display:flex; gap:40px;">
-                                <div class="m-card back"></div>
-                                <div class="m-card back"></div>
-                                <div class="m-card back"></div>
-                            </div>
-                            <!-- Row 2: 6 Cards -->
-                            <div style="display:flex; gap:16px; margin-top:-14px;">
-                                <div class="m-card back"></div><div class="m-card back"></div>
-                                <div class="m-card back"></div><div class="m-card back"></div>
-                                <div class="m-card back"></div><div class="m-card back"></div>
-                            </div>
-                            <!-- Row 3: 9 Face Up Cards -->
-                            <div style="display:flex; gap:4px; margin-top:-14px;">
-                                <div class="m-card red">5♥</div><div class="m-card black">8♠</div>
-                                <div class="m-card red">K♦</div><div class="m-card black">3♣</div>
-                                <div class="m-card red">J♥</div><div class="m-card black">10♠</div>
-                                <div class="m-card red">7♦</div><div class="m-card black">Q♣</div>
-                            </div>
+                            <div style="display:flex; gap:40px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
+                            <div style="display:flex; gap:16px; margin-top:-14px;"><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div><div class="m-card back"></div></div>
+                            <div style="display:flex; gap:4px; margin-top:-14px;" id="tripeaks-row"></div>
                         </div>
-                        <!-- Stock & Waste Pile -->
-                        <div style="display:flex; gap:12px; margin-bottom:2px;">
+                        <div style="display:flex; gap:12px; margin-top:8px;">
                             <div class="m-card back-red"></div>
                             <div class="m-card black" style="border:2px solid #fbc02d;">6♠</div>
                         </div>
@@ -468,28 +366,16 @@
                     <span class="badge badge-dev">In Dev</span>
                 </div>
                 <div class="preview-canvas">
-                    <!-- Golf Course Backdrop -->
                     <div class="bg-layer golf-bg">
                         <svg width="100%" height="100%" viewBox="0 0 300 180" preserveAspectRatio="none">
                             <path d="M 0 100 Q 150 70 300 110 L 300 180 L 0 180 Z" fill="#588c3e"/>
-                            <!-- Flagstick & Hole -->
                             <line x1="250" y1="60" x2="250" y2="120" stroke="#ffffff" stroke-width="2"/>
                             <polygon points="250,60 225,70 250,80" fill="#d32f2f"/>
-                            <ellipse cx="250" cy="120" rx="6" ry="2" fill="#222"/>
                         </svg>
                     </div>
-                    <!-- 7 Columns of 5 Cards Deal -->
-                    <div class="deal-layer" style="align-items:center;">
-                        <div style="display:flex; justify-content:space-between; width:100%; margin-top:4px;">
-                            <div class="m-card black">4♣</div>
-                            <div class="m-card red">J♥</div>
-                            <div class="m-card black">9♠</div>
-                            <div class="m-card red">2♦</div>
-                            <div class="m-card black">K♠</div>
-                            <div class="m-card red">7♥</div>
-                            <div class="m-card black">10♣</div>
-                        </div>
-                        <div style="display:flex; gap:12px; margin-bottom:2px;">
+                    <div class="deal-layer">
+                        <div id="golf-tableau" style="display:flex; justify-content:space-between; width:100%; margin-top:2px;"></div>
+                        <div style="display:flex; gap:12px; margin-top:8px; align-self:center;">
                             <div class="m-card back"></div>
                             <div class="m-card red" style="border:2px solid #fff;">3♥</div>
                         </div>
@@ -507,28 +393,15 @@
                     <span class="badge badge-dev">In Dev</span>
                 </div>
                 <div class="preview-canvas">
-                    <!-- Northern Wilderness Backdrop -->
                     <div class="bg-layer yukon-bg">
                         <svg width="100%" height="100%" viewBox="0 0 300 180" preserveAspectRatio="none">
-                            <!-- Aurora Light Effect -->
                             <path d="M 0 40 Q 100 10 200 50 T 300 20 L 300 0 L 0 0 Z" fill="rgba(46, 204, 113, 0.25)"/>
-                            <!-- Pine Tree Silhouettes -->
                             <polygon points="20,180 35,120 50,180" fill="#081419"/>
-                            <polygon points="40,180 60,100 80,180" fill="#050d12"/>
                             <polygon points="240,180 260,110 280,180" fill="#081419"/>
                         </svg>
                     </div>
-                    <!-- 7 Columns (No Stock, All Dealt) -->
                     <div class="deal-layer">
-                        <div style="display:flex; justify-content:space-between; width:100%;">
-                            <div class="m-card red">K♦</div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">8♠</div><div class="m-card red" style="position:absolute; top:16px;">7♥</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">Q♣</div><div class="m-card red" style="position:absolute; top:16px;">J♦</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:8px;">10♥</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">A♠</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card red" style="position:absolute; top:8px;">5♦</div></div>
-                            <div style="position:relative;"><div class="m-card back"></div><div class="m-card black" style="position:absolute; top:8px;">9♣</div></div>
-                        </div>
+                        <div id="yukon-tableau" style="display:flex; justify-content:space-between; width:100%; margin-top:2px;"></div>
                     </div>
                 </div>
             </div>
@@ -543,17 +416,12 @@
                     <span class="badge badge-dev">In Dev</span>
                 </div>
                 <div class="preview-canvas">
-                    <!-- Egyptian Desert Backdrop -->
                     <div class="bg-layer pyramid-bg">
                         <svg width="100%" height="100%" viewBox="0 0 300 180" preserveAspectRatio="none">
-                            <!-- Sun -->
                             <circle cx="150" cy="70" r="35" fill="#fbc02d" opacity="0.6"/>
-                            <!-- Pyramid Silhouette -->
                             <polygon points="70,180 170,80 270,180" fill="#4a2311" opacity="0.85"/>
-                            <polygon points="170,80 270,180 220,180" fill="#2d1307" opacity="0.85"/>
                         </svg>
                     </div>
-                    <!-- 28-Card Pyramid Layout (7 Tiers) -->
                     <div class="deal-layer" style="align-items:center;">
                         <div style="display:flex; flex-direction:column; align-items:center; gap:1px; margin-top:2px;">
                             <div class="m-card red">K♠</div>
@@ -561,7 +429,7 @@
                             <div style="display:flex; gap:2px;"><div class="m-card red">Q♦</div><div class="m-card black">10♠</div><div class="m-card red">3♥</div></div>
                             <div style="display:flex; gap:2px;"><div class="m-card black">A♣</div><div class="m-card red">5♦</div><div class="m-card black">8♠</div><div class="m-card red">J♥</div></div>
                         </div>
-                        <div style="display:flex; gap:8px; margin-bottom:2px;">
+                        <div style="display:flex; gap:8px; margin-top:6px;">
                             <div class="m-card back"></div>
                             <div class="m-card slot"></div>
                         </div>
@@ -576,9 +444,7 @@
     <!-- Development Modal -->
     <div class="modal-overlay" id="dev-modal">
         <div class="modal-card">
-            <div class="modal-header">
-                🛠️ Under Construction
-            </div>
+            <div class="modal-header">🛠️ Under Construction</div>
             <div class="modal-body">
                 <h3 id="modal-game-title" style="color: var(--text-light);">Game Title</h3>
                 <p>This solitaire variant is currently in development! Check back soon for updates.</p>
@@ -592,27 +458,139 @@
 
     <script>
         // --- Navigation Engine ---
-        function launchGame(targetUrl) {
-            window.location.href = targetUrl;
-        }
-
+        function launchGame(targetUrl) { window.location.href = targetUrl; }
         function showDevModal(gameName) {
             document.getElementById('modal-game-title').innerText = gameName;
             document.getElementById('dev-modal').style.display = 'flex';
         }
+        function closeDevModal() { document.getElementById('dev-modal').style.display = 'none'; }
 
-        function closeDevModal() {
-            document.getElementById('dev-modal').style.display = 'none';
+        // --- Card Generator & Shuffle Utility ---
+        const suits = ['♥', '♦', '♠', '♣'];
+        const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+
+        function getShuffledDeck() {
+            let deck = [];
+            for (let s of suits) {
+                for (let r of ranks) {
+                    deck.push({ rank: r, suit: s, isRed: (s === '♥' || s === '♦') });
+                }
+            }
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+            return deck;
         }
 
-        // Return handling if game not found
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('notFound') === 'true') {
-            const toast = document.getElementById('toast');
-            toast.style.display = 'block';
-            setTimeout(() => { toast.style.display = 'none'; }, 3500);
-            window.history.replaceState({}, document.title, window.location.pathname);
+        function createCardEl(card) {
+            const div = document.createElement('div');
+            div.className = `m-card ${card.isRed ? 'red' : 'black'}`;
+            div.innerText = `${card.rank}${card.suit}`;
+            return div;
         }
+
+        function createBackEl() {
+            const div = document.createElement('div');
+            div.className = 'm-card back';
+            return div;
+        }
+
+        // --- 1. Render Klondike Starting Deal ---
+        function renderKlondike() {
+            const deck = getShuffledDeck();
+            const container = document.getElementById('klondike-tableau');
+            container.innerHTML = '';
+
+            for (let col = 0; col < 7; col++) {
+                const cascade = document.createElement('div');
+                cascade.className = 'cascade-col';
+                
+                // Hidden flipped cards behind
+                for (let b = 0; b < col; b++) {
+                    const back = createBackEl();
+                    if (b > 0) back.style.marginTop = '-22px';
+                    cascade.appendChild(back);
+                }
+                
+                // Single face-up card on top
+                const card = createCardEl(deck.pop());
+                if (col > 0) card.style.marginTop = '-22px';
+                cascade.appendChild(card);
+                container.appendChild(cascade);
+            }
+        }
+
+        // --- 2. Render FreeCell Starting Deal ---
+        function renderFreeCell() {
+            const deck = getShuffledDeck(); // Full 52 deck
+            const container = document.getElementById('freecell-tableau');
+            container.innerHTML = '';
+
+            for (let col = 0; col < 8; col++) {
+                const cascade = document.createElement('div');
+                cascade.className = 'cascade-col';
+                
+                // 4 cols get 7 cards, 4 cols get 6 cards
+                const count = col < 4 ? 7 : 6;
+                for (let i = 0; i < count; i++) {
+                    const card = createCardEl(deck.pop());
+                    if (i > 0) card.style.marginTop = '-21px'; // Tight overlay for deal preview
+                    cascade.appendChild(card);
+                }
+                container.appendChild(cascade);
+            }
+        }
+
+        // --- Render Extra Mini Game Tableaus ---
+        function renderExtras() {
+            // TriPeaks Bottom Row
+            const triContainer = document.getElementById('tripeaks-row');
+            if (triContainer) {
+                const deck = getShuffledDeck();
+                triContainer.innerHTML = '';
+                for (let i = 0; i < 8; i++) triContainer.appendChild(createCardEl(deck.pop()));
+            }
+
+            // Golf Tableau
+            const golfContainer = document.getElementById('golf-tableau');
+            if (golfContainer) {
+                const deck = getShuffledDeck();
+                golfContainer.innerHTML = '';
+                for (let c = 0; c < 7; c++) {
+                    const cascade = document.createElement('div');
+                    cascade.className = 'cascade-col';
+                    for (let r = 0; r < 4; r++) {
+                        const card = createCardEl(deck.pop());
+                        if (r > 0) card.style.marginTop = '-21px';
+                        cascade.appendChild(card);
+                    }
+                    golfContainer.appendChild(cascade);
+                }
+            }
+
+            // Yukon Tableau
+            const yukonContainer = document.getElementById('yukon-tableau');
+            if (yukonContainer) {
+                const deck = getShuffledDeck();
+                yukonContainer.innerHTML = '';
+                for (let c = 0; c < 7; c++) {
+                    const cascade = document.createElement('div');
+                    cascade.className = 'cascade-col';
+                    for (let r = 0; r < 3; r++) {
+                        const card = (c > 0 && r === 0) ? createBackEl() : createCardEl(deck.pop());
+                        if (r > 0) card.style.marginTop = '-21px';
+                        cascade.appendChild(card);
+                    }
+                    yukonContainer.appendChild(cascade);
+                }
+            }
+        }
+
+        // Initialize Dynamic Random Deals on Load
+        renderKlondike();
+        renderFreeCell();
+        renderExtras();
 
         // --- Win95 FreeCell King Eye Tracking ---
         const pupilWin95 = document.getElementById('pupil-win95');
@@ -620,9 +598,7 @@
         const maxRadiusWin95 = 2.2;
 
         document.addEventListener('mousemove', (e) => {
-            if (pupilWin95) {
-                trackEye(pupilWin95, win95Anchor, e.clientX, e.clientY);
-            }
+            if (pupilWin95) trackEye(pupilWin95, win95Anchor, e.clientX, e.clientY);
         });
 
         document.addEventListener('mouseleave', () => {
