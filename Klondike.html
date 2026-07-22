@@ -1,19 +1,17 @@
 <!DOCTYPE html>
 <!--
   LAST EDIT:
-  - Fixed the GitHub raw-content fallback URL using the correct path the
-    user provided: raw.githubusercontent.com/Drgn-Lrd/Solitare/refs/heads/
-    main/cards/ (the earlier main/cards/ form 404s).
-  - Corrected the fallback corner-badge layout: default is vertical
-    (rank above the suit glyph, like a normal card corner) for a fully
-    exposed card (last/only card in its pile). Only when a card has
-    another card stacked on top of it does the badge switch to
-    horizontal (rank beside the glyph) — since a covered card's visible
-    area is a thin strip across the top, and a vertical layout there
-    would clip off the glyph, leaving only the rank number visible.
-    Threaded a `covered` flag through makeCardEl/buildFaceEl so the
-    tableau renderer can mark every card except the topmost in each
-    column as covered.
+  - Corrected click-to-move highlighting per feedback: it now tracks the
+    cursor live (mousemove) rather than lighting up every legal target at
+    once on selection. Click a card, then move the mouse — whichever pile
+    it's hovering over (with ~26px of padding around each pile's box, more
+    forgiving than exact pixel hit-testing) lights up only if the move is
+    actually legal there. Drag behavior is unchanged.
+  - Reverted the card-back/face-set folder-scanning feature added
+    experimentally last turn — shelved per request until the user has all
+    the static art assets ready. Back-cover picker is back to the simple
+    static 4-swatch version (back_6/7/9/10), no GitHub API calls, no
+    face-set picker.
 -->
 <html lang="en">
 <head>
@@ -467,21 +465,13 @@ function suitFile(suit){ return SUIT_FILE[suit]; }
 function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.svg'; }
 function backImgSrc(style){ return 'cards/back_'+style+'.png'; }
 
-// Prefer the local cards/ folder (the real deployed site) so we never hit
-// GitHub unnecessarily. Only if that 404s (e.g. a preview environment with
-// no local folder) do we fall back to the raw GitHub copy of the same file.
-const GITHUB_CARDS_BASE = 'https://raw.githubusercontent.com/Drgn-Lrd/Solitare/refs/heads/main/cards/';
+// Local cards/ folder only — no external fallback. If a file 404s, the
+// corner-index text fallback in buildFaceEl kicks in instead.
 function loadCardImage(img, localPath, onFinalFail){
-  let stage = 0;
   img.src = localPath;
   img.addEventListener('error', function onErr(){
-    stage++;
-    if(stage===1){
-      img.src = GITHUB_CARDS_BASE + localPath.split('/').pop();
-    } else {
-      img.removeEventListener('error', onErr);
-      if(onFinalFail) onFinalFail();
-    }
+    img.removeEventListener('error', onErr);
+    if(onFinalFail) onFinalFail();
   });
 }
 
@@ -1086,7 +1076,10 @@ function attachCardEvents(el, card, pileType, pileKey, index){
 // duplicated/floating if any re-render happened mid-drag.
 document.addEventListener('pointermove', (e)=>{
   lastPointer.x = e.clientX; lastPointer.y = e.clientY;
-  if(!dragCtx) return;
+  if(!dragCtx){
+    if(state.selected) updateSelectHoverHighlight(e.clientX, e.clientY);
+    return;
+  }
   const dx = e.clientX-dragCtx.startX, dy = e.clientY-dragCtx.startY;
   if(!dragMoved && Math.hypot(dx,dy) < 6) return;
   if(!dragMoved){
@@ -1095,6 +1088,41 @@ document.addEventListener('pointermove', (e)=>{
   }
   updateVisualDrag(dx, dy);
 });
+
+// Same idea as resolveDropTarget, but with generous padding around each
+// pile's bounding box instead of exact hit-testing — used for click-to-move
+// hover highlighting (mouse only, no dragged element to test against).
+function resolveHoverTargetPadded(x, y, padding){
+  padding = padding==null ? 26 : padding;
+  for(let t=0;t<7;t++){
+    const col = document.querySelector('.tcol[data-index="'+t+'"]');
+    if(!col) continue;
+    const r = col.getBoundingClientRect();
+    if(x>=r.left-padding && x<=r.right+padding && y>=r.top-padding && y<=r.bottom+padding){
+      return { type:'tableau', key:t, highlightEl:col };
+    }
+  }
+  for(const s of SUITS){
+    const f = document.getElementById('f-'+s);
+    if(!f) continue;
+    const r = f.getBoundingClientRect();
+    if(x>=r.left-padding && x<=r.right+padding && y>=r.top-padding && y<=r.bottom+padding){
+      return { type:'foundation', key:s, highlightEl:f };
+    }
+  }
+  return null;
+}
+function updateSelectHoverHighlight(x, y){
+  clearDropHighlights();
+  if(!state.selected) return;
+  const sel = state.selected;
+  const target = resolveHoverTargetPadded(x, y);
+  if(!target) return;
+  if(sel.pileType==='tableau' && target.type==='tableau' && Number(sel.pileKey)===target.key) return;
+  if(canMoveWithWiden(sel.pileType, sel.pileKey, sel.index, target.type, target.key) >= 0){
+    target.highlightEl.classList.add('drop-ok');
+  }
+}
 
 document.addEventListener('pointerup', (e)=>{
   if(!dragCtx) return;
@@ -1217,6 +1245,7 @@ function clearSelection(){
     document.querySelectorAll('.card.selected').forEach(e=>e.classList.remove('selected'));
     state.selected = null;
   }
+  clearDropHighlights();
 }
 function handleTapSelect(pileType, pileKey, index){
   if(state.selected){
