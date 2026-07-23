@@ -1,3 +1,14 @@
+/*
+     Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 1645 EDT
+
+   Tableau columns are now fixed-width (matching --card-w) instead of
+   flex:1, and .tableau-row is centered at its own content width
+   instead of stretching full-bleed — this is what gives the tableau
+   row an even inset from the felt edges on both sides (previously
+   only the rightmost column ever showed that inset, as a side effect
+   of leftover flex space landing after the last card).
+ */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
    Used by every game (Klondike, FreeCell, ...). Game-specific HTML files
@@ -190,12 +201,20 @@ header{
 .foundations{ display:flex; gap: var(--gap); }
 .stockwaste{ display:flex; gap: var(--gap); } /* Klondike: stock+waste */
 .freecells{ display:flex; gap: var(--gap); }  /* FreeCell: the 4 free cells */
-.tableau-row{ display:flex; gap: var(--gap); }
+/* .top-row (freecells/king-slot/foundations) uses justify-content:
+   space-between, so IT always spans the felt's full content width
+   edge-to-edge. .tableau-row deliberately does NOT do that: it's sized
+   to its own content (width:max-content) and centered via margin:auto,
+   so it sits evenly inset from both the left and right felt edges —
+   matching the inset the rightmost tableau column always happened to
+   have, but now on every side and every column, not just column 8. */
+.tableau-row{ display:flex; gap: var(--gap); width:max-content; max-width:100%; margin:0 auto; }
 
-/* One playing column. flex:1 shares the row width equally; height is
-   set dynamically in JS to exactly fit however many cards are stacked
-   in it right now. */
-.tcol{ flex:1; min-width:0; position:relative; }
+/* One playing column, fixed to card width (not flex:1 — a stretchy
+   column left extra whitespace after its card, which is what made the
+   old tableau row's spacing look uneven). Height is set dynamically in
+   JS to exactly fit however many cards are stacked in it right now. */
+.tcol{ flex:0 0 var(--card-w); width:var(--card-w); min-width:0; position:relative; }
 .tcol{ min-height: var(--card-h); transition: height .2s ease; }
 
 /* .pile = the box a card sits in. .pile.slot is the faint placeholder

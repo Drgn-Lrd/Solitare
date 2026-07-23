@@ -1,5 +1,16 @@
 <!DOCTYPE html>
 <!--
+     Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 1645 EDT
+
+   Fixed mobile-portrait board overflow (top row now factors into the
+   fit-to-screen width calc, not just the tableau), swapped the black
+   page background for a preloaded images/FreeCell.webp, gave the
+   King Watcher a slow CSS-only sway on touch devices in place of the
+   cursor-follow, and added a fly-through-the-free-cells animation for
+   supermoves.
+ -->
+<!--
   FreeCell — built on the shared engine.js + styles.css extracted from
   Klondike. This file only contains what's actually specific to
   FreeCell: board layout (4 free cells, 4 foundations, 8 tableau
@@ -14,8 +25,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>FreeCell</title>
+<link rel="preload" as="image" href="images/FreeCell.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
+  /* FreeCell-only background: swaps the shared black/vignette body
+     background (see html,body in styles.css) for this preloaded photo,
+     just for this game. The wood frame + green felt (.table-frame /
+     .table-felt) sit on their own elements on top of this and are
+     untouched — this only affects what shows in the margins around
+     them (behind the header/bottom bar and any letterboxing). */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/FreeCell.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
   /* King Watcher: just the head/crown of the real King of Spades card
      art, cropped via oversized-and-offset positioning rather than a
      separately cropped image file (so it stays correct automatically
@@ -49,6 +74,19 @@
     top: -33.46%;
     display: block;
     pointer-events: none;
+  }
+  /* No cursor to "face" on a touch device, so instead of the JS
+     pointermove mirror (see initKingWatcher's listener below, which
+     skips itself on these devices) give the King Watcher a slow
+     CSS-only side-to-side sway. A running CSS animation on `transform`
+     always wins over any inline style also setting `transform`, so
+     this is safe even if a stray pointer/touch event ever fires. */
+  @media (hover:none), (pointer:coarse){
+    .king-watcher-slot{ animation: kingSway 6s ease-in-out infinite; }
+  }
+  @keyframes kingSway{
+    0%, 100% { transform: scaleX(1); }
+    50% { transform: scaleX(-1); }
   }
 
   /* Difficulty pool checkboxes in Settings */
@@ -419,6 +457,15 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
   const fromPile = findPileArray(fromType, fromKey);
   const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
   const card = movingCards[0];
+  // A genuine supermove: more than one card, tableau-to-tableau. The
+  // actual data move below still happens instantly (splice/push) — this
+  // just captures where each card visually started so we can play a
+  // cosmetic fly-through-the-free-cells animation on top afterward.
+  const isSupermove = fromType==='tableau' && toType==='tableau' && movingCards.length>1;
+  const preRects = isSupermove ? movingCards.map(c=>{
+    const el = document.querySelector('.card[data-id="'+c.id+'"]');
+    return el ? el.getBoundingClientRect() : null;
+  }) : null;
   undo.push();
   if(toType==='foundation'){
     fromPile.splice(fromIndex, movingCards.length);
@@ -432,7 +479,66 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
     state.tableau[toKey].push(...movingCards);
   }
   renderAll();
+  if(isSupermove) animateSupermoveFly(movingCards, preRects);
   return true;
+}
+
+// Cosmetic-only: makes a supermove visibly hop each card through a free
+// cell slot on its way to the destination, like the classic
+// one-card-at-a-time relay, instead of the whole run just jumping there
+// instantly. Runs entirely AFTER the real state change + renderAll(), so
+// it can never affect game logic — it just hides the already-placed
+// destination cards for a moment and flies clones over them.
+function animateSupermoveFly(movingCards, preRects){
+  const freeCellRects = [];
+  for(let i=0;i<state.freeCellCount;i++){
+    const el = document.getElementById('fc-'+i);
+    if(el) freeCellRects.push(el.getBoundingClientRect());
+  }
+  if(!freeCellRects.length) return; // nothing to route through — skip rather than fake it
+
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:900;';
+  document.body.appendChild(layer);
+
+  const STAGGER = 90, HOP_MS = 160;
+  let remaining = 0;
+  movingCards.forEach((c, i)=>{
+    const fromRect = preRects[i];
+    const destEl = document.querySelector('.card[data-id="'+c.id+'"]');
+    if(!fromRect || !destEl) return;
+    remaining++;
+    const toRect = destEl.getBoundingClientRect();
+    const waypoint = freeCellRects[i % freeCellRects.length];
+    destEl.style.visibility = 'hidden';
+
+    setTimeout(()=>{
+      const clone = destEl.cloneNode(true);
+      clone.style.position = 'fixed';
+      clone.style.margin = '0';
+      clone.style.left = fromRect.left+'px';
+      clone.style.top = fromRect.top+'px';
+      clone.style.width = fromRect.width+'px';
+      clone.style.height = fromRect.height+'px';
+      clone.style.zIndex = '999';
+      clone.style.transition = 'left '+HOP_MS+'ms ease, top '+HOP_MS+'ms ease';
+      layer.appendChild(clone);
+      requestAnimationFrame(()=>{
+        clone.style.left = waypoint.left+'px';
+        clone.style.top = waypoint.top+'px';
+      });
+      setTimeout(()=>{
+        clone.style.left = toRect.left+'px';
+        clone.style.top = toRect.top+'px';
+        setTimeout(()=>{
+          clone.remove();
+          destEl.style.visibility = '';
+          remaining--;
+          if(remaining<=0) layer.remove();
+        }, HOP_MS);
+      }, HOP_MS);
+    }, i*STAGGER);
+  });
 }
 function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
   const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
@@ -647,6 +753,13 @@ function renderAll(){
   ensureFreecellsAndFoundations();
   E.fitBoard({
     columns: 8,
+    // Top row = freeCellCount free cells + the king-watcher slot
+    // (0.85 card-widths) + 4 foundations, with a gap between each of
+    // those 3 groups plus the gaps within each group — see the comment
+    // on fitBoard's extraRows in engine.js. This row needs MORE width
+    // per card than the tableau does, so without this the tableau fit
+    // fine while this row overflowed off-screen on narrow viewports.
+    extraRows: [{ units: state.freeCellCount + 4.85, gaps: state.freeCellCount + 4 }],
     getMaxStackDepth: ()=> Math.max(7, ...state.tableau.map(c=>c.length)),
     minStackForFit: 7
   });
@@ -715,8 +828,12 @@ function initKingWatcher(){
   slot.appendChild(img);
   kingWatcherSlotEl = slot;
 }
+// Only devices with a real mouse-like pointer get the cursor-follow —
+// touch devices get the CSS-only kingSway animation instead (see the
+// @media (hover:none), (pointer:coarse) rule above).
+const kingWatcherHasCursor = window.matchMedia('(hover:hover) and (pointer:fine)').matches;
 document.addEventListener('pointermove', (e)=>{
-  if(!kingWatcherSlotEl) return;
+  if(!kingWatcherSlotEl || !kingWatcherHasCursor) return;
   const rect = kingWatcherSlotEl.getBoundingClientRect();
   const cx = rect.left + rect.width/2;
   kingWatcherSlotEl.style.transform = (e.clientX < cx) ? 'scaleX(-1)' : 'scaleX(1)';
@@ -1027,7 +1144,14 @@ helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOver
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(()=>{ E.fitBoard({ columns:8, getMaxStackDepth:()=>Math.max(7,...state.tableau.map(c=>c.length)), minStackForFit:7 }); }, 100);
+  resizeTimer = setTimeout(()=>{
+    E.fitBoard({
+      columns:8,
+      extraRows: [{ units: state.freeCellCount + 4.85, gaps: state.freeCellCount + 4 }],
+      getMaxStackDepth:()=>Math.max(7,...state.tableau.map(c=>c.length)),
+      minStackForFit:7
+    });
+  }, 100);
 });
 
 /* =========================================================

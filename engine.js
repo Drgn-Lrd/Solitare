@@ -1,3 +1,13 @@
+/*
+     Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 1645 EDT
+
+   fitBoard now takes an optional opts.extraRows so a game can tell it
+   about a row that needs more width per card than the tableau does —
+   fixes FreeCell's mobile-portrait overflow (free cells + king slot +
+   foundations row was wider than the tableau row, but width was only
+   ever solved for the tableau's column count).
+ */
 /* =========================================================================
    SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
    =========================================================================
@@ -229,8 +239,22 @@ function fitBoard(opts){
   const cardHByHeight = (availH - topRowGap) / denom;
   const cardWByHeight = cardHByHeight / CARD_RATIO;
 
+  // Width is bound by whichever row of the board needs the most space
+  // per card. Normally that's just the tableau (`columns` wide), but a
+  // game can pass opts.extraRows — e.g. [{units, gaps}, ...] — to
+  // describe any other row (free cells + a decorative slot + foundations,
+  // say) whose own card-count/gap math might actually be MORE demanding
+  // than the tableau's. Without this, a row like that can end up wider
+  // than the screen even though the tableau fits fine, which is exactly
+  // what was pushing FreeCell's rightmost foundation off-screen on
+  // narrow/mobile viewports.
   const gapPx = 10;
-  const cardWByWidth = (availW - gapPx*(columns-1)) / columns;
+  const rows = [{units: columns, gaps: columns-1}].concat(opts.extraRows || []);
+  let cardWByWidth = Infinity;
+  rows.forEach(r=>{
+    const cw = (availW - gapPx*r.gaps) / r.units;
+    if(cw < cardWByWidth) cardWByWidth = cw;
+  });
 
   let cardW = Math.min(cardWByHeight, cardWByWidth);
   cardW = Math.max(minCardW, Math.min(cardW, maxCardW));
