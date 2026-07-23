@@ -27,6 +27,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Solitaire Suite</title>
+<link rel="preload" as="image" href="images/background-mobile.webp" media="(max-width: 799px)">
+<link rel="preload" as="image" href="images/background.webp" media="(min-width: 800px)">
 <style>
   :root{
     --felt-1:#0e4432;
@@ -51,12 +53,17 @@
   *{box-sizing:border-box;}
   html,body{
     margin:0; padding:0; min-height:100%;
-    background: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/background.png');
+    background: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/background-mobile.webp');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
     color: var(--ivory);
     font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  }
+  @media (min-width: 800px){
+    html,body{
+      background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/background.webp');
+    }
   }
 
   .hub-wrap{ max-width:1180px; margin:0 auto; padding: clamp(24px,5vw,56px) clamp(16px,4vw,32px) 60px; }
@@ -281,36 +288,36 @@
           <div class="mini-board">
             <div class="pyramid-wrap" style="height:60px;">
               <!-- peak 1 (left) -->
-              <div class="mc back-tripeaks mc-abs" style="left:57.5px; top:0px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:50px; top:13px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:65px; top:13px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:42.5px; top:26px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:57.5px; top:26px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:72.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:35px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:50px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:65px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:80px; top:39px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:57.5px; top:0px; z-index:1;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:50px; top:13px; z-index:2;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:65px; top:13px; z-index:2;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:42.5px; top:26px; z-index:3;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:57.5px; top:26px; z-index:3;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:72.5px; top:26px; z-index:3;"></div>
+              <div class="mc face mc-abs" style="left:35px; top:39px; z-index:4;"></div>
+              <div class="mc face mc-abs" style="left:50px; top:39px; z-index:4;"></div>
+              <div class="mc face mc-abs" style="left:65px; top:39px; z-index:4;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:39px; z-index:4;"></div>
               <!-- peak 2 (center) — its base row shares one seam card with each neighbor -->
-              <div class="mc back-tripeaks mc-abs" style="left:102.5px; top:0px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:95px; top:13px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:110px; top:13px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:87.5px; top:26px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:102.5px; top:26px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:117.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:95px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:110px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:125px; top:39px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:102.5px; top:0px; z-index:1;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:95px; top:13px; z-index:2;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:110px; top:13px; z-index:2;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:87.5px; top:26px; z-index:3;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:102.5px; top:26px; z-index:3;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:117.5px; top:26px; z-index:3;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:39px; z-index:4;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:39px; z-index:4;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:39px; z-index:4;"></div>
               <!-- peak 3 (right) -->
-              <div class="mc back-tripeaks mc-abs" style="left:147.5px; top:0px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:140px; top:13px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:155px; top:13px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:132.5px; top:26px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:147.5px; top:26px;"></div>
-              <div class="mc back-tripeaks mc-abs" style="left:162.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:140px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:155px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:170px; top:39px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:147.5px; top:0px; z-index:1;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:140px; top:13px; z-index:2;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:155px; top:13px; z-index:2;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:132.5px; top:26px; z-index:3;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:147.5px; top:26px; z-index:3;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:162.5px; top:26px; z-index:3;"></div>
+              <div class="mc face mc-abs" style="left:140px; top:39px; z-index:4;"></div>
+              <div class="mc face mc-abs" style="left:155px; top:39px; z-index:4;"></div>
+              <div class="mc face mc-abs" style="left:170px; top:39px; z-index:4;"></div>
             </div>
             <div class="mc-row" style="justify-content:center; gap:6px; margin-top:6px;">
               <div class="mc back-tripeaks"></div><div class="mc face"></div>
