@@ -196,6 +196,13 @@
      not eyeballed. See chat history for the exact formula. */
   .pyramid-wrap{ position:relative; width:220px; margin:0 auto; flex-shrink:0; }
   .mc-abs{ position:absolute; }
+  /* .mc.face has 2 classes (specificity 0,0,2,0) vs .mc-abs's 1 class
+     (0,0,1,0), so .mc.face's position:relative was winning over
+     .mc-abs's position:absolute on every face-up pyramid card — no
+     matter the source order — silently pulling them out of absolute
+     positioning into normal flow. This 3-class rule outranks both and
+     restores absolute positioning without touching any coordinates. */
+  .mc.face.mc-abs{ position:absolute; }
 </style>
 </head>
 <body>
