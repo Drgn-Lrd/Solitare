@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1815 EDT
+    Last Updated 23 July 2026 @ 1830 EDT
 
-   Card sizing fix lives entirely in engine.js this round: fitBoard was
-   using flat guesses for the gap/top-row-margin that were bigger than
-   what those clamp()-based CSS values actually resolve to on a phone,
-   which is why cards rendered noticeably smaller at native 100% zoom
-   than at 80% zoom. No changes needed here.
+   Slowed the supermove fly-through-the-free-cells animation ~30%
+   (stagger 90ms→117ms, each hop 160ms→208ms) — it was moving too fast
+   to actually see the cards traverse the free cells.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -504,7 +502,7 @@ function animateSupermoveFly(movingCards, preRects){
   layer.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:900;';
   document.body.appendChild(layer);
 
-  const STAGGER = 90, HOP_MS = 160;
+  const STAGGER = 117, HOP_MS = 208; // ~30% slower than the original 90/160
   let remaining = 0;
   movingCards.forEach((c, i)=>{
     const fromRect = preRects[i];
