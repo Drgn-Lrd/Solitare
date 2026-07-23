@@ -1,17 +1,13 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1900 EDT
+    Last Updated 23 July 2026 @ 1915 EDT
 
-   Move logic: tapping/dragging from a card now always prefers the
-   largest legal run ending there (so tapping the frontmost card of a
-   big valid run moves the whole run, not just that one card), and
-   added an auxiliary supermove — if the full run doesn't fit in one
-   shot, it now tries temporarily parking part of it on another
-   tableau column to free up room, instead of just cancelling the
-   move. Animation: empty tableau columns now count as valid
-   waypoints (not just free cells), and added a real dwell pause at
-   the waypoint plus an overall slowdown so the stop actually reads.
+   Settings: game-number placeholder updated to 25904, and the Deal
+   button now defaults to 25904 when the field is left empty instead
+   of just refocusing it. Drop-highlight now lights up for
+   auxiliary-only supermoves too (a read-only planner check shared
+   with the real executor), not just direct/widened ones.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -221,7 +217,7 @@
     <div class="field">
       <label>Play a Classic Game Number</label>
       <div style="display:flex; gap:8px;">
-        <input type="number" id="game-number-input" min="1" max="1000000" placeholder="e.g. 11982"
+        <input type="number" id="game-number-input" min="1" max="1000000" placeholder="e.g. 25904"
                style="flex:1; min-width:0; background:var(--panel); border:1px solid var(--panel-line); border-radius:8px; color:var(--ivory); padding:8px 10px; font-family:inherit; font-size:14px;">
         <button class="textbtn" id="btn-play-game-number">Deal</button>
       </div>
@@ -626,23 +622,20 @@ function isValidRun(cards){
   return true;
 }
 
-// When the run from (fromKey, fromIndex) to the top is too big to move
-// in one shot, but moving its TOP portion to a helper tableau column
-// first would free up enough capacity for the rest — try every way of
-// splitting it (moving away as few cards as possible first) and every
-// helper column, actually executing the first combination that checks
-// out as three real moves: park the top part on the helper, move the
-// remaining bottom part to the destination, then move the parked part
-// on top of it there. Each leg is validated against the real, current
-// state as it changes, and rolled back via the undo stack if a later
-// leg doesn't hold up — so this can never leave the game in an
-// inconsistent position. Legs are scheduled to start only once the
-// previous leg's fly-through animation has actually finished, so the
-// three moves read as a real relay instead of overlapping.
-function tryAuxiliarySupermove(fromKey, fromIndex, toKey){
+// Pure, read-only search: is there SOME way to split the run from
+// (fromKey, fromIndex) to the top, park the top portion on another
+// tableau column, and still get the bottom portion (and then the
+// parked portion) onto toKey? Never mutates anything — this is exactly
+// the same underlying legality question canMoveWithWiden answers for a
+// direct move, just for the auxiliary "detour through another column"
+// case, so it can be used both to actually plan the maneuver AND to
+// let the live drop-highlight recognize it as a legal destination
+// (moving away as few cards as possible first, and checking helper
+// columns in order).
+function findAuxiliarySupermovePlan(fromKey, fromIndex, toKey){
   const fromPile = state.tableau[fromKey];
   const fullRun = fromPile.slice(fromIndex);
-  if(fullRun.length<2 || !isValidRun(fullRun)) return false;
+  if(fullRun.length<2 || !isValidRun(fullRun)) return null;
 
   for(let moveAway=1; moveAway<fullRun.length; moveAway++){
     const splitAt = fullRun.length-moveAway;
@@ -654,28 +647,56 @@ function tryAuxiliarySupermove(fromKey, fromIndex, toKey){
       if(!canMoveExact('tableau', fromKey, topStartIndexInFromPile, 'tableau', h)) continue;
       if(!canPlaceOnTableau(bottomPart[0], state.tableau[toKey])) continue;
       if(bottomPart.length > projectedMaxSupermoveSize('tableau', toKey, h)) continue;
-
-      // Checks out — actually perform it, in three real, legal moves.
-      const topPartLength = moveAway;
-      if(!tryMove('tableau', fromKey, topStartIndexInFromPile, 'tableau', h)) continue; // leg 1: park the top part on the helper
-      const leg1Delay = supermoveAnimDuration(topPartLength);
-
-      setTimeout(()=>{
-        const idx2 = canMoveWithWiden('tableau', fromKey, fromIndex, 'tableau', toKey);
-        if(idx2<0 || !tryMove('tableau', fromKey, idx2, 'tableau', toKey)){ undo.undo(); return; } // leg 2: bottom part to destination
-        const leg2Delay = supermoveAnimDuration(bottomPart.length);
-
-        setTimeout(()=>{
-          const helperStartIndex = state.tableau[h].length-topPartLength;
-          const idx3 = canMoveWithWiden('tableau', h, helperStartIndex, 'tableau', toKey);
-          if(idx3<0 || !tryMove('tableau', h, idx3, 'tableau', toKey)){ undo.undo(); undo.undo(); } // leg 3: parked part onto the destination
-        }, leg2Delay);
-      }, leg1Delay);
-
-      return true; // legs 2 and 3 are scheduled — committed to this plan
+      return { moveAway, helperCol:h, topStartIndexInFromPile, bottomPartLength: bottomPart.length };
     }
   }
-  return false;
+  return null;
+}
+
+// Executes a plan found above as three real, individually-validated
+// moves: park the top part on the helper, move the remaining bottom
+// part to the destination, then move the parked part on top of it
+// there. Each leg is re-checked against the real, current state as it
+// changes, and rolled back via the undo stack if a later leg doesn't
+// hold up — so this can never leave the game in an inconsistent
+// position. Legs are scheduled to start only once the previous leg's
+// fly-through animation has actually finished, so the three moves read
+// as a real relay instead of overlapping.
+function tryAuxiliarySupermove(fromKey, fromIndex, toKey){
+  const plan = findAuxiliarySupermovePlan(fromKey, fromIndex, toKey);
+  if(!plan) return false;
+  const { moveAway, helperCol: h, topStartIndexInFromPile, bottomPartLength } = plan;
+
+  if(!tryMove('tableau', fromKey, topStartIndexInFromPile, 'tableau', h)) return false; // leg 1: park the top part on the helper
+  const leg1Delay = supermoveAnimDuration(moveAway);
+
+  setTimeout(()=>{
+    const idx2 = canMoveWithWiden('tableau', fromKey, fromIndex, 'tableau', toKey);
+    if(idx2<0 || !tryMove('tableau', fromKey, idx2, 'tableau', toKey)){ undo.undo(); return; } // leg 2: bottom part to destination
+    const leg2Delay = supermoveAnimDuration(bottomPartLength);
+
+    setTimeout(()=>{
+      const helperStartIndex = state.tableau[h].length-moveAway;
+      const idx3 = canMoveWithWiden('tableau', h, helperStartIndex, 'tableau', toKey);
+      if(idx3<0 || !tryMove('tableau', h, idx3, 'tableau', toKey)){ undo.undo(); undo.undo(); } // leg 3: parked part onto the destination
+    }, leg2Delay);
+  }, leg1Delay);
+
+  return true; // legs 2 and 3 are scheduled — committed to this plan
+}
+
+// Used ONLY for the live drop-highlight (see the canMoveWithWiden key
+// in E.initInteractions below) — answers "is dropping here legal at
+// all", whether that's a direct/widened move or one only possible via
+// the auxiliary detour. Never used to actually perform a move (that's
+// still tryMoveAuto, which knows which of the two cases applies and
+// executes it correctly); this just needs a non-negative-vs-negative
+// answer for engine.js's highlight check.
+function canMoveWithWidenOrAux(fromType, fromKey, fromIndex, toType, toKey){
+  const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
+  if(idx>=0) return idx;
+  if(fromType==='tableau' && toType==='tableau' && findAuxiliarySupermovePlan(fromKey, fromIndex, toKey)) return fromIndex;
+  return -1;
 }
 function autoMoveToFoundation(fromType, fromKey, fromIndex){
   const fromPile = findPileArray(fromType, fromKey);
@@ -1151,7 +1172,7 @@ E.initInteractions({
   isCardMovable,
   resolveDropTarget,
   resolveHoverTargetPadded,
-  canMoveWithWiden,
+  canMoveWithWiden: canMoveWithWidenOrAux, // highlight should light up for auxiliary-only moves too — actual execution still goes through tryMoveAuto below, which knows how to run either kind correctly
   tryMoveAuto,
   autoMoveToFoundation: doubleClickAutoMove,
   onRenderNeeded: renderAll
@@ -1251,7 +1272,8 @@ document.getElementById('settings-preview-win').addEventListener('click', ()=>{
 });
 document.getElementById('btn-play-game-number').addEventListener('click', ()=>{
   const input = document.getElementById('game-number-input');
-  const n = parseInt(input.value, 10);
+  const DEFAULT_GAME_NUMBER = 25904;
+  const n = input.value.trim()==='' ? DEFAULT_GAME_NUMBER : parseInt(input.value, 10);
   if(!n || n<1){ input.focus(); return; }
   document.getElementById('settings-overlay').classList.remove('show');
   newGame(n);
