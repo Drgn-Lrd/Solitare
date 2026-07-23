@@ -16,9 +16,15 @@
 <title>FreeCell</title>
 <link rel="stylesheet" href="styles.css">
 <style>
-  /* FreeCell-only tweaks: nothing needed yet — the shared stylesheet's
-     .freecells/.foundations/.tcol classes already cover this game's
-     layout. Add anything FreeCell-specific here if it ever comes up. */
+  /* King Watcher: decorative bust in the first empty free cell whose
+     eyes track the cursor (see updateKingWatcher() in the script).
+     pointer-events:none so it never blocks clicking/dropping a card
+     on that free cell. */
+  .king-watcher{
+    position:absolute; inset:10%; pointer-events:none; z-index:5; opacity:0.92;
+  }
+  .king-watcher svg{ width:100%; height:100%; display:block; }
+  .king-pupil{ transition: transform .06s linear; }
 </style>
 </head>
 <body>
@@ -33,6 +39,7 @@
     </div>
   </div>
   <div class="hud">
+    <div class="chip" id="game-number-chip" style="display:none"><span id="game-number-display"></span></div>
     <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
     <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
@@ -99,6 +106,7 @@
       <li>Drag a card (or a valid run) onto a foundation, another tableau pile, or a free cell — or click a card, then click a destination.</li>
       <li>You can move several cards at once ("supermove") as long as you have enough free cells + empty columns to support it — the highlight will only show a destination as valid if the whole move is legal.</li>
       <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make. <b>Auto Move</b> sends any currently eligible top cards to their foundations.</li>
+      <li>Settings lets you play a classic numbered deal (the same number always gives the same cards, just like the original Windows game) and adjust difficulty by changing how many free cells you get.</li>
     </ul>
     <div class="modal-actions">
       <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
@@ -110,6 +118,26 @@
   <div class="modal">
     <h3>Settings</h3>
     <div class="sub">Card back applies instantly. Timer/score too.</div>
+
+    <div class="field">
+      <label>Difficulty</label>
+      <div class="segmented" id="seg-difficulty">
+        <button data-val="easy">Easy</button>
+        <button data-val="medium">Medium</button>
+        <button data-val="hard">Hard</button>
+      </div>
+      <div class="fieldnote">Changes how many free cells you get: Easy 5, Medium 4 (classic), Hard 3. Applies on your next New Game — doesn't affect which deal you get, just how much room you have to work it.</div>
+    </div>
+
+    <div class="field">
+      <label>Play a Classic Game Number</label>
+      <div style="display:flex; gap:8px;">
+        <input type="number" id="game-number-input" min="1" max="1000000" placeholder="e.g. 11982"
+               style="flex:1; min-width:0; background:var(--panel); border:1px solid var(--panel-line); border-radius:8px; color:var(--ivory); padding:8px 10px; font-family:inherit; font-size:14px;">
+        <button class="textbtn" id="btn-play-game-number">Deal</button>
+      </div>
+      <div class="fieldnote">Reproduces the exact same deal as classic Microsoft FreeCell game numbers (1–1,000,000+) — same number always gives the same cards, same as the original. Deals immediately, replacing your current game.</div>
+    </div>
 
     <div class="field">
       <label>Card Back</label>
@@ -167,16 +195,52 @@ const state = {
   showTimer: false,
   showScore: false,
   backStyle: 'back_10.png',
+  freeCellCount: 4, // difficulty lever: Easy=5, Medium=4 (classic), Hard=3
   freecells: [[],[],[],[]],
   foundations: {S:[],H:[],D:[],C:[]},
   tableau: [[],[],[],[],[],[],[],[]],
   score: 0,
   seconds: 0,
   timerHandle: null,
-  cascadePlayed: false
+  cascadePlayed: false,
+  gameNumber: null // null = random deal; otherwise the classic Microsoft game number currently in play
 };
-const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.png' };
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.png', difficulty:'medium' };
+const DIFFICULTY_FREE_CELLS = { easy:5, medium:4, hard:3 };
 const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
+
+/* =========================================================
+   CLASSIC GAME NUMBERS
+   Reproduces the exact deal Microsoft's original FreeCell (and every
+   "Microsoft-compatible" FreeCell since) produces for a given game
+   number 1-1,000,000+, using the real algorithm Jim Horne (FreeCell's
+   original developer) published: a simple linear congruential
+   generator seeded with the game number, repeatedly picking a random
+   remaining card and dealing it round-robin into the 8 columns. Same
+   number always reproduces the exact same deal, on any compatible
+   implementation — verified against the well-known Game #1 layout
+   (column 1: JD KD 2S 4C 3S 6D 6S) while building this.
+   ========================================================= */
+function dealOrderForGameNumber(gameNumber){
+  let seed = gameNumber >>> 0;
+  function msRand(){
+    seed = (seed * 214013 + 2531011) & 0x7FFFFFFF;
+    return (seed >> 16) & 0x7FFF;
+  }
+  const deck = [];
+  for(let i=0;i<52;i++) deck.push(i);
+  let wLeft = 52;
+  const order = [];
+  for(let i=0;i<52;i++){
+    const j = msRand() % wLeft;
+    order.push(deck[j]);
+    wLeft--;
+    deck[j] = deck[wLeft];
+  }
+  // card number -> {rank,suit}: suit = n%4 (0=C,1=D,2=H,3=S), rank = floor(n/4) (0=A..12=K)
+  const suitOf = ['C','D','H','S'];
+  return order.map((n,i)=>({ id:'c'+i, rank:RANKS[Math.floor(n/4)], suit:suitOf[n%4], faceUp:true }));
+}
 
 /* =========================================================
    RULES
@@ -299,7 +363,7 @@ function autoMoveAll(){
   let movedAny = false, guard = 0, progress = true;
   while(progress && guard < 300){
     guard++; progress = false;
-    for(let i=0;i<4;i++){
+    for(let i=0;i<state.freeCellCount;i++){
       if(state.freecells[i].length && autoMoveToFoundation('freecell', i, 0)){ progress = true; movedAny = true; }
     }
     for(let c=0;c<8;c++){
@@ -318,7 +382,7 @@ function autoMoveAll(){
    ========================================================= */
 function findAnyMove(){
   // 1) Foundation moves first — always genuine progress, and free.
-  for(let i=0;i<4;i++){
+  for(let i=0;i<state.freeCellCount;i++){
     if(!state.freecells[i].length) continue;
     const card = state.freecells[i][0];
     for(const s of SUITS){
@@ -353,7 +417,7 @@ function findAnyMove(){
   // 3) Freeing an already-parked card back onto the tableau — this
   //    gives you a free cell back, so it's worth suggesting before
   //    spending one on a brand new park.
-  for(let i=0;i<4;i++){
+  for(let i=0;i<state.freeCellCount;i++){
     if(!state.freecells[i].length) continue;
     const card = state.freecells[i][0];
     for(let t=0;t<8;t++){
@@ -367,7 +431,7 @@ function findAnyMove(){
   for(let c=0;c<8;c++){
     const pile = state.tableau[c];
     if(!pile.length) continue;
-    for(let i=0;i<4;i++){
+    for(let i=0;i<state.freeCellCount;i++){
       if(!state.freecells[i].length) return {type:'tableau-freecell', fromKey:c, index:pile.length-1, to:i};
     }
   }
@@ -427,8 +491,9 @@ function ensureTableauCols(){
 }
 function ensureFreecellsAndFoundations(){
   const fcRow = document.getElementById('freecells-row');
-  if(!fcRow.children.length){
-    for(let i=0;i<4;i++){
+  if(fcRow.children.length !== state.freeCellCount){
+    fcRow.innerHTML = '';
+    for(let i=0;i<state.freeCellCount;i++){
       const el = document.createElement('div');
       el.className = 'pile slot';
       el.id = 'fc-'+i;
@@ -468,6 +533,7 @@ function renderAll(){
   renderFreecells();
   renderFoundations();
   renderTableau();
+  updateKingWatcher();
   const won = checkWin();
   if(!won) checkNoMoves();
 }
@@ -477,7 +543,7 @@ function renderHUD(){
   document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
 }
 function renderFreecells(){
-  for(let i=0;i<4;i++){
+  for(let i=0;i<state.freeCellCount;i++){
     const p = document.getElementById('fc-'+i);
     p.querySelectorAll('.card').forEach(e=>e.remove());
     const pile = state.freecells[i];
@@ -506,6 +572,56 @@ function renderTableau(){
     col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap + 8) + 'px';
   }
 }
+
+/* =========================================================
+   KING WATCHER (Win95 attract-mode easter egg)
+   A small decorative king bust sits in the first empty free cell, and
+   its eyes track the cursor around the screen. Purely cosmetic —
+   pointer-events:none on the wrapper means it never blocks clicking or
+   dropping a card on that free cell. Re-evaluated after every render
+   since which free cell (if any) is empty changes as you play.
+   ========================================================= */
+let kingWatcherEl = null;
+function buildKingWatcherEl(){
+  const div = document.createElement('div');
+  div.className = 'king-watcher';
+  div.innerHTML =
+    '<svg viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg">' +
+      '<polygon points="30,38 35,20 42,32 50,15 58,32 65,20 70,38" fill="var(--brass)" stroke="#6b501f" stroke-width="1"/>' +
+      '<circle cx="50" cy="55" r="22" fill="#f1ddb8" stroke="#5c4324" stroke-width="1.5"/>' +
+      '<circle class="king-pupil" cx="42" cy="53" r="3.2" fill="#2a1f10"/>' +
+      '<circle class="king-pupil" cx="58" cy="53" r="3.2" fill="#2a1f10"/>' +
+      '<path d="M38,66 C43,71 57,71 62,66" stroke="#7a2f36" stroke-width="1.6" fill="none"/>' +
+      '<path d="M34,72 C40,90 60,90 66,72 L70,110 L30,110 Z" fill="var(--burgundy)" stroke="var(--brass)" stroke-width="1"/>' +
+    '</svg>';
+  return div;
+}
+function updateKingWatcher(){
+  let targetSlot = null;
+  for(let i=0;i<state.freeCellCount;i++){
+    if(!state.freecells[i].length){ targetSlot = document.getElementById('fc-'+i); break; }
+  }
+  if(!targetSlot){
+    if(kingWatcherEl){ kingWatcherEl.remove(); kingWatcherEl = null; }
+    return;
+  }
+  if(kingWatcherEl && kingWatcherEl.parentElement===targetSlot) return; // already in the right spot
+  if(kingWatcherEl) kingWatcherEl.remove();
+  kingWatcherEl = buildKingWatcherEl();
+  targetSlot.appendChild(kingWatcherEl);
+}
+document.addEventListener('pointermove', (e)=>{
+  if(!kingWatcherEl) return;
+  const rect = kingWatcherEl.getBoundingClientRect();
+  const cx = rect.left + rect.width*0.5, cy = rect.top + rect.height*0.38; // roughly eye level
+  const dx = e.clientX-cx, dy = e.clientY-cy;
+  const dist = Math.hypot(dx,dy) || 1;
+  const maxOffset = rect.width*0.018;
+  const ox = (dx/dist)*maxOffset, oy = (dy/dist)*maxOffset;
+  kingWatcherEl.querySelectorAll('.king-pupil').forEach(p=>{
+    p.style.transform = 'translate('+ox+'px,'+oy+'px)';
+  });
+});
 
 function checkWin(){
   const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
@@ -554,14 +670,19 @@ function applyHudVisibility(){
 /* =========================================================
    DEAL / NEW GAME
    Standard FreeCell deal: columns 0-3 get 7 cards, columns 4-7 get 6 —
-   all face-up immediately, no stock left over.
+   all face-up immediately, no stock left over. Pass a specific
+   gameNumber to reproduce that exact classic deal instead of a random
+   shuffle (see dealOrderForGameNumber above).
    ========================================================= */
-function newGame(){
+function newGame(gameNumber){
   clearInterval(state.timerHandle);
   state.showTimer = pendingSettings.showTimer;
   state.showScore = pendingSettings.showScore;
   state.backStyle = pendingSettings.backStyle;
-  state.freecells = [[],[],[],[]];
+  state.freeCellCount = DIFFICULTY_FREE_CELLS[pendingSettings.difficulty] || 4;
+  state.gameNumber = (gameNumber!=null) ? gameNumber : null;
+  state.freecells = [];
+  for(let i=0;i<state.freeCellCount;i++) state.freecells.push([]);
   state.foundations = {S:[],H:[],D:[],C:[]};
   state.tableau = [[],[],[],[],[],[],[],[]];
   state.score = 0;
@@ -572,7 +693,11 @@ function newGame(){
   const oldCascade = document.getElementById('cascade-layer');
   if(oldCascade) oldCascade.remove();
 
-  const deck = E.shuffle(E.buildDeck());
+  // Random deal (default) shuffles a fresh deck and pops from the end;
+  // a specific game number instead reproduces the classic deal in its
+  // exact dealt order, so the array is reversed first so the same
+  // pop()-based loop below consumes it front-to-back either way.
+  const deck = (gameNumber!=null) ? dealOrderForGameNumber(gameNumber).reverse() : E.shuffle(E.buildDeck());
   let col = 0;
   while(deck.length){
     const card = deck.pop();
@@ -585,7 +710,19 @@ function newGame(){
   document.getElementById('nomovesmask').classList.remove('show');
   applyHudVisibility();
   syncTimerInterval();
+  updateGameNumberDisplay();
   renderAll();
+}
+function updateGameNumberDisplay(){
+  const el = document.getElementById('game-number-display');
+  const chip = document.getElementById('game-number-chip');
+  if(!el || !chip) return;
+  if(state.gameNumber!=null){
+    el.textContent = 'GAME #'+state.gameNumber;
+    chip.style.display = 'flex';
+  } else {
+    chip.style.display = 'none';
+  }
 }
 
 /* =========================================================
@@ -618,7 +755,7 @@ function getAllZones(){
     const el = document.querySelector('.tcol[data-index="'+i+'"]');
     if(el) zones.push({type:'tableau', key:i, el});
   }
-  for(let i=0;i<4;i++){
+  for(let i=0;i<state.freeCellCount;i++){
     const el = document.getElementById('fc-'+i);
     if(el) zones.push({type:'freecell', key:i, el});
   }
@@ -670,7 +807,30 @@ const settingsShell = E.wireSettingsShell({
   togTimerEl: document.getElementById('tog-timer'),
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
-  onRenderNeeded: renderAll
+  onRenderNeeded: renderAll,
+  extraSnapshot: ()=>({ difficulty: pendingSettings.difficulty }),
+  extraRestore: (snap)=>{ pendingSettings.difficulty = snap.difficulty; refreshDifficultyPicker(); },
+  extraOnOpen: ()=>{ pendingSettings.difficulty = difficultyFromFreeCellCount(state.freeCellCount); refreshDifficultyPicker(); }
+});
+function difficultyFromFreeCellCount(n){
+  for(const k in DIFFICULTY_FREE_CELLS){ if(DIFFICULTY_FREE_CELLS[k]===n) return k; }
+  return 'medium';
+}
+function refreshDifficultyPicker(){
+  document.querySelectorAll('#seg-difficulty button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.val===pendingSettings.difficulty);
+  });
+}
+document.querySelectorAll('#seg-difficulty button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    // Difficulty changes how many free cells exist, so — unlike the
+    // card back or timer/score toggles — it can't preview live without
+    // disrupting a game already in progress. Takes effect on the next
+    // New Game (or immediately if you deal a specific game number,
+    // since that already starts a fresh board).
+    pendingSettings.difficulty = b.dataset.val;
+    refreshDifficultyPicker();
+  });
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
@@ -687,6 +847,13 @@ document.getElementById('settings-newgame').addEventListener('click', ()=>{
 document.getElementById('settings-preview-win').addEventListener('click', ()=>{
   document.getElementById('settings-overlay').classList.remove('show');
   previewWinScreen();
+});
+document.getElementById('btn-play-game-number').addEventListener('click', ()=>{
+  const input = document.getElementById('game-number-input');
+  const n = parseInt(input.value, 10);
+  if(!n || n<1){ input.focus(); return; }
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame(n);
 });
 
 // Plays the win cascade + "You Win" dialog on demand, for testing —
