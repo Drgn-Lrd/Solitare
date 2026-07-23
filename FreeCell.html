@@ -1,13 +1,17 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1915 EDT
+    Last Updated 23 July 2026 @ 1945 EDT
 
-   Settings: game-number placeholder updated to 25904, and the Deal
-   button now defaults to 25904 when the field is left empty instead
-   of just refocusing it. Drop-highlight now lights up for
-   auxiliary-only supermoves too (a read-only planner check shared
-   with the real executor), not just direct/widened ones.
+   Rewrote the supermove fly-through using the Web Animations API
+   (explicit source/waypoint/destination keyframes) instead of manually
+   toggling style.left/top alongside a CSS transition — the manual
+   approach depended on the browser having painted the starting
+   position before the next change, which could silently fail and is
+   the likely reason it wasn't visibly traversing the waypoint even
+   with click-to-move (not just drag). Also reverted the timing back
+   to 117ms stagger / 208ms per hop and dropped the separate dwell
+   pause, matching the version before the last slowdown.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -273,9 +277,9 @@ const SUITS = E.SUITS, RANKS = E.RANKS;
 // one place so the auxiliary 3-step maneuver can schedule its later
 // legs to start only once the previous leg's animation has actually
 // finished, instead of guessing.
-const SM_STAGGER = 160, SM_HOP_MS = 320, SM_DWELL_MS = 180;
+const SM_STAGGER = 117, SM_HOP_MS = 208;
 function supermoveAnimDuration(cardCount){
-  return Math.max(0, cardCount-1)*SM_STAGGER + 2*SM_HOP_MS + SM_DWELL_MS;
+  return Math.max(0, cardCount-1)*SM_STAGGER + 2*SM_HOP_MS;
 }
 
 /* =========================================================
@@ -488,10 +492,15 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
   // just captures where each card visually started so we can play a
   // cosmetic fly-through-the-free-cells animation on top afterward.
   const isSupermove = fromType==='tableau' && toType==='tableau' && movingCards.length>1;
-  const preRects = isSupermove ? movingCards.map(c=>{
-    const el = document.querySelector('.card[data-id="'+c.id+'"]');
-    return el ? el.getBoundingClientRect() : null;
-  }) : null;
+  // Computed from the source column's own geometry rather than each
+  // card's live DOM element — during a DRAG, that element is still
+  // reparented to a fixed position near wherever the drop happened at
+  // the exact moment tryMove runs (cleanup hasn't run yet), so querying
+  // it here silently gave the animation the wrong starting point (near
+  // the destination instead of the real source), which is why the
+  // fly-through looked like a quick wiggle near the destination instead
+  // of a real trip from the source through the free cells.
+  const preRects = isSupermove ? computePreMoveRects(fromKey, fromIndex, movingCards.length) : null;
   // Snapshot every free cell AND tableau column that's actually open
   // right now, BEFORE the move happens — an empty tableau column is
   // just as much "spare capacity" as a free cell is (that's exactly
@@ -513,6 +522,28 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
   renderAll();
   if(isSupermove) animateSupermoveFly(movingCards, preRects, waypointRects);
   return true;
+}
+
+// Where each of the `count` cards starting at fromIndex in column
+// fromKey is CURRENTLY sitting, computed from the column's own
+// bounding box + the standard overlap math — not from the cards' own
+// DOM elements, since during a drag those are temporarily reparented
+// to wherever the pointer is, not their real resting position.
+function computePreMoveRects(fromKey, fromIndex, count){
+  const colEl = document.querySelector('.tcol[data-index="'+fromKey+'"]');
+  if(!colEl) return null;
+  const colRect = colEl.getBoundingClientRect();
+  const metrics = E.cardMetrics(0.183);
+  const rects = [];
+  for(let k=0;k<count;k++){
+    rects.push({
+      left: colRect.left,
+      top: colRect.top + (fromIndex+k)*metrics.overlap,
+      width: metrics.w,
+      height: metrics.h
+    });
+  }
+  return rects;
 }
 
 // Every free cell that's actually empty, plus every tableau column
@@ -543,8 +574,18 @@ function collectSupermoveWaypoints(fromKey, toKey){
 // the whole run just jumping there instantly. Runs entirely AFTER the
 // real state change + renderAll(), so it can never affect game logic —
 // it just hides the already-placed destination cards for a moment and
-// flies clones over them, with a genuine pause at the waypoint so the
-// stop actually reads instead of the card just blipping past it.
+// flies clones over them.
+//
+// Uses the Web Animations API with explicit keyframes (source ->
+// waypoint -> waypoint -> destination) rather than manually toggling
+// style.left/top alongside a CSS transition. The manual approach
+// depends on the browser having actually painted the starting position
+// before the next change is applied — an assumption that can silently
+// fail depending on reflow/paint timing, which was the real bug behind
+// the animation sometimes not visibly traversing the waypoint at all
+// (the clone would just appear at its final spot). Explicit keyframes
+// don't have that failure mode: the browser is simply told the full
+// path up front.
 function animateSupermoveFly(movingCards, preRects, waypointRects){
   if(!waypointRects || !waypointRects.length) return; // nothing open to route through — skip rather than fake it
 
@@ -552,6 +593,7 @@ function animateSupermoveFly(movingCards, preRects, waypointRects){
   layer.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:900;';
   document.body.appendChild(layer);
 
+  const totalMs = 2*SM_HOP_MS;
   let remaining = 0;
   movingCards.forEach((c, i)=>{
     const fromRect = preRects[i];
@@ -566,33 +608,27 @@ function animateSupermoveFly(movingCards, preRects, waypointRects){
       const clone = destEl.cloneNode(true);
       clone.style.position = 'fixed';
       clone.style.margin = '0';
-      clone.style.left = fromRect.left+'px';
-      clone.style.top = fromRect.top+'px';
+      clone.style.left = '0';
+      clone.style.top = '0';
       clone.style.width = fromRect.width+'px';
       clone.style.height = fromRect.height+'px';
       clone.style.zIndex = '999';
-      clone.style.transition = 'left '+SM_HOP_MS+'ms ease, top '+SM_HOP_MS+'ms ease';
       layer.appendChild(clone);
-      requestAnimationFrame(()=>{
-        clone.style.left = waypoint.left+'px';
-        clone.style.top = waypoint.top+'px';
-      });
-      setTimeout(()=>{
-        // Arrived at the free cell / empty column — actually hold here
-        // for a beat before continuing, rather than reversing direction
-        // the instant it arrives (which is what made it look like a
-        // single blip rather than a stop-then-continue relay).
-        setTimeout(()=>{
-          clone.style.left = toRect.left+'px';
-          clone.style.top = toRect.top+'px';
-          setTimeout(()=>{
-            clone.remove();
-            destEl.style.visibility = '';
-            remaining--;
-            if(remaining<=0) layer.remove();
-          }, SM_HOP_MS);
-        }, SM_DWELL_MS);
-      }, SM_HOP_MS);
+
+      const anim = clone.animate([
+        { transform: 'translate('+fromRect.left+'px,'+fromRect.top+'px)' },
+        { transform: 'translate('+waypoint.left+'px,'+waypoint.top+'px)', offset: 0.5 },
+        { transform: 'translate('+toRect.left+'px,'+toRect.top+'px)' }
+      ], { duration: totalMs, easing: 'ease' });
+
+      const finish = ()=>{
+        clone.remove();
+        destEl.style.visibility = '';
+        remaining--;
+        if(remaining<=0) layer.remove();
+      };
+      anim.onfinish = finish;
+      anim.oncancel = finish;
     }, i*SM_STAGGER);
   });
 }
