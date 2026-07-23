@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<!--
+  Solitaire Suite hub page. Casino-table aesthetic reusing the exact
+  same palette/materials as the games themselves (wood rail, felt,
+  brass, ivory cards) so this genuinely feels like the front door to
+  the same suite rather than a generic app-launcher grid. Each tile's
+  mini "deal preview" is hand-built from small CSS card shapes rather
+  than real screenshots, so it stays lightweight and never goes stale
+  if a game's actual layout changes slightly.
+
+  Tiles for Klondike/FreeCell link out to their real files (Klondike is
+  approved and live; FreeCell is playable but still marked Testing
+  until it's signed off). The other four are marked IN DEV and are
+  inert (no navigation) until built.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solitaire Suite</title>
+<style>
+  :root{
+    --felt-1:#0e4432;
+    --felt-2:#082c21;
+    --wood-1:#7a5230;
+    --wood-2:#4a2f18;
+    --wood-3:#2c1c0e;
+    --brass:#c9a24b;
+    --brass-light:#e8c873;
+    --ivory:#faf6ec;
+    --navy:#16233f;
+    --burgundy:#8c1f3b;
+    --panel:#0e2f24;
+    --panel-line:#1c5340;
+    --green-ok:#3fae63;
+    --green-ok-light:#6fd98d;
+    --red-dev:#b5432f;
+    --red-dev-light:#e3714f;
+    --gold-test:#c9962f;
+    --gold-test-light:#f0c85e;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: radial-gradient(ellipse at 50% -10%, #241708, #120b04 65%);
+    color: var(--ivory);
+    font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  }
+
+  .hub-wrap{ max-width:1180px; margin:0 auto; padding: clamp(24px,5vw,56px) clamp(16px,4vw,32px) 60px; }
+
+  .hub-header{ text-align:center; margin-bottom: clamp(28px,5vw,48px); }
+  .hub-header h1{
+    margin:0 0 6px; font-size: clamp(30px,6vw,52px); letter-spacing:6px;
+    font-variant: small-caps; color: var(--brass-light); font-weight:700;
+    text-shadow: 0 2px 0 #000, 0 0 30px rgba(232,200,115,.35);
+  }
+  .hub-header p{ margin:0; color:#a9c9b9; letter-spacing:2px; font-size:13px; text-transform:uppercase; }
+
+  .game-grid{
+    display:grid; gap: clamp(18px,3vw,28px);
+    grid-template-columns: repeat(3, 1fr);
+  }
+  @media (max-width:900px){ .game-grid{ grid-template-columns: repeat(2,1fr); } }
+  @media (max-width:600px){ .game-grid{ grid-template-columns: 1fr; } }
+
+  .tile-link{ display:block; text-decoration:none; color:inherit; }
+  .tile-link.disabled{ cursor:default; opacity:.72; }
+  .tile-link.disabled .tile-frame{ pointer-events:none; }
+
+  /* Wood rail + felt interior, exactly like the in-game table frame —
+     the whole point is that these tiles look like tiny versions of the
+     actual games, not generic app icons. */
+  .tile-frame{
+    border-radius: 16px;
+    padding: 8px;
+    background:
+      linear-gradient(155deg, var(--wood-1), var(--wood-2) 55%, var(--wood-3)),
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 7px);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
+    position:relative;
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .tile-link:hover .tile-frame{ transform: translateY(-3px); box-shadow: 0 20px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.08); }
+  .tile-frame::before{
+    content:""; position:absolute; inset:4px; border-radius:11px;
+    border: 1px solid rgba(232,200,115,0.3); pointer-events:none;
+  }
+  .tile-felt{
+    border-radius: 9px;
+    background-image: radial-gradient(ellipse 140% 90% at 50% -10%, #1a7a54, var(--felt-1) 45%, var(--felt-2) 100%);
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3);
+    padding: 14px 14px 16px;
+    min-height: 190px;
+    display:flex; flex-direction:column;
+  }
+  /* Themed variants — each game gets its own felt tint once styled;
+     for now everything but Klondike/FreeCell shares a neutral tone,
+     Tut's Tomb gets a preview of the warmer sandy direction it'll take. */
+  .tile-felt.theme-freecell{ background-image: radial-gradient(ellipse 140% 90% at 50% -10%, #1c8a86, #0e5652 45%, #073a37 100%); }
+  .tile-felt.theme-tut{ background-image: radial-gradient(ellipse 140% 90% at 50% -10%, #8a5a2c, #5c3a1c 45%, #2e1c0e 100%); }
+
+  .tile-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; }
+  .tile-head h2{
+    margin:0; font-size:19px; letter-spacing:1px; font-variant:small-caps;
+    color: var(--brass-light); text-shadow: 0 1px 0 #000;
+  }
+  .status-pill{
+    font-size:10px; letter-spacing:1.5px; font-weight:700; text-transform:uppercase;
+    padding:4px 10px; border-radius:20px; white-space:nowrap; flex-shrink:0;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+  .status-pill.play{ background: linear-gradient(180deg, var(--green-ok-light), var(--green-ok)); color:#0b2c15; }
+  .status-pill.dev{ background: linear-gradient(180deg, var(--red-dev-light), var(--red-dev)); color:#3a0f07; }
+  .status-pill.testing{ background: linear-gradient(180deg, var(--gold-test-light), var(--gold-test)); color:#3a2a05; }
+
+  .mini-board{ flex:1; display:flex; flex-direction:column; gap:8px; justify-content:center; }
+  .tile-desc{
+    margin: 12px 4px 0; font-size:13px; line-height:1.55; color:#b9cfc2;
+  }
+  .tile-desc b{ color:#d8e8de; font-weight:600; }
+
+  /* ---- mini card building blocks, shared by every preview ---- */
+  .mc{
+    width:15px; height:21px; border-radius:2.5px; flex-shrink:0;
+    box-shadow: 0 1px 2px rgba(0,0,0,.45);
+  }
+  .mc.face{ background: var(--ivory); border:1px solid rgba(0,0,0,.15); }
+  .mc.back{
+    background: repeating-linear-gradient(45deg, #12406f 0 3px, #0d3358 3px 6px);
+    border:1px solid rgba(232,200,115,.4);
+  }
+  .mc.gold-back{
+    background: repeating-linear-gradient(45deg, #8a5a1e 0 3px, #6b4315 3px 6px);
+    border:1px solid rgba(232,200,115,.5);
+  }
+  .mc-slot{
+    width:15px; height:21px; border-radius:2.5px;
+    border:1px solid rgba(232,200,115,.35); background:rgba(0,0,0,.15);
+    flex-shrink:0;
+  }
+  .mc-row{ display:flex; gap:4px; align-items:flex-start; }
+  .mc-row.spread{ justify-content:space-between; }
+  .mc-col{ display:flex; flex-direction:column; align-items:center; }
+  .mc-col .mc,.mc-col .mc-slot{ margin-top:-15px; }
+  .mc-col .mc:first-child,.mc-col .mc-slot:first-child{ margin-top:0; }
+  .mc-cols{ display:flex; gap:4px; justify-content:center; align-items:flex-start; flex:1; }
+  .mc-tiny-flag{ width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:7px solid #b5432f; }
+</style>
+</head>
+<body>
+
+<div class="hub-wrap">
+  <header class="hub-header">
+    <h1>Solitaire Suite</h1>
+    <p>Select a game to launch</p>
+  </header>
+
+  <div class="game-grid">
+
+    <!-- KLONDIKE — playable -->
+    <a class="tile-link" href="Klondike.html">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-head"><h2>Klondike</h2><span class="status-pill play">Play Now</span></div>
+          <div class="mini-board">
+            <div class="mc-row">
+              <div class="mc back"></div>
+              <div style="flex:1;"></div>
+              <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
+            </div>
+            <div class="mc-cols">
+              <div class="mc-col"><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">The classic 7-column experience. Build down in <b>alternating colors</b> and stack foundations by suit.</p>
+    </a>
+
+    <!-- FREECELL — playable -->
+    <a class="tile-link" href="FreeCell.html">
+      <div class="tile-frame">
+        <div class="tile-felt theme-freecell">
+          <div class="tile-head"><h2>FreeCell</h2><span class="status-pill testing">Testing</span></div>
+          <div class="mini-board">
+            <div class="mc-row spread">
+              <div class="mc-row" style="gap:3px;">
+                <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
+              </div>
+              <div class="mc-row" style="gap:3px;">
+                <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
+              </div>
+            </div>
+            <div class="mc-cols">
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">Open-board strategy with <b>4 free cells</b>. Classic numbered deals, adjustable difficulty.</p>
+    </a>
+
+    <!-- TRIPEAKS — in dev -->
+    <div class="tile-link disabled">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-head"><h2>TriPeaks</h2><span class="status-pill dev">In Dev</span></div>
+          <div class="mini-board">
+            <div class="mc-row" style="justify-content:space-around;">
+              <div class="mc-col"><div class="mc back"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back"></div><div class="mc back"></div></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back"></div><div class="mc back"></div></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back"></div><div class="mc back"></div></div></div>
+            </div>
+            <div class="mc-row" style="justify-content:center; gap:6px;">
+              <div class="mc back"></div><div class="mc face"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">Clear three overlapping peaks by picking cards one rank higher or lower than the waste pile.</p>
+    </div>
+
+    <!-- GOLF — in dev -->
+    <div class="tile-link disabled">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-head"><h2>Golf</h2><span class="status-pill dev">In Dev</span></div>
+          <div class="mini-board">
+            <div class="mc-cols">
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+            </div>
+            <div class="mc-row" style="justify-content:center; align-items:flex-end; gap:8px;">
+              <div class="mc face"></div>
+              <div class="mc-tiny-flag"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">Fast-paced card matching. Clear 35 tableau cards onto the waste pile in sequential order.</p>
+    </div>
+
+    <!-- YUKON — in dev -->
+    <div class="tile-link disabled">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-head"><h2>Yukon</h2><span class="status-pill dev">In Dev</span></div>
+          <div class="mini-board">
+            <div class="mc-row" style="justify-content:flex-end;">
+              <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
+            </div>
+            <div class="mc-cols">
+              <div class="mc-col"><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">7 tableau stacks with ascending face-down cards topped with face-up runs. Build foundations up by suit.</p>
+    </div>
+
+    <!-- TUT'S TOMB (Pyramid) — in dev -->
+    <div class="tile-link disabled">
+      <div class="tile-frame">
+        <div class="tile-felt theme-tut">
+          <div class="tile-head"><h2>Tut's Tomb</h2><span class="status-pill dev">In Dev</span></div>
+          <div class="mini-board">
+            <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+              <div class="mc-row" style="gap:2px;"><div class="mc gold-back"></div></div>
+              <div class="mc-row" style="gap:2px;"><div class="mc gold-back"></div><div class="mc gold-back"></div></div>
+              <div class="mc-row" style="gap:2px;"><div class="mc gold-back"></div><div class="mc gold-back"></div><div class="mc gold-back"></div></div>
+              <div class="mc-row" style="gap:2px;"><div class="mc face"></div><div class="mc gold-back"></div><div class="mc gold-back"></div><div class="mc face"></div></div>
+            </div>
+            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:4px;">
+              <div class="mc gold-back"></div><div class="mc face"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">Pair exposed cards that sum to 13 to clear the pyramid — Egyptian-themed, unlimited waste-pile cycling.</p>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
