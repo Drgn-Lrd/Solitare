@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!--
+    Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 1604 EDT
+
+   Converted Golf/Yukon/TriPeaks/Pyramid/FreeCell tile art to preloaded
+   webp, and added the FreeCell mini-board king's-head slot
+-->
+<!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
   same palette/materials as the games themselves (wood rail, felt,
   brass, ivory cards) so this genuinely feels like the front door to
@@ -29,6 +36,11 @@
 <title>Solitaire Suite</title>
 <link rel="preload" as="image" href="images/background-mobile.webp" media="(max-width: 799px)">
 <link rel="preload" as="image" href="images/background.webp" media="(min-width: 800px)">
+<link rel="preload" as="image" href="images/FreeCell.webp">
+<link rel="preload" as="image" href="images/TriPeaks.webp">
+<link rel="preload" as="image" href="images/Golf.webp">
+<link rel="preload" as="image" href="images/Yukon.webp">
+<link rel="preload" as="image" href="images/Pyramid.webp">
 <style>
   :root{
     --felt-1:#0e4432;
@@ -130,11 +142,11 @@
   }
   .mini-board{ position:relative; z-index:1; }
 
-  .art-golf{ background-image: url('images/Golf.png'); }
-  .art-tripeaks{ background-image: url('images/TriPeaks.png'); }
-  .art-yukon{ background-image: url('images/Yukon.png'); }
-  .art-tut{ background-image: url('images/Pyramid.png'); }
-  .art-freecell{ background-image: url('images/FreeCell.png'); }
+  .art-golf{ background-image: url('images/Golf.webp'); }
+  .art-tripeaks{ background-image: url('images/TriPeaks.webp'); }
+  .art-yukon{ background-image: url('images/Yukon.webp'); }
+  .art-tut{ background-image: url('images/Pyramid.webp'); }
+  .art-freecell{ background-image: url('images/FreeCell.webp'); }
 
   .tile-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; position:relative; z-index:1; }
   .tile-bg-art + .tile-head{
@@ -197,6 +209,27 @@
   .mc-col .mc:first-child,.mc-col .mc-slot:first-child{ margin-top:0; }
   .mc-cols{ display:flex; gap:4px; justify-content:center; align-items:flex-start; flex:1; }
   .mc-tiny-flag{ width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:7px solid #b5432f; }
+  /* FreeCell mini king's-head: same oversized-and-offset crop trick as
+     the real game's #king-watcher-slot (see FreeCell.html) so this
+     stays correct if the card deck is ever reskinned, rather than a
+     separately-cropped image file. A fixed King of Spades, not one of
+     the randomized .mc.face cards. The real game's king mirrors to
+     face the cursor; a static tile has no cursor to track, so this
+     just idles side to side instead as a nod to that same behavior. */
+  .mini-king-slot{
+    width:15px; aspect-ratio:1.0458; position:relative; overflow:hidden;
+    border-radius:2px; flex-shrink:0; box-shadow: 0 1px 2px rgba(0,0,0,.45);
+    animation: king-watch 6s ease-in-out infinite;
+  }
+  .mini-king-slot img{
+    position:absolute; width:247.52%; left:-85.64%; top:-33.46%;
+    display:block; pointer-events:none;
+  }
+  @keyframes king-watch{
+    0%, 40% { transform: scaleX(1); }
+    50%, 90% { transform: scaleX(-1); }
+    100% { transform: scaleX(1); }
+  }
   /* Precise pyramid layouts (TriPeaks, Tut's Tomb): each card's exact
      left/top is computed so every card in an upper row sits centered
      exactly between the two cards below it — real card-pyramid math,
@@ -255,10 +288,11 @@
           <div class="tile-bg-art art-freecell"></div>
           <div class="tile-head"><h2>FreeCell</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
-            <div class="mc-row spread">
+            <div class="mc-row" style="justify-content:center; align-items:center; gap:5px;">
               <div class="mc-row" style="gap:3px;">
                 <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
               </div>
+              <div class="mini-king-slot"><img src="cards/king_of_spades.svg" alt="" draggable="false"></div>
               <div class="mc-row" style="gap:3px;">
                 <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
               </div>
