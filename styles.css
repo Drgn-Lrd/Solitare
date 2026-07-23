@@ -1,13 +1,14 @@
 /*
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1645 EDT
+    Last Updated 23 July 2026 @ 1745 EDT
 
-   Tableau columns are now fixed-width (matching --card-w) instead of
-   flex:1, and .tableau-row is centered at its own content width
-   instead of stretching full-bleed — this is what gives the tableau
-   row an even inset from the felt edges on both sides (previously
-   only the rightmost column ever showed that inset, as a side effect
-   of leftover flex space landing after the last card).
+   Corrected the tableau inset: .tcol is back to flex:1 (so the 8
+   columns evenly share whatever width they're given, instead of
+   leaving uneven trailing space), and .tableau-row is now pinned to
+   an explicit width (100% minus half a card-width) instead of sizing
+   to its own natural content — that's what makes the inset a fixed
+   1/4 card-width on each side rather than a variable amount driven by
+   the king slot's own proportions.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -203,18 +204,19 @@ header{
 .freecells{ display:flex; gap: var(--gap); }  /* FreeCell: the 4 free cells */
 /* .top-row (freecells/king-slot/foundations) uses justify-content:
    space-between, so IT always spans the felt's full content width
-   edge-to-edge. .tableau-row deliberately does NOT do that: it's sized
-   to its own content (width:max-content) and centered via margin:auto,
-   so it sits evenly inset from both the left and right felt edges —
-   matching the inset the rightmost tableau column always happened to
-   have, but now on every side and every column, not just column 8. */
-.tableau-row{ display:flex; gap: var(--gap); width:max-content; max-width:100%; margin:0 auto; }
+   edge-to-edge. .tableau-row is deliberately narrower than that by a
+   fixed amount — exactly one quarter of a card-width inset on each
+   side — and centered, rather than sized to its own natural content
+   width: a natural-width approach made the inset track the king
+   slot's proportions instead of a fixed, predictable amount. */
+.tableau-row{ display:flex; gap: var(--gap); width: calc(100% - var(--card-w) * 0.5); margin:0 auto; }
 
-/* One playing column, fixed to card width (not flex:1 — a stretchy
-   column left extra whitespace after its card, which is what made the
-   old tableau row's spacing look uneven). Height is set dynamically in
-   JS to exactly fit however many cards are stacked in it right now. */
-.tcol{ flex:0 0 var(--card-w); width:var(--card-w); min-width:0; position:relative; }
+/* One playing column. flex:1 shares the tableau-row's (deliberately
+   narrower-than-full-width) space equally, so any slack beyond the 8
+   cards + 7 gaps lands evenly across every column rather than only
+   after the last one. Height is set dynamically in JS to exactly fit
+   however many cards are stacked in it right now. */
+.tcol{ flex:1; min-width:0; position:relative; }
 .tcol{ min-height: var(--card-h); transition: height .2s ease; }
 
 /* .pile = the box a card sits in. .pile.slot is the faint placeholder

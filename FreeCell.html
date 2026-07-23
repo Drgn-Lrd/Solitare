@@ -1,14 +1,13 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1645 EDT
+    Last Updated 23 July 2026 @ 1745 EDT
 
-   Fixed mobile-portrait board overflow (top row now factors into the
-   fit-to-screen width calc, not just the tableau), swapped the black
-   page background for a preloaded images/FreeCell.webp, gave the
-   King Watcher a slow CSS-only sway on touch devices in place of the
-   cursor-follow, and added a fly-through-the-free-cells animation for
-   supermoves.
+   Fixed the remaining mobile overflow (the minCardW floor in
+   engine.js's fitBoard was forcing cards bigger than the screen
+   actually had room for), corrected the tableau inset to a fixed 1/4
+   card-width per side instead of a variable amount, and slowed the
+   King Watcher's mobile sway to 1 second per side.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -82,7 +81,7 @@
      always wins over any inline style also setting `transform`, so
      this is safe even if a stray pointer/touch event ever fires. */
   @media (hover:none), (pointer:coarse){
-    .king-watcher-slot{ animation: kingSway 6s ease-in-out infinite; }
+    .king-watcher-slot{ animation: kingSway 2s ease-in-out infinite; }
   }
   @keyframes kingSway{
     0%, 100% { transform: scaleX(1); }
@@ -594,17 +593,20 @@ function autoMoveAll(){
    and expected here, not a bug to guard against.
    ========================================================= */
 // Every move type here is unambiguous progress: sending something to a
-// foundation, a tableau shuffle that exposes a card able to go
-// straight to a foundation, or freeing an already-parked card back
-// onto the tableau. Deliberately does NOT include "park a card in a
-// free cell" — parking is almost always legal, but legal isn't the
-// same as useful. Treating every open free cell as "a move exists" is
-// why the hint used to suggest pointless shuffles (moving a 6-5 off
-// one 7 onto an equally-valid other 7 accomplishes nothing) and why
-// "No More Moves" used to only ever fire once every cell happened to
-// be full — both symptoms of the same over-permissive check. See
-// findAnyMove below for how parking gets folded back in, correctly.
+// foundation, freeing an already-parked card back onto the tableau, or
+// any legal tableau shuffle at all. Deliberately does NOT include "park
+// a card in a free cell" — parking is almost always legal, but legal
+// isn't the same as useful, and a free cell filled now is a free cell
+// you don't have later. Checking every kind of tableau-to-tableau move
+// (not just ones that happen to expose a foundation-ready card) before
+// ever considering a free cell is what stops the hint from reaching
+// for a free cell while a real board move is still sitting open — and
+// checking column 0 first here is harmless now, since this only ever
+// fires when there's an actual free cell fill-up on the table (see
+// findAnyMove below for how parking gets folded back in, correctly,
+// only once none of this finds anything).
 function findProductiveMove(){
+  // 1. freecell -> foundation
   for(let i=0;i<state.freeCellCount;i++){
     if(!state.freecells[i].length) continue;
     const card = state.freecells[i][0];
@@ -612,6 +614,7 @@ function findProductiveMove(){
       if(canPlaceOnFoundation(card, state.foundations[s], s)) return {type:'freecell-foundation', fromKey:i, index:0, to:s};
     }
   }
+  // 2. tableau top -> foundation
   for(let c=0;c<8;c++){
     const pile = state.tableau[c];
     if(!pile.length) continue;
@@ -620,6 +623,9 @@ function findProductiveMove(){
       if(canPlaceOnFoundation(top, state.foundations[s], s)) return {type:'tableau-foundation', fromKey:c, index:pile.length-1, to:s};
     }
   }
+  // 3. tableau -> tableau that exposes a foundation-ready card underneath
+  //    — always worth surfacing first among tableau shuffles, since it's
+  //    unambiguous progress rather than just reorganizing.
   for(let c=0;c<8;c++){
     const pile = state.tableau[c];
     for(let i=1;i<pile.length;i++){ // i===0 skipped: relocating a whole column exposes nothing
@@ -632,11 +638,35 @@ function findProductiveMove(){
       }
     }
   }
+  // 4. freecell -> tableau. Unloading a parked card is always worth doing
+  //    before considering filling any MORE free cells — checked here,
+  //    ahead of the catch-all tableau shuffle below, on purpose.
   for(let i=0;i<state.freeCellCount;i++){
     if(!state.freecells[i].length) continue;
     const card = state.freecells[i][0];
     for(let t=0;t<8;t++){
       if(canPlaceOnTableau(card, state.tableau[t])) return {type:'freecell-tableau', fromKey:i, index:0, to:t};
+    }
+  }
+  // 5. ANY other legal tableau -> tableau move — building a sequence onto
+  //    a card, or relocating a card/run onto an empty column. This is
+  //    the piece that was missing: without it, a card that could simply
+  //    move onto another tableau card (or into an open column) never
+  //    counted as "productive", so the scanner fell straight through to
+  //    findAnyMove's free-cell simulation and suggested parking instead
+  //    — and since that fallback always scans column 0 first, it looked
+  //    like the hint was fixated on the leftmost column. None of this
+  //    touches a free cell at all, so it's always preferable to parking.
+  //    Skipped: relocating an entire column onto another already-empty
+  //    column — that's just swapping which column is empty, no progress.
+  for(let c=0;c<8;c++){
+    const pile = state.tableau[c];
+    for(let i=0;i<pile.length;i++){
+      for(let t=0;t<8;t++){
+        if(t===c) continue;
+        if(i===0 && state.tableau[t].length===0) continue;
+        if(canMoveExact('tableau', c, i, 'tableau', t)) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
+      }
     }
   }
   return null;

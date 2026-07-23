@@ -202,7 +202,9 @@ function cardMetrics(overlapFrac){
 //   columns: how many tableau columns wide the board is,
 //   getMaxStackDepth: () => number (deepest current column/pile),
 //   overlapFrac: vertical overlap fraction (default 0.183),
-//   minCardW / maxCardW: clamp bounds (defaults 44 / 104)
+//   maxCardW: real upper cap on card width (default 104). minCardW is
+//     accepted for backward compatibility but no longer enforced as a
+//     floor — see the comment above cardW below for why.
 // }
 function fitBoard(opts){
   const header = document.querySelector('header');
@@ -256,8 +258,15 @@ function fitBoard(opts){
     if(cw < cardWByWidth) cardWByWidth = cw;
   });
 
-  let cardW = Math.min(cardWByHeight, cardWByWidth);
-  cardW = Math.max(minCardW, Math.min(cardW, maxCardW));
+  // maxCardW is a real cap (cards shouldn't keep growing forever on a
+  // huge monitor). minCardW is NOT enforced the same way — forcing the
+  // card up to a minimum regardless of available space is exactly what
+  // was still causing the mobile overflow after the extraRows fix: on
+  // a narrow phone the true fit-safe width can genuinely be below 44px,
+  // and clamping it back up to 44 pushes the whole board past the edge
+  // of the screen again. minCardW only ever applies when honoring it
+  // still fits — it can shrink the ceiling, never force an overflow.
+  let cardW = Math.min(cardWByHeight, cardWByWidth, maxCardW);
   document.documentElement.style.setProperty('--card-w', cardW+'px');
 }
 
