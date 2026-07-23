@@ -1,5 +1,15 @@
 /*
      Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 1815 EDT
+
+   fitBoard now reads the real, browser-computed gap and top-row
+   margin instead of flat guesses (10px/18px) — those guesses were
+   bigger than what the actual clamp()-based CSS values resolve to on
+   a phone-width screen, so cards were rendering smaller than they had
+   room to be at native (100%) zoom.
+ */
+/*
+     Written by: Johnathon Largent
     Last Updated 23 July 2026 @ 1645 EDT
 
    fitBoard now takes an optional opts.extraRows so a game can tell it
@@ -235,8 +245,19 @@ function fitBoard(opts){
   const availH = window.innerHeight - headerH - bottombarH - vPad - 10;
   const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
 
+  // These used to be flat guesses (10px gap, 18px top-row margin) —
+  // but the real CSS values are viewport-relative (--gap is
+  // clamp(6px,1.2vw,14px); the top-row's margin-bottom is
+  // clamp(10px,2vw,20px)), and on a phone-width screen both resolve
+  // noticeably smaller than those guesses. That mismatch was reserving
+  // more space than the board actually needed, so cards rendered
+  // smaller than they had room to be — reading the browser's own
+  // resolved values instead fixes that at any viewport size or zoom
+  // level, rather than needing a size-specific fudge factor.
+  const topRowEl = document.querySelector('.top-row');
+  const tableauRowEl = document.querySelector('.tableau-row');
+  const topRowGap = topRowEl ? (parseFloat(getComputedStyle(topRowEl).marginBottom) || 18) : 18;
   const maxStack = Math.max(opts.minStackForFit||7, opts.getMaxStackDepth ? opts.getMaxStackDepth() : 7);
-  const topRowGap = 18;
   const denom = 2 + (maxStack-1)*overlapFrac;
   const cardHByHeight = (availH - topRowGap) / denom;
   const cardWByHeight = cardHByHeight / CARD_RATIO;
@@ -250,7 +271,7 @@ function fitBoard(opts){
   // than the screen even though the tableau fits fine, which is exactly
   // what was pushing FreeCell's rightmost foundation off-screen on
   // narrow/mobile viewports.
-  const gapPx = 10;
+  const gapPx = tableauRowEl ? (parseFloat(getComputedStyle(tableauRowEl).columnGap) || 10) : 10;
   const rows = [{units: columns, gaps: columns-1}].concat(opts.extraRows || []);
   let cardWByWidth = Infinity;
   rows.forEach(r=>{
