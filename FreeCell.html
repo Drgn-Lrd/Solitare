@@ -16,15 +16,39 @@
 <title>FreeCell</title>
 <link rel="stylesheet" href="styles.css">
 <style>
-  /* King Watcher: a real King of Spades card sitting in its own
-     dedicated decorative slot between the free cells and foundations
+  /* King Watcher: just the head/crown of the real King of Spades card
+     art, cropped via oversized-and-offset positioning rather than a
+     separately cropped image file (so it stays correct automatically
+     if the card deck ever gets swapped/reskinned). The crop region was
+     measured directly from a reference screenshot with a marked box
+     around the head (x: 34.6%-75%, y: 8.9%-35.5% of the full card) —
+     see the chat history for the exact pixel-detection math. Sits in
+     its own dedicated slot between the free cells and foundations
      (see #king-watcher-slot in the HTML and initKingWatcher() in the
-     script) — not tied to any free cell being empty. It mirrors
-     horizontally to "face" whichever side of the screen the cursor is
-     currently on. pointer-events:none so it never intercepts clicks. */
-  .king-watcher-card{
-    position:absolute; inset:0; pointer-events:none;
-    transition: transform .15s ease; transform-origin:center;
+     script) — not tied to any free cell being empty. The whole slot
+     mirrors horizontally to "face" whichever side of the screen the
+     cursor is on; flipping the OUTER clipping box (not the oversized
+     inner image) is what keeps the crop aligned correctly when it
+     flips, rather than the visible region jumping around. */
+  .king-watcher-slot{
+    width: calc(var(--card-w) * 0.85);
+    aspect-ratio: 1.0458; /* matches the crop region's own width:height ratio */
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    align-self: center;
+    pointer-events: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    transition: transform .15s ease;
+    transform-origin: center;
+  }
+  .king-watcher-slot img{
+    position: absolute;
+    width: 247.52%;
+    left: -85.64%;
+    top: -33.46%;
+    display: block;
+    pointer-events: none;
   }
 
   /* Difficulty pool checkboxes in Settings */
@@ -63,7 +87,7 @@
     <div class="table-felt">
       <div class="row top-row">
         <div class="freecells" id="freecells-row"></div>
-        <div class="pile" id="king-watcher-slot"></div>
+        <div class="king-watcher-slot" id="king-watcher-slot"></div>
         <div class="foundations" id="foundations-row"></div>
       </div>
       <div class="row tableau-row" id="tableau"></div>
@@ -642,23 +666,25 @@ function renderTableau(){
    side of the screen the cursor is currently on. Built once at init
    since its slot never changes — no per-render logic needed.
    ========================================================= */
-let kingWatcherCardEl = null;
+let kingWatcherSlotEl = null;
 function initKingWatcher(){
   const slot = document.getElementById('king-watcher-slot');
-  if(!slot || kingWatcherCardEl) return;
-  const wrap = document.createElement('div');
-  wrap.className = 'king-watcher-card';
-  // Reuses the same real card art every other card in the game uses —
-  // reskins to a custom deck later apply here automatically too.
-  wrap.appendChild(E.buildFaceEl({ rank:'K', suit:'S', faceUp:true }, false));
-  slot.appendChild(wrap);
-  kingWatcherCardEl = wrap;
+  if(!slot || kingWatcherSlotEl) return;
+  const img = document.createElement('img');
+  img.alt = '';
+  img.draggable = false;
+  // If this file 404s (e.g. previewing without the cards/ folder
+  // available), just hide the decorative slot entirely rather than
+  // showing a broken image or an odd fallback crop.
+  E.loadCardImage(img, 'cards/king_of_spades.svg', ()=>{ slot.style.display = 'none'; });
+  slot.appendChild(img);
+  kingWatcherSlotEl = slot;
 }
 document.addEventListener('pointermove', (e)=>{
-  if(!kingWatcherCardEl) return;
-  const rect = kingWatcherCardEl.getBoundingClientRect();
+  if(!kingWatcherSlotEl) return;
+  const rect = kingWatcherSlotEl.getBoundingClientRect();
   const cx = rect.left + rect.width/2;
-  kingWatcherCardEl.style.transform = (e.clientX < cx) ? 'scaleX(-1)' : 'scaleX(1)';
+  kingWatcherSlotEl.style.transform = (e.clientX < cx) ? 'scaleX(-1)' : 'scaleX(1)';
 });
 
 function checkWin(){
