@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1830 EDT
+    Last Updated 23 July 2026 @ 1900 EDT
 
-   Slowed the supermove fly-through-the-free-cells animation ~30%
-   (stagger 90ms→117ms, each hop 160ms→208ms) — it was moving too fast
-   to actually see the cards traverse the free cells.
+   Move logic: tapping/dragging from a card now always prefers the
+   largest legal run ending there (so tapping the frontmost card of a
+   big valid run moves the whole run, not just that one card), and
+   added an auxiliary supermove — if the full run doesn't fit in one
+   shot, it now tries temporarily parking part of it on another
+   tableau column to free up room, instead of just cancelling the
+   move. Animation: empty tableau columns now count as valid
+   waypoints (not just free cells), and added a real dwell pause at
+   the waypoint plus an overall slowdown so the stop actually reads.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -266,6 +272,16 @@
 const E = window.SEngine;
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
+// Shared timing for the supermove fly-through-the-free-cells animation
+// (see animateSupermoveFly and tryAuxiliarySupermove below) — kept in
+// one place so the auxiliary 3-step maneuver can schedule its later
+// legs to start only once the previous leg's animation has actually
+// finished, instead of guessing.
+const SM_STAGGER = 160, SM_HOP_MS = 320, SM_DWELL_MS = 180;
+function supermoveAnimDuration(cardCount){
+  return Math.max(0, cardCount-1)*SM_STAGGER + 2*SM_HOP_MS + SM_DWELL_MS;
+}
+
 /* =========================================================
    GAME STATE
    FreeCell has no stock/waste and no face-down cards at all — every
@@ -393,9 +409,16 @@ function canPlaceOnFoundation(card, destPile, suit){
 // an empty tableau column, it can't also count as one of the "spare"
 // empty columns used to boost the total.
 function maxSupermoveSize(destType, destKey){
+  return projectedMaxSupermoveSize(destType, destKey, null);
+}
+// Same formula, but can pretend one extra tableau column (colToTreatAsOccupied)
+// is no longer empty — used to check whether a move would still fit
+// AFTER a helper column has just received cards, without having to
+// actually perform that move first just to find out.
+function projectedMaxSupermoveSize(destType, destKey, colToTreatAsOccupied){
   const freeCellsEmpty = state.freecells.filter(c=>c.length===0).length;
-  let emptyCols = state.tableau.filter(col=>col.length===0).length;
-  if(destType==='tableau' && state.tableau[destKey].length===0) emptyCols -= 1;
+  let emptyCols = state.tableau.filter((col,idx)=> col.length===0 && idx!==colToTreatAsOccupied).length;
+  if(destType==='tableau' && state.tableau[destKey].length===0 && destKey!==colToTreatAsOccupied) emptyCols -= 1;
   return (freeCellsEmpty+1) * Math.pow(2, Math.max(0, emptyCols));
 }
 
@@ -438,19 +461,25 @@ function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
   return false;
 }
 
-// Misclick forgiveness: if the exact grabbed slice doesn't fit, widen
-// backward through the same tableau run looking for a slice that does
-// (same idea as Klondike — e.g. meaning to grab a 3-card run but only
-// catching the top 1 or 2 of it).
+// Always prefers the LARGEST legal run that still ends at the
+// tapped/dragged card and reaches the top of the pile — not just
+// whichever slice was exactly tapped. Previously this only "widened"
+// (tried grabbing MORE cards) after the exact tapped slice failed, so
+// tapping the frontmost card of a big valid run — which is always
+// legal to move on its own as a single card — moved just that one
+// card and never even checked whether the whole run could go too.
+// Checking from the widest slice (i=0) down to the exact tap is what
+// makes it prefer moving the whole stack, or as much of it as
+// actually fits, especially useful on mobile where it's hard to grab
+// higher up in a run on purpose.
 function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
-  if(canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return fromIndex;
   if(fromType==='tableau'){
-    const pile = state.tableau[fromKey];
-    for(let i=fromIndex-1; i>=0; i--){
+    for(let i=0; i<=fromIndex; i++){
       if(canMoveExact(fromType, fromKey, i, toType, toKey)) return i;
     }
+    return -1;
   }
-  return -1;
+  return canMoveExact(fromType, fromKey, fromIndex, toType, toKey) ? fromIndex : -1;
 }
 
 function tryMove(fromType, fromKey, fromIndex, toType, toKey){
@@ -467,6 +496,12 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
     const el = document.querySelector('.card[data-id="'+c.id+'"]');
     return el ? el.getBoundingClientRect() : null;
   }) : null;
+  // Snapshot every free cell AND tableau column that's actually open
+  // right now, BEFORE the move happens — an empty tableau column is
+  // just as much "spare capacity" as a free cell is (that's exactly
+  // what the supermove-size formula assumes), so the animation should
+  // be able to route through either kind, not just the 4 free cells.
+  const waypointRects = isSupermove ? collectSupermoveWaypoints(fromKey, toKey) : null;
   undo.push();
   if(toType==='foundation'){
     fromPile.splice(fromIndex, movingCards.length);
@@ -480,29 +515,47 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
     state.tableau[toKey].push(...movingCards);
   }
   renderAll();
-  if(isSupermove) animateSupermoveFly(movingCards, preRects);
+  if(isSupermove) animateSupermoveFly(movingCards, preRects, waypointRects);
   return true;
 }
 
-// Cosmetic-only: makes a supermove visibly hop each card through a free
-// cell slot on its way to the destination, like the classic
-// one-card-at-a-time relay, instead of the whole run just jumping there
-// instantly. Runs entirely AFTER the real state change + renderAll(), so
-// it can never affect game logic — it just hides the already-placed
-// destination cards for a moment and flies clones over them.
-function animateSupermoveFly(movingCards, preRects){
-  const freeCellRects = [];
+// Every free cell that's actually empty, plus every tableau column
+// that's actually empty (other than the two columns this move itself
+// involves) — read before the move happens, since afterward some of
+// these may no longer be empty. Used purely as waypoints for the
+// cosmetic fly-through animation below.
+function collectSupermoveWaypoints(fromKey, toKey){
+  const rects = [];
   for(let i=0;i<state.freeCellCount;i++){
+    if(state.freecells[i].length) continue;
     const el = document.getElementById('fc-'+i);
-    if(el) freeCellRects.push(el.getBoundingClientRect());
+    if(el) rects.push(el.getBoundingClientRect());
   }
-  if(!freeCellRects.length) return; // nothing to route through — skip rather than fake it
+  for(let t=0;t<8;t++){
+    if(t===fromKey || t===toKey) continue;
+    if(state.tableau[t].length===0){
+      const el = document.querySelector('.tcol[data-index="'+t+'"]');
+      if(el) rects.push(el.getBoundingClientRect());
+    }
+  }
+  return rects;
+}
+
+// Cosmetic-only: makes a supermove visibly hop each card through an
+// open free cell or empty tableau column on its way to the
+// destination, like the classic one-card-at-a-time relay, instead of
+// the whole run just jumping there instantly. Runs entirely AFTER the
+// real state change + renderAll(), so it can never affect game logic —
+// it just hides the already-placed destination cards for a moment and
+// flies clones over them, with a genuine pause at the waypoint so the
+// stop actually reads instead of the card just blipping past it.
+function animateSupermoveFly(movingCards, preRects, waypointRects){
+  if(!waypointRects || !waypointRects.length) return; // nothing open to route through — skip rather than fake it
 
   const layer = document.createElement('div');
   layer.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:900;';
   document.body.appendChild(layer);
 
-  const STAGGER = 117, HOP_MS = 208; // ~30% slower than the original 90/160
   let remaining = 0;
   movingCards.forEach((c, i)=>{
     const fromRect = preRects[i];
@@ -510,7 +563,7 @@ function animateSupermoveFly(movingCards, preRects){
     if(!fromRect || !destEl) return;
     remaining++;
     const toRect = destEl.getBoundingClientRect();
-    const waypoint = freeCellRects[i % freeCellRects.length];
+    const waypoint = waypointRects[i % waypointRects.length];
     destEl.style.visibility = 'hidden';
 
     setTimeout(()=>{
@@ -522,29 +575,107 @@ function animateSupermoveFly(movingCards, preRects){
       clone.style.width = fromRect.width+'px';
       clone.style.height = fromRect.height+'px';
       clone.style.zIndex = '999';
-      clone.style.transition = 'left '+HOP_MS+'ms ease, top '+HOP_MS+'ms ease';
+      clone.style.transition = 'left '+SM_HOP_MS+'ms ease, top '+SM_HOP_MS+'ms ease';
       layer.appendChild(clone);
       requestAnimationFrame(()=>{
         clone.style.left = waypoint.left+'px';
         clone.style.top = waypoint.top+'px';
       });
       setTimeout(()=>{
-        clone.style.left = toRect.left+'px';
-        clone.style.top = toRect.top+'px';
+        // Arrived at the free cell / empty column — actually hold here
+        // for a beat before continuing, rather than reversing direction
+        // the instant it arrives (which is what made it look like a
+        // single blip rather than a stop-then-continue relay).
         setTimeout(()=>{
-          clone.remove();
-          destEl.style.visibility = '';
-          remaining--;
-          if(remaining<=0) layer.remove();
-        }, HOP_MS);
-      }, HOP_MS);
-    }, i*STAGGER);
+          clone.style.left = toRect.left+'px';
+          clone.style.top = toRect.top+'px';
+          setTimeout(()=>{
+            clone.remove();
+            destEl.style.visibility = '';
+            remaining--;
+            if(remaining<=0) layer.remove();
+          }, SM_HOP_MS);
+        }, SM_DWELL_MS);
+      }, SM_HOP_MS);
+    }, i*SM_STAGGER);
   });
 }
 function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
   const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
-  if(idx<0) return false;
-  return tryMove(fromType, fromKey, idx, toType, toKey);
+  if(idx>=0) return tryMove(fromType, fromKey, idx, toType, toKey);
+  // The full requested run doesn't fit in one shot even with every
+  // free cell/empty column counted — before giving up, see whether
+  // temporarily parking part of it on another tableau column would
+  // free up enough room for the rest (the classic "double supermove"
+  // trick), instead of just cancelling the whole move.
+  if(fromType==='tableau' && toType==='tableau'){
+    return tryAuxiliarySupermove(fromKey, fromIndex, toKey);
+  }
+  return false;
+}
+
+// A sequence (already extracted via slice) is internally a legal
+// alternating-color, descending-rank run on its own. Any contiguous
+// piece of an already-valid run is automatically valid too, but this
+// keeps that explicit rather than assumed.
+function isValidRun(cards){
+  for(let i=0;i<cards.length-1;i++){
+    const a=cards[i], b=cards[i+1];
+    if(!((E.isRed(a.suit)!==E.isRed(b.suit)) && E.rankValue(a.rank)===E.rankValue(b.rank)+1)) return false;
+  }
+  return true;
+}
+
+// When the run from (fromKey, fromIndex) to the top is too big to move
+// in one shot, but moving its TOP portion to a helper tableau column
+// first would free up enough capacity for the rest — try every way of
+// splitting it (moving away as few cards as possible first) and every
+// helper column, actually executing the first combination that checks
+// out as three real moves: park the top part on the helper, move the
+// remaining bottom part to the destination, then move the parked part
+// on top of it there. Each leg is validated against the real, current
+// state as it changes, and rolled back via the undo stack if a later
+// leg doesn't hold up — so this can never leave the game in an
+// inconsistent position. Legs are scheduled to start only once the
+// previous leg's fly-through animation has actually finished, so the
+// three moves read as a real relay instead of overlapping.
+function tryAuxiliarySupermove(fromKey, fromIndex, toKey){
+  const fromPile = state.tableau[fromKey];
+  const fullRun = fromPile.slice(fromIndex);
+  if(fullRun.length<2 || !isValidRun(fullRun)) return false;
+
+  for(let moveAway=1; moveAway<fullRun.length; moveAway++){
+    const splitAt = fullRun.length-moveAway;
+    const bottomPart = fullRun.slice(0, splitAt);
+    const topStartIndexInFromPile = fromIndex+splitAt;
+
+    for(let h=0; h<8; h++){
+      if(h===fromKey || h===toKey) continue;
+      if(!canMoveExact('tableau', fromKey, topStartIndexInFromPile, 'tableau', h)) continue;
+      if(!canPlaceOnTableau(bottomPart[0], state.tableau[toKey])) continue;
+      if(bottomPart.length > projectedMaxSupermoveSize('tableau', toKey, h)) continue;
+
+      // Checks out — actually perform it, in three real, legal moves.
+      const topPartLength = moveAway;
+      if(!tryMove('tableau', fromKey, topStartIndexInFromPile, 'tableau', h)) continue; // leg 1: park the top part on the helper
+      const leg1Delay = supermoveAnimDuration(topPartLength);
+
+      setTimeout(()=>{
+        const idx2 = canMoveWithWiden('tableau', fromKey, fromIndex, 'tableau', toKey);
+        if(idx2<0 || !tryMove('tableau', fromKey, idx2, 'tableau', toKey)){ undo.undo(); return; } // leg 2: bottom part to destination
+        const leg2Delay = supermoveAnimDuration(bottomPart.length);
+
+        setTimeout(()=>{
+          const helperStartIndex = state.tableau[h].length-topPartLength;
+          const idx3 = canMoveWithWiden('tableau', h, helperStartIndex, 'tableau', toKey);
+          if(idx3<0 || !tryMove('tableau', h, idx3, 'tableau', toKey)){ undo.undo(); undo.undo(); } // leg 3: parked part onto the destination
+        }, leg2Delay);
+      }, leg1Delay);
+
+      return true; // legs 2 and 3 are scheduled — committed to this plan
+    }
+  }
+  return false;
 }
 function autoMoveToFoundation(fromType, fromKey, fromIndex){
   const fromPile = findPileArray(fromType, fromKey);
