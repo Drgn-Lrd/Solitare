@@ -68,11 +68,14 @@
     <div class="brand-text">
       <h1>FreeCell</h1>
       <small>Solitaire</small>
-      <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      <div class="brand-actions">
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+        <a class="textbtn newgame-btn" href="index.html">Home</a>
+      </div>
+      <div class="chip" id="game-number-chip" style="display:none"><span id="game-number-display"></span></div>
     </div>
   </div>
   <div class="hud">
-    <div class="chip" id="game-number-chip" style="display:none"><span id="game-number-display"></span></div>
     <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
     <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
@@ -445,6 +448,24 @@ function autoMoveToFoundation(fromType, fromKey, fromIndex){
   }
   return false;
 }
+// Used specifically for double-click (see E.initInteractions below), NOT
+// by the Auto Move button — Auto Move ("send eligible cards home")
+// should only ever touch foundations, but a double-click's whole point
+// is "get this card out of my way somewhere useful", so it also falls
+// back to parking in the first open free cell when no foundation move
+// is available. Only makes sense coming FROM the tableau.
+function doubleClickAutoMove(fromType, fromKey, fromIndex){
+  if(autoMoveToFoundation(fromType, fromKey, fromIndex)) return true;
+  if(fromType==='tableau'){
+    const fromPile = findPileArray(fromType, fromKey);
+    if(fromPile && fromIndex === fromPile.length-1){
+      for(let i=0;i<state.freeCellCount;i++){
+        if(!state.freecells[i].length) return tryMove(fromType, fromKey, fromIndex, 'freecell', i);
+      }
+    }
+  }
+  return false;
+}
 function autoMoveAll(){
   let movedAny = false, guard = 0, progress = true;
   while(progress && guard < 300){
@@ -466,8 +487,18 @@ function autoMoveAll(){
    can genuinely run out of options — a real "No More Moves" is common
    and expected here, not a bug to guard against.
    ========================================================= */
-function findAnyMove(){
-  // 1) Foundation moves first — always genuine progress, and free.
+// Every move type here is unambiguous progress: sending something to a
+// foundation, a tableau shuffle that exposes a card able to go
+// straight to a foundation, or freeing an already-parked card back
+// onto the tableau. Deliberately does NOT include "park a card in a
+// free cell" — parking is almost always legal, but legal isn't the
+// same as useful. Treating every open free cell as "a move exists" is
+// why the hint used to suggest pointless shuffles (moving a 6-5 off
+// one 7 onto an equally-valid other 7 accomplishes nothing) and why
+// "No More Moves" used to only ever fire once every cell happened to
+// be full — both symptoms of the same over-permissive check. See
+// findAnyMove below for how parking gets folded back in, correctly.
+function findProductiveMove(){
   for(let i=0;i<state.freeCellCount;i++){
     if(!state.freecells[i].length) continue;
     const card = state.freecells[i][0];
@@ -483,26 +514,18 @@ function findAnyMove(){
       if(canPlaceOnFoundation(top, state.foundations[s], s)) return {type:'tableau-foundation', fromKey:c, index:pile.length-1, to:s};
     }
   }
-  // 2) Tableau-to-tableau shuffles next — checked BEFORE free-cell
-  //    parking on purpose. Parking a card costs you a free cell (a
-  //    limited resource you may need later); a shuffle that's already
-  //    legal without spending one is strictly better and should always
-  //    be suggested first. Only suggest if it's not just relocating an
-  //    entire single-card (or whole) column with nothing gained — same
-  //    "avoid dead shuffles" spirit as Klondike's hint scanner.
   for(let c=0;c<8;c++){
     const pile = state.tableau[c];
-    for(let i=0;i<pile.length;i++){
-      if(i===0) continue;
+    for(let i=1;i<pile.length;i++){ // i===0 skipped: relocating a whole column exposes nothing
+      const exposed = pile[i-1];
+      const exposedGoesHome = SUITS.some(s=>canPlaceOnFoundation(exposed, state.foundations[s], s));
+      if(!exposedGoesHome) continue; // the actual fix for the "6-5 between two 7s" complaint
       for(let t=0;t<8;t++){
         if(t===c) continue;
         if(canMoveExact('tableau', c, i, 'tableau', t)) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
       }
     }
   }
-  // 3) Freeing an already-parked card back onto the tableau — this
-  //    gives you a free cell back, so it's worth suggesting before
-  //    spending one on a brand new park.
   for(let i=0;i<state.freeCellCount;i++){
     if(!state.freecells[i].length) continue;
     const card = state.freecells[i][0];
@@ -510,15 +533,27 @@ function findAnyMove(){
       if(canPlaceOnTableau(card, state.tableau[t])) return {type:'freecell-tableau', fromKey:i, index:0, to:t};
     }
   }
-  // 4) Last resort: park a tableau top card in an open free cell. This
-  //    is the only move type that actually costs you something (one
-  //    fewer free cell for later), so it's only ever suggested once
-  //    nothing better is available.
+  return null;
+}
+// If nothing above is directly available, check whether parking any
+// one top card in any one open free cell would UNLOCK one of those
+// moves — only then does parking count as "a move exists". This is
+// what makes No More Moves accurate regardless of how many free cells
+// happen to be open, instead of only ever firing once they're all full.
+function findAnyMove(){
+  const direct = findProductiveMove();
+  if(direct) return direct;
   for(let c=0;c<8;c++){
     const pile = state.tableau[c];
     if(!pile.length) continue;
     for(let i=0;i<state.freeCellCount;i++){
-      if(!state.freecells[i].length) return {type:'tableau-freecell', fromKey:c, index:pile.length-1, to:i};
+      if(state.freecells[i].length) continue;
+      const card = pile.pop();
+      state.freecells[i].push(card);
+      const unlocked = findProductiveMove();
+      state.freecells[i].pop();
+      pile.push(card);
+      if(unlocked) return {type:'tableau-freecell', fromKey:c, index:pile.length-1, to:i};
     }
   }
   return null;
@@ -838,7 +873,7 @@ E.initInteractions({
   resolveHoverTargetPadded,
   canMoveWithWiden,
   tryMoveAuto,
-  autoMoveToFoundation,
+  autoMoveToFoundation: doubleClickAutoMove,
   onRenderNeeded: renderAll
 });
 
