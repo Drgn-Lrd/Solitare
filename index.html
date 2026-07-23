@@ -51,7 +51,10 @@
   *{box-sizing:border-box;}
   html,body{
     margin:0; padding:0; min-height:100%;
-    background: radial-gradient(ellipse at 50% -10%, #241708, #120b04 65%);
+    background: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/background.png');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
     color: var(--ivory);
     font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
   }
@@ -187,6 +190,12 @@
   .mc-col .mc:first-child,.mc-col .mc-slot:first-child{ margin-top:0; }
   .mc-cols{ display:flex; gap:4px; justify-content:center; align-items:flex-start; flex:1; }
   .mc-tiny-flag{ width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:7px solid #b5432f; }
+  /* Precise pyramid layouts (TriPeaks, Tut's Tomb): each card's exact
+     left/top is computed so every card in an upper row sits centered
+     exactly between the two cards below it — real card-pyramid math,
+     not eyeballed. See chat history for the exact formula. */
+  .pyramid-wrap{ position:relative; width:220px; margin:0 auto; flex-shrink:0; }
+  .mc-abs{ position:absolute; }
 </style>
 </head>
 <body>
@@ -241,14 +250,14 @@
               </div>
             </div>
             <div class="mc-cols">
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
             </div>
           </div>
         </div>
@@ -263,12 +272,40 @@
           <div class="tile-bg-art art-tripeaks"></div>
           <div class="tile-head"><h2>TriPeaks</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
-            <div class="mc-row" style="justify-content:space-around;">
-              <div class="mc-col"><div class="mc back-tripeaks"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back-tripeaks"></div><div class="mc back-tripeaks"></div></div></div>
-              <div class="mc-col"><div class="mc back-tripeaks"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back-tripeaks"></div><div class="mc back-tripeaks"></div></div></div>
-              <div class="mc-col"><div class="mc back-tripeaks"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back-tripeaks"></div><div class="mc back-tripeaks"></div></div></div>
+            <div class="pyramid-wrap" style="height:60px;">
+              <!-- peak 1 (left) -->
+              <div class="mc back-tripeaks mc-abs" style="left:57.5px; top:0px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:50px; top:13px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:65px; top:13px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:42.5px; top:26px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:57.5px; top:26px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:72.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:35px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:50px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:65px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:39px;"></div>
+              <!-- peak 2 (center) — its base row shares one seam card with each neighbor -->
+              <div class="mc back-tripeaks mc-abs" style="left:102.5px; top:0px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:95px; top:13px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:110px; top:13px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:87.5px; top:26px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:102.5px; top:26px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:117.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:39px;"></div>
+              <!-- peak 3 (right) -->
+              <div class="mc back-tripeaks mc-abs" style="left:147.5px; top:0px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:140px; top:13px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:155px; top:13px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:132.5px; top:26px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:147.5px; top:26px;"></div>
+              <div class="mc back-tripeaks mc-abs" style="left:162.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:140px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:155px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:170px; top:39px;"></div>
             </div>
-            <div class="mc-row" style="justify-content:center; gap:6px;">
+            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:6px;">
               <div class="mc back-tripeaks"></div><div class="mc face"></div>
             </div>
           </div>
@@ -285,16 +322,16 @@
           <div class="tile-head"><h2>Golf</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
             <div class="mc-cols">
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
             </div>
-            <div class="mc-row" style="justify-content:center; align-items:flex-end; gap:8px;">
-              <div class="mc face"></div>
+            <div class="mc-row" style="justify-content:center; align-items:flex-end; gap:8px; margin-top:6px;">
+              <div class="mc back-golf"></div><div class="mc-slot"></div>
               <div class="mc-tiny-flag"></div>
             </div>
           </div>
@@ -310,17 +347,19 @@
           <div class="tile-bg-art art-yukon"></div>
           <div class="tile-head"><h2>Yukon</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
-            <div class="mc-row" style="justify-content:flex-end;">
-              <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
-            </div>
-            <div class="mc-cols">
-              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc face"></div></div>
+            <div class="mc-row" style="align-items:flex-start; gap:8px;">
+              <div class="mc-cols" style="flex:1;">
+                <div class="mc-col"><div class="mc face"></div></div>
+                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:3px;">
+                <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -335,13 +374,37 @@
           <div class="tile-bg-art art-tut"></div>
           <div class="tile-head"><h2>Tut's Tomb</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
-            <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
-              <div class="mc-row" style="gap:2px;"><div class="mc gold-back"></div></div>
-              <div class="mc-row" style="gap:2px;"><div class="mc gold-back"></div><div class="mc gold-back"></div></div>
-              <div class="mc-row" style="gap:2px;"><div class="mc gold-back"></div><div class="mc gold-back"></div><div class="mc gold-back"></div></div>
-              <div class="mc-row" style="gap:2px;"><div class="mc face"></div><div class="mc gold-back"></div><div class="mc gold-back"></div><div class="mc face"></div></div>
+            <div class="pyramid-wrap" style="height:99px;">
+              <div class="mc face mc-abs" style="left:102.5px; top:0px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:13px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:13px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:72.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:132.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:65px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:140px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:57.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:72.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:132.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:147.5px; top:78px;"></div>
             </div>
-            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:4px;">
+            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:6px;">
               <div class="mc gold-back"></div><div class="mc face"></div>
             </div>
           </div>
