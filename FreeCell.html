@@ -25,6 +25,14 @@
   }
   .king-watcher svg{ width:100%; height:100%; display:block; }
   .king-pupil{ transition: transform .06s linear; }
+
+  /* Difficulty pool checkboxes in Settings */
+  .pool-checks{ display:flex; flex-direction:column; gap:8px; }
+  .checkrow{
+    display:flex; align-items:center; gap:8px; font-size:14px; color:#e7f2ea;
+    cursor:pointer; flex-wrap:wrap;
+  }
+  .checkrow input[type="checkbox"]{ width:16px; height:16px; accent-color: var(--brass); flex-shrink:0; }
 </style>
 </head>
 <body>
@@ -120,13 +128,20 @@
     <div class="sub">Card back applies instantly. Timer/score too.</div>
 
     <div class="field">
-      <label>Difficulty</label>
-      <div class="segmented" id="seg-difficulty">
-        <button data-val="easy">Easy</button>
-        <button data-val="medium">Medium</button>
-        <button data-val="hard">Hard</button>
+      <label>Deal Difficulty (for random New Game)</label>
+      <div class="pool-checks">
+        <label class="checkrow"><input type="checkbox" id="chk-extraeasy" checked> Extra Easy <span class="fieldnote" style="margin:0;">(25 curated deals — easiest of the easy)</span></label>
+        <label class="checkrow"><input type="checkbox" id="chk-easy" checked> Easy <span class="fieldnote" style="margin:0;">(128 deals solvable with zero free cells)</span></label>
+        <label class="checkrow"><input type="checkbox" id="chk-medium" checked> Medium <span class="fieldnote" style="margin:0;">(any number — the uncurated middle ground)</span></label>
+        <label class="checkrow"><input type="checkbox" id="chk-hard" checked> Hard <span class="fieldnote" style="margin:0;">(675 curated deals that need all 4 free cells)</span></label>
       </div>
-      <div class="fieldnote">Changes how many free cells you get: Easy 5, Medium 4 (classic), Hard 3. Applies on your next New Game — doesn't affect which deal you get, just how much room you have to work it.</div>
+      <div class="fieldnote">Checked pools are drawn from equally at random each New Game. Checking both Easy and Hard automatically checks Medium too — going from one extreme to the other should include the middle ground.</div>
+    </div>
+
+    <div class="field">
+      <label>Free Cells: <span id="freecell-slider-val">4</span></label>
+      <input type="range" id="freecell-slider" min="3" max="5" step="1" value="4" style="width:100%;">
+      <div class="fieldnote">More free cells = more room to maneuver, independent of which deal you get. Applies on your next New Game.</div>
     </div>
 
     <div class="field">
@@ -195,7 +210,7 @@ const state = {
   showTimer: false,
   showScore: false,
   backStyle: 'back_10.png',
-  freeCellCount: 4, // difficulty lever: Easy=5, Medium=4 (classic), Hard=3
+  freeCellCount: 4, // independent slider, 3-5, default 4 (classic)
   freecells: [[],[],[],[]],
   foundations: {S:[],H:[],D:[],C:[]},
   tableau: [[],[],[],[],[],[],[],[]],
@@ -203,11 +218,56 @@ const state = {
   seconds: 0,
   timerHandle: null,
   cascadePlayed: false,
-  gameNumber: null // null = random deal; otherwise the classic Microsoft game number currently in play
+  gameNumber: null // the classic Microsoft game number currently in play — every deal has one now, random or chosen
 };
-const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.png', difficulty:'medium' };
-const DIFFICULTY_FREE_CELLS = { easy:5, medium:4, hard:3 };
+const pendingSettings = {
+  showTimer:false, showScore:false, backStyle:'back_10.png',
+  freeCellCount: 4,
+  // Which curated difficulty pools a random "New Game" draws from. All
+  // on by default = fully unrestricted random pick, same feel as before
+  // this feature existed.
+  poolExtraEasy: true, poolEasy: true, poolMedium: true, poolHard: true
+};
 const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
+
+/* =========================================================
+   CURATED DIFFICULTY POOLS
+   Sourced from freecellgamesolutions.com/stats.html, which solves and
+   ranks the first 100,000 classic Microsoft FreeCell deals. "Easy" =
+   solvable using zero free cells at all; "Extra Easy" is the easiest
+   ~25 of those, ranked by shortest solution. "Hard" = deals that
+   genuinely need all 4 free cells to solve. "Medium" isn't a curated
+   list — it means "any number", same as an unrestricted random deal.
+   KNOWN_UNSOLVABLE_NUMBERS are avoided when picking a "Medium" number
+   at random (11982 is the famous one — used here as a sanity check
+   that this whole shuffle algorithm matches the original: if it
+   didn't, that number wouldn't mean anything on our implementation).
+   ========================================================= */
+const EXTRA_EASY_NUMBERS = [25904, 5152, 11987, 13464, 9998, 62090, 1529, 38168, 41426, 41993, 48995, 3250, 48800, 54477, 58573, 61556, 5300, 17871, 59641, 41293, 43306, 53488, 18427, 31316, 52255];
+const EASY_NUMBERS = [164, 892, 1012, 1081, 1150, 1529, 2508, 2514, 3178, 3225, 3250, 4929, 5055, 5152, 5213, 5300, 5814, 5877, 5907, 6749, 6893, 7018, 7058, 7167, 7807, 8355, 8471, 8961, 9998, 10772, 11863, 11987, 12392, 12411, 12676, 13214, 13464, 13532, 14014, 14624, 14826, 15140, 15196, 17772, 17871, 18026, 18150, 18427, 19951, 20533, 21657, 21900, 22663, 23328, 24176, 24919, 25001, 25904, 26719, 27121, 27853, 28856, 30329, 30418, 30584, 30755, 30849, 31185, 31316, 32016, 33624, 33710, 33949, 34898, 37509, 37913, 38066, 38168, 38770, 40041, 40441, 40616, 41293, 41426, 41747, 41993, 42094, 43073, 43196, 43306, 45580, 46561, 47774, 47824, 47917, 48675, 48689, 48800, 48995, 49487, 49676, 49923, 50203, 50534, 51232, 52255, 52331, 52573, 53488, 54477, 56070, 57035, 57355, 57435, 58441, 58573, 59641, 59974, 60306, 61047, 61206, 61556, 62090, 62487, 62799, 63249, 63675, 63880];
+const HARD_NUMBERS = [169, 178, 285, 454, 575, 598, 617, 657, 775, 829, 988, 1025, 1136, 1443, 1495, 1661, 1734, 1941, 2081, 2240, 2241, 2563, 2670, 2802, 3015, 3130, 3289, 3685, 3772, 4368, 4609, 4625, 4946, 5157, 5254, 5463, 5707, 5979, 6017, 6139, 6255, 6365, 6498, 6775, 6834, 6918, 7000, 7057, 7107, 7303, 7305, 7477, 7700, 8182, 8454, 8591, 8613, 8820, 8927, 9209, 9278, 9784, 9790, 9877, 10288, 10370, 10692, 11281, 11304, 11819, 11944, 12006, 12021, 12166, 12319, 12330, 12381, 12753, 12773, 12795, 13007, 13015, 13304, 13388, 13584, 13751, 13867, 13926, 14027, 14070, 14267, 14623, 14904, 15339, 15382, 15512, 15562, 15695, 15704, 15710, 16129, 16202, 16407, 17426, 17467, 17680, 17683, 17736, 17863, 17985, 18118, 18192, 18356, 18600, 18623, 18872, 18947, 19013, 19146, 19590, 19767, 19837, 19880, 20055, 20112, 20418, 20489, 20547, 20581, 20589, 20725, 20737, 20757, 20810, 20830, 21278, 21454, 21491, 21560, 21939, 22177, 22521, 22661, 22907, 23156, 23874, 24104, 24591, 24735, 25014, 25129, 25246, 25315, 25375, 25424, 25450, 25558, 25599, 25602, 25957, 25995, 26061, 26194, 26294, 26576, 26629, 26693, 27040, 27201, 27390, 27938, 28118, 28952, 29230, 29345, 29435, 29462, 29474, 29580, 29596, 29628, 29676, 30057, 30414, 30506, 30663, 30887, 30897, 30952, 31044, 31049, 31302, 31465, 31601, 31631, 31675, 31729, 31945, 32123, 32379, 32469, 32483, 32549, 32687, 32692, 32776, 32793, 33230, 33393, 33396, 33452, 33502, 33556, 33628, 33659, 33850, 33869, 33967, 34097, 34172, 34194, 34231, 34436, 34547, 34741, 34758, 34841, 34891, 34959, 35010, 35254, 35432, 35539, 35549, 35703, 35852, 36421, 36427, 36437, 36443, 36740, 36966, 36971, 36994, 37094, 37097, 37257, 37378, 37520, 37763, 37805, 37985, 38123, 38143, 38300, 38465, 38668, 38894, 39236, 39246, 39273, 39421, 39625, 39763, 39910, 40054, 40580, 40738, 40917, 41184, 41443, 41589, 41681, 41894, 41925, 42063, 42168, 42184, 42640, 43066, 43096, 43197, 43358, 43386, 43778, 43825, 43907, 44061, 44192, 44223, 44613, 44732, 44776, 44797, 44840, 44871, 45042, 45333, 45521, 45628, 45774, 45891, 45948, 45955, 46000, 46726, 46763, 46764, 46822, 47064, 47261, 47447, 47474, 47786, 48315, 48482, 48877, 48953, 48991, 49086, 49461, 49492, 49645, 49946, 49959, 49961, 50408, 50673, 50886, 50916, 51705, 51871, 52174, 52529, 52538, 52714, 52883, 52967, 53003, 53265, 53275, 53351, 53642, 53701, 53711, 53771, 53967, 54092, 54292, 54420, 54675, 54892, 55329, 55469, 55634, 55680, 55846, 56235, 56339, 56362, 56372, 56412, 56514, 56643, 56974, 57148, 57233, 57276, 57306, 57425, 57464, 57499, 57793, 57931, 58253, 58322, 58324, 58387, 58444, 58531, 58594, 58644, 58747, 58934, 59005, 59144, 59367, 59561, 59701, 59773, 60049, 60119, 60429, 60515, 60522, 60597, 60822, 60932, 61029, 61254, 61393, 61792, 62119, 62209, 62254, 62265, 62308, 62504, 62752, 62934, 63024, 63289, 63354, 63435, 63463, 63499, 63697, 63833, 63893, 64020, 64089, 64288, 64344, 64378, 64400, 64401, 64597, 64598, 64663, 64672, 64976, 65197, 65399, 65537, 65556, 65573, 65972, 66053, 66228, 66457, 66910, 67202, 67350, 67401, 67440, 67580, 67654, 67724, 67754, 67846, 67919, 68206, 68308, 68488, 68837, 68956, 69176, 69278, 69435, 70164, 70218, 70416, 70529, 70640, 70740, 70755, 70855, 70929, 70938, 71163, 71255, 71302, 71340, 71371, 71382, 71507, 71741, 71929, 71942, 71953, 71993, 72090, 72135, 72210, 72323, 72394, 72399, 72597, 72630, 72789, 72873, 73165, 73486, 73525, 73802, 74169, 74264, 74299, 74321, 74352, 74360, 74363, 74475, 74604, 74868, 75019, 75116, 75403, 75486, 75602, 75739, 75779, 75793, 75807, 75856, 76000, 76393, 76473, 76790, 76829, 76902, 77058, 77180, 77270, 77301, 77469, 77471, 77474, 77487, 78159, 78489, 78749, 78887, 79010, 79352, 79437, 79513, 79737, 80176, 80216, 80388, 80445, 81028, 81123, 81170, 81173, 81254, 81487, 81811, 81961, 81966, 82009, 82124, 82546, 82576, 83138, 83291, 83899, 84053, 84181, 84229, 84464, 84472, 84556, 84873, 85015, 85099, 85107, 85272, 85290, 85638, 85684, 85689, 85926, 85948, 86121, 86187, 86479, 86547, 86594, 86595, 87268, 87270, 87584, 87627, 87700, 87792, 88022, 88026, 88074, 88156, 88401, 88428, 88573, 88641, 89042, 89216, 89420, 89424, 89748, 89794, 89831, 89947, 89957, 90007, 90312, 90461, 90559, 90642, 91037, 91430, 91684, 91834, 91861, 92082, 92113, 92139, 92217, 92374, 92516, 92731, 92863, 93506, 93522, 93592, 93754, 93788, 93798, 93976, 94081, 94122, 94235, 94300, 94369, 94468, 94706, 94955, 94957, 95366, 95568, 95987, 96005, 96040, 96052, 96437, 96468, 96675, 96698, 96853, 96931, 96935, 97114, 97206, 97304, 97557, 97804, 97815, 97817, 98080, 98162, 98294, 98575, 98677, 98714, 98966, 98986, 98991, 99101, 99211, 99213, 99216, 99435, 99464, 99527, 99905];
+const KNOWN_UNSOLVABLE_NUMBERS = [11982, 146692, 186216, 455889, 495505, 512118, 517776, 781948];
+
+// Picks a random game number honoring which pools are checked in
+// Settings. Picks a random CATEGORY first, then a random number within
+// it — so Hard's 675 numbers don't drown out Extra Easy's 25; each
+// checked pool gets equal weight regardless of size. "Medium" (or
+// nothing checked, as a safety net) means "any number 1-1,000,000",
+// skipping the handful of known-unsolvable ones.
+function pickRandomGameNumber(){
+  const pools = [];
+  if(pendingSettings.poolExtraEasy) pools.push(EXTRA_EASY_NUMBERS);
+  if(pendingSettings.poolEasy) pools.push(EASY_NUMBERS);
+  if(pendingSettings.poolHard) pools.push(HARD_NUMBERS);
+  if(pendingSettings.poolMedium || !pools.length) pools.push(null); // null = "any number" category
+  const category = pools[Math.floor(Math.random()*pools.length)];
+  if(category===null){
+    let n;
+    do { n = 1+Math.floor(Math.random()*1000000); } while(KNOWN_UNSOLVABLE_NUMBERS.includes(n));
+    return n;
+  }
+  return category[Math.floor(Math.random()*category.length)];
+}
 
 /* =========================================================
    CLASSIC GAME NUMBERS
@@ -670,17 +730,19 @@ function applyHudVisibility(){
 /* =========================================================
    DEAL / NEW GAME
    Standard FreeCell deal: columns 0-3 get 7 cards, columns 4-7 get 6 —
-   all face-up immediately, no stock left over. Pass a specific
-   gameNumber to reproduce that exact classic deal instead of a random
-   shuffle (see dealOrderForGameNumber above).
+   all face-up immediately, no stock left over. Every deal now maps to
+   a real classic game number: pass one explicitly to reproduce that
+   exact deal, or omit it and one gets drawn from whichever difficulty
+   pools are checked in Settings (see pickRandomGameNumber above).
    ========================================================= */
 function newGame(gameNumber){
   clearInterval(state.timerHandle);
   state.showTimer = pendingSettings.showTimer;
   state.showScore = pendingSettings.showScore;
   state.backStyle = pendingSettings.backStyle;
-  state.freeCellCount = DIFFICULTY_FREE_CELLS[pendingSettings.difficulty] || 4;
-  state.gameNumber = (gameNumber!=null) ? gameNumber : null;
+  state.freeCellCount = pendingSettings.freeCellCount;
+  const resolvedNumber = (gameNumber!=null) ? gameNumber : pickRandomGameNumber();
+  state.gameNumber = resolvedNumber;
   state.freecells = [];
   for(let i=0;i<state.freeCellCount;i++) state.freecells.push([]);
   state.foundations = {S:[],H:[],D:[],C:[]};
@@ -693,11 +755,9 @@ function newGame(gameNumber){
   const oldCascade = document.getElementById('cascade-layer');
   if(oldCascade) oldCascade.remove();
 
-  // Random deal (default) shuffles a fresh deck and pops from the end;
-  // a specific game number instead reproduces the classic deal in its
-  // exact dealt order, so the array is reversed first so the same
-  // pop()-based loop below consumes it front-to-back either way.
-  const deck = (gameNumber!=null) ? dealOrderForGameNumber(gameNumber).reverse() : E.shuffle(E.buildDeck());
+  // Reversed so the pop()-based loop below consumes it front-to-back,
+  // matching the classic dealt order (see dealOrderForGameNumber).
+  const deck = dealOrderForGameNumber(resolvedNumber).reverse();
   let col = 0;
   while(deck.length){
     const card = deck.pop();
@@ -808,29 +868,51 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraSnapshot: ()=>({ difficulty: pendingSettings.difficulty }),
-  extraRestore: (snap)=>{ pendingSettings.difficulty = snap.difficulty; refreshDifficultyPicker(); },
-  extraOnOpen: ()=>{ pendingSettings.difficulty = difficultyFromFreeCellCount(state.freeCellCount); refreshDifficultyPicker(); }
+  extraSnapshot: ()=>({
+    freeCellCount: pendingSettings.freeCellCount,
+    poolExtraEasy: pendingSettings.poolExtraEasy, poolEasy: pendingSettings.poolEasy,
+    poolMedium: pendingSettings.poolMedium, poolHard: pendingSettings.poolHard
+  }),
+  extraRestore: (snap)=>{
+    pendingSettings.freeCellCount = snap.freeCellCount;
+    pendingSettings.poolExtraEasy = snap.poolExtraEasy; pendingSettings.poolEasy = snap.poolEasy;
+    pendingSettings.poolMedium = snap.poolMedium; pendingSettings.poolHard = snap.poolHard;
+    refreshFreeCellSlider(); refreshPoolCheckboxes();
+  },
+  extraOnOpen: ()=>{
+    pendingSettings.freeCellCount = state.freeCellCount;
+    refreshFreeCellSlider(); refreshPoolCheckboxes();
+  }
 });
-function difficultyFromFreeCellCount(n){
-  for(const k in DIFFICULTY_FREE_CELLS){ if(DIFFICULTY_FREE_CELLS[k]===n) return k; }
-  return 'medium';
+function refreshFreeCellSlider(){
+  document.getElementById('freecell-slider').value = pendingSettings.freeCellCount;
+  document.getElementById('freecell-slider-val').textContent = pendingSettings.freeCellCount;
 }
-function refreshDifficultyPicker(){
-  document.querySelectorAll('#seg-difficulty button').forEach(b=>{
-    b.classList.toggle('active', b.dataset.val===pendingSettings.difficulty);
-  });
+function refreshPoolCheckboxes(){
+  document.getElementById('chk-extraeasy').checked = pendingSettings.poolExtraEasy;
+  document.getElementById('chk-easy').checked = pendingSettings.poolEasy;
+  document.getElementById('chk-medium').checked = pendingSettings.poolMedium;
+  document.getElementById('chk-hard').checked = pendingSettings.poolHard;
 }
-document.querySelectorAll('#seg-difficulty button').forEach(b=>{
-  b.addEventListener('click', ()=>{
-    // Difficulty changes how many free cells exist, so — unlike the
-    // card back or timer/score toggles — it can't preview live without
-    // disrupting a game already in progress. Takes effect on the next
-    // New Game (or immediately if you deal a specific game number,
-    // since that already starts a fresh board).
-    pendingSettings.difficulty = b.dataset.val;
-    refreshDifficultyPicker();
-  });
+document.getElementById('freecell-slider').addEventListener('input', (e)=>{
+  pendingSettings.freeCellCount = parseInt(e.target.value, 10);
+  document.getElementById('freecell-slider-val').textContent = pendingSettings.freeCellCount;
+});
+function onPoolCheckboxChange(){
+  pendingSettings.poolExtraEasy = document.getElementById('chk-extraeasy').checked;
+  pendingSettings.poolEasy = document.getElementById('chk-easy').checked;
+  pendingSettings.poolHard = document.getElementById('chk-hard').checked;
+  // Checking both Easy and Hard auto-checks Medium too — being fine
+  // with both extremes implies being fine with the middle ground, and
+  // it keeps the random pool from being weirdly bimodal (only ever
+  // very easy or very hard, nothing in between).
+  if(pendingSettings.poolEasy && pendingSettings.poolHard){
+    document.getElementById('chk-medium').checked = true;
+  }
+  pendingSettings.poolMedium = document.getElementById('chk-medium').checked;
+}
+['chk-extraeasy','chk-easy','chk-medium','chk-hard'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', onPoolCheckboxChange);
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
