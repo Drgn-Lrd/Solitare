@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1800 EDT
+    Last Updated 23 July 2026 @ 1815 EDT
 
-   King Watcher's mobile sway now matches the index hub's mini king
-   exactly: holds each side for a couple seconds, then a quick flip —
-   not the constant back-and-forth motion from the last pass.
+   Card sizing fix lives entirely in engine.js this round: fitBoard was
+   using flat guesses for the gap/top-row-margin that were bigger than
+   what those clamp()-based CSS values actually resolve to on a phone,
+   which is why cards rendered noticeably smaller at native 100% zoom
+   than at 80% zoom. No changes needed here.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
