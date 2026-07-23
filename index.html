@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 1634 EDT
+
+   Resized Klondike's stock/foundation row to match the 1-card-width-
+   wider convention and added a waste pile beside the stock
+-->
+<!--
+    Written by: Johnathon Largent
     Last Updated 23 July 2026 @ 1604 EDT
 
    Converted Golf/Yukon/TriPeaks/Pyramid/FreeCell tile art to preloaded
@@ -261,10 +268,14 @@
         <div class="tile-felt">
           <div class="tile-head"><h2>Klondike</h2><span class="status-pill play">Play Now</span></div>
           <div class="mini-board">
-            <div class="mc-row">
-              <div class="mc back"></div>
-              <div style="flex:1;"></div>
-              <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
+            <div class="mc-row" style="width:144px; margin:0 auto; justify-content:space-between; align-items:flex-end;">
+              <div class="mc-row" style="gap:5px;">
+                <div class="mc back"></div>
+                <div class="mc-slot"></div>
+              </div>
+              <div class="mc-row" style="gap:3px;">
+                <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
+              </div>
             </div>
             <div class="mc-cols">
               <div class="mc-col"><div class="mc face"></div></div>
