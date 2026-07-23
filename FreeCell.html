@@ -1,17 +1,16 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1945 EDT
+    Last Updated 23 July 2026 @ 2000 EDT
 
-   Rewrote the supermove fly-through using the Web Animations API
-   (explicit source/waypoint/destination keyframes) instead of manually
-   toggling style.left/top alongside a CSS transition — the manual
-   approach depended on the browser having painted the starting
-   position before the next change, which could silently fail and is
-   the likely reason it wasn't visibly traversing the waypoint even
-   with click-to-move (not just drag). Also reverted the timing back
-   to 117ms stagger / 208ms per hop and dropped the separate dwell
-   pause, matching the version before the last slowdown.
+   Found the actual bug behind the supermove animation never visibly
+   traveling: destEl.style.visibility='hidden' was set BEFORE cloning
+   it, so the clone inherited visibility:hidden from the source
+   element's inline style and was invisible for its entire flight —
+   every prior version had this same flaw, which is why nothing was
+   ever visibly seen going through the free cells regardless of
+   timing or click vs. drag. Clone now explicitly gets visibility:
+   visible.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -607,6 +606,7 @@ function animateSupermoveFly(movingCards, preRects, waypointRects){
     setTimeout(()=>{
       const clone = destEl.cloneNode(true);
       clone.style.position = 'fixed';
+      clone.style.visibility = 'visible'; // destEl (the clone source) is already hidden by this point — without this the clone inherits that and is invisible for its entire flight, which is why nothing was ever visibly seen traveling
       clone.style.margin = '0';
       clone.style.left = '0';
       clone.style.top = '0';
