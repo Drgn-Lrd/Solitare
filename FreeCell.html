@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1745 EDT
+    Last Updated 23 July 2026 @ 1800 EDT
 
-   Fixed the remaining mobile overflow (the minCardW floor in
-   engine.js's fitBoard was forcing cards bigger than the screen
-   actually had room for), corrected the tableau inset to a fixed 1/4
-   card-width per side instead of a variable amount, and slowed the
-   King Watcher's mobile sway to 1 second per side.
+   King Watcher's mobile sway now matches the index hub's mini king
+   exactly: holds each side for a couple seconds, then a quick flip —
+   not the constant back-and-forth motion from the last pass.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -81,11 +79,15 @@
      always wins over any inline style also setting `transform`, so
      this is safe even if a stray pointer/touch event ever fires. */
   @media (hover:none), (pointer:coarse){
-    .king-watcher-slot{ animation: kingSway 2s ease-in-out infinite; }
+    .king-watcher-slot{ animation: kingSway 6s ease-in-out infinite; }
   }
+  /* Matches the index hub's mini king-watch tile exactly: holds each
+     side for ~2.4s (not constant motion) with a quick flip in between,
+     rather than a continuous side-to-side ease. */
   @keyframes kingSway{
-    0%, 100% { transform: scaleX(1); }
-    50% { transform: scaleX(-1); }
+    0%, 40% { transform: scaleX(1); }
+    50%, 90% { transform: scaleX(-1); }
+    100% { transform: scaleX(1); }
   }
 
   /* Difficulty pool checkboxes in Settings */
