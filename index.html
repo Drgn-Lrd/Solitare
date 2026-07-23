@@ -4,9 +4,13 @@
   same palette/materials as the games themselves (wood rail, felt,
   brass, ivory cards) so this genuinely feels like the front door to
   the same suite rather than a generic app-launcher grid. Each tile's
-  mini "deal preview" is hand-built from small CSS card shapes rather
-  than real screenshots, so it stays lightweight and never goes stale
-  if a game's actual layout changes slightly.
+  mini "deal preview" uses small CSS shapes for layout, but face-up
+  cards are filled with real (randomized on every reload) card art
+  from cards/ via the script at the bottom — same assets the games
+  themselves use, so nothing goes stale or needs a separate asset set.
+  Card BACKS stay simple CSS stripes, one distinct color per game.
+  Each in-dev tile also gets its own small scenic background (a putting
+  green, snow peaks, ice floes, a pyramid) instead of a flat felt tint.
 
   Tiles for Klondike/FreeCell link out to their real files (Klondike is
   approved and live; FreeCell is playable but still marked Testing
@@ -93,14 +97,108 @@
     padding: 14px 14px 16px;
     min-height: 190px;
     display:flex; flex-direction:column;
+    position: relative; overflow: hidden;
   }
-  /* Themed variants — each game gets its own felt tint once styled;
-     for now everything but Klondike/FreeCell shares a neutral tone,
-     Tut's Tomb gets a preview of the warmer sandy direction it'll take. */
+  /* Themed variants: each game gets its own scenic background art (see
+     .tile-bg-art below) instead of just a felt-color tint. Klondike and
+     FreeCell stay plain felt on purpose — Klondike per "keep it as is",
+     FreeCell hasn't had a theme requested yet. */
   .tile-felt.theme-freecell{ background-image: radial-gradient(ellipse 140% 90% at 50% -10%, #1c8a86, #0e5652 45%, #073a37 100%); }
-  .tile-felt.theme-tut{ background-image: radial-gradient(ellipse 140% 90% at 50% -10%, #8a5a2c, #5c3a1c 45%, #2e1c0e 100%); }
 
-  .tile-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; }
+  /* Decorative scene sits BEHIND the mini-board deal preview (z-index),
+     never interferes with it. Kept intentionally simple/abstract at
+     this size — the point is an instantly-readable silhouette (a
+     mountain, a pyramid, a putting green) rather than detailed art. */
+  .tile-bg-art{ position:absolute; inset:0; z-index:0; pointer-events:none; }
+  .mini-board{ position:relative; z-index:1; }
+
+  /* ---- Golf: rolling green + flag ---- */
+  .art-golf{
+    background:
+      radial-gradient(ellipse 90% 60% at 30% 100%, rgba(255,255,255,0.10), transparent 70%),
+      linear-gradient(180deg, #7cb864 0%, #5a9c48 45%, #3f7a35 80%, #326228 100%);
+  }
+  .art-golf .golf-mound{
+    position:absolute; left:-20%; right:-20%; bottom:-42%; height:85%;
+    background: radial-gradient(ellipse 70% 100% at 50% 0%, rgba(255,255,255,0.16), rgba(255,255,255,0) 65%),
+                #4c8e3e;
+    border-radius:50%;
+  }
+  .art-golf .golf-pole{ position:absolute; right:26%; bottom:19px; width:2px; height:40px; background: linear-gradient(180deg,#fff,#c9c4b4); box-shadow: 1px 0 1px rgba(0,0,0,.25); }
+  .art-golf .golf-pennant{
+    position:absolute; right:calc(26% - 10px); bottom:52px;
+    width:0; height:0; border-top:6px solid transparent; border-bottom:6px solid transparent; border-left:12px solid #c0392b;
+    filter: drop-shadow(1px 1px 1px rgba(0,0,0,.3));
+  }
+  .art-golf .golf-hole{
+    position:absolute; right:calc(26% - 5px); bottom:17px; width:10px; height:5px; border-radius:50%;
+    background: radial-gradient(ellipse, #0d1a08, #1c3016 80%);
+    box-shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+
+  /* ---- TriPeaks: three snow-capped peaks at dusk ---- */
+  .art-tripeaks{
+    background:
+      radial-gradient(ellipse 100% 40% at 50% 100%, rgba(255,180,110,0.35), transparent 70%),
+      linear-gradient(180deg, #211a3d 0%, #4f2f56 38%, #a8503f 70%, #e8a24a 100%);
+  }
+  .art-tripeaks .peak{
+    position:absolute; bottom:-10%; width:0; height:0;
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+    background: linear-gradient(135deg, #4a4066 0%, #2e2740 100%);
+    filter: drop-shadow(0 -2px 6px rgba(232,162,74,0.15));
+  }
+  .art-tripeaks .peak::after{
+    content:""; position:absolute; top:0; left:50%; transform:translateX(-50%);
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+    background: linear-gradient(160deg, #ffffff 0%, #dbe4ee 100%);
+  }
+  .art-tripeaks .peak-l{ left:2%; width:64px; height:66px; }
+  .art-tripeaks .peak-l::after{ width:24px; height:24px; }
+  .art-tripeaks .peak-m{ left:34%; width:78px; height:86px; }
+  .art-tripeaks .peak-m::after{ width:30px; height:30px; }
+  .art-tripeaks .peak-r{ left:66%; width:60px; height:60px; }
+  .art-tripeaks .peak-r::after{ width:22px; height:22px; }
+
+  /* ---- Yukon: ice floes on cold water ---- */
+  .art-yukon{
+    background:
+      radial-gradient(ellipse 100% 50% at 50% 0%, rgba(255,255,255,0.25), transparent 65%),
+      linear-gradient(180deg, #d8edf3 0%, #7fb2c9 50%, #274d63 100%);
+  }
+  .art-yukon .floe{
+    position:absolute; background: linear-gradient(165deg, #ffffff 0%, #d3e8ee 75%);
+    border-radius:50% 50% 45% 45%/60% 60% 40% 40%;
+    box-shadow: 0 3px 5px rgba(10,30,45,.25), inset 0 -2px 3px rgba(140,180,195,.4);
+  }
+  .art-yukon .floe-1{ width:74px; height:24px; bottom:22%; left:-8%; }
+  .art-yukon .floe-2{ width:50px; height:18px; bottom:9%; left:38%; }
+  .art-yukon .floe-3{ width:42px; height:16px; bottom:29%; right:-6%; }
+
+  /* ---- Tut's Tomb: pyramid + desert sun ---- */
+  .art-tut{
+    background:
+      radial-gradient(ellipse 70% 50% at 50% 25%, rgba(255,225,160,0.4), transparent 65%),
+      linear-gradient(180deg, #f0c06a 0%, #dd8f4f 42%, #a8582c 78%, #6e3a1e 100%);
+  }
+  .art-tut .tut-sun{
+    position:absolute; top:10%; left:50%; transform:translateX(-50%);
+    width:44px; height:44px; border-radius:50%;
+    background: radial-gradient(circle, #fff6d8 0%, #fbdf8e 55%, #f0c060 100%);
+    box-shadow: 0 0 24px 10px rgba(252,220,140,0.35);
+  }
+  .art-tut .tut-pyramid{
+    position:absolute; bottom:-8%; left:50%; transform:translateX(-50%);
+    width:130px; height:100px;
+    background: linear-gradient(112deg, #e0bc7c 0%, #cfa860 46%, #8a5f30 54%, #6e4a25 100%);
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  }
+
+  .tile-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; position:relative; z-index:1; }
+  .tile-bg-art + .tile-head{
+    margin: -14px -14px 10px; padding: 10px 14px 8px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.32), rgba(0,0,0,0));
+  }
   .tile-head h2{
     margin:0; font-size:19px; letter-spacing:1px; font-variant:small-caps;
     color: var(--brass-light); text-shadow: 0 1px 0 #000;
@@ -125,11 +223,22 @@
     width:15px; height:21px; border-radius:2.5px; flex-shrink:0;
     box-shadow: 0 1px 2px rgba(0,0,0,.45);
   }
-  .mc.face{ background: var(--ivory); border:1px solid rgba(0,0,0,.15); }
+  /* Face-up minis get filled with a real (randomized each page load —
+     see the script at the bottom) card image via JS; this is just the
+     fallback look while that loads / if a file is missing. */
+  .mc.face{ background: var(--ivory); border:1px solid rgba(0,0,0,.15); position:relative; overflow:hidden; }
+  .mc.face img{ width:100%; height:100%; object-fit:cover; display:block; }
+  /* Card BACKS stay simple CSS stripes (no image needed) but each game
+     gets its own color, so the tiles read as distinct decks at a
+     glance even before you look at the felt color. */
   .mc.back{
     background: repeating-linear-gradient(45deg, #12406f 0 3px, #0d3358 3px 6px);
     border:1px solid rgba(232,200,115,.4);
   }
+  .mc.back-freecell{ background: repeating-linear-gradient(45deg, #146b62 0 3px, #0e4a44 3px 6px); }
+  .mc.back-tripeaks{ background: repeating-linear-gradient(45deg, #4a2f6b 0 3px, #351f4d 3px 6px); }
+  .mc.back-golf{ background: repeating-linear-gradient(45deg, #2f6b3a 0 3px, #1f4d28 3px 6px); }
+  .mc.back-yukon{ background: repeating-linear-gradient(45deg, #2f5c7a 0 3px, #1f3f56 3px 6px); }
   .mc.gold-back{
     background: repeating-linear-gradient(45deg, #8a5a1e 0 3px, #6b4315 3px 6px);
     border:1px solid rgba(232,200,115,.5);
@@ -199,14 +308,14 @@
               </div>
             </div>
             <div class="mc-cols">
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
             </div>
           </div>
         </div>
@@ -218,15 +327,18 @@
     <div class="tile-link disabled">
       <div class="tile-frame">
         <div class="tile-felt">
+          <div class="tile-bg-art art-tripeaks">
+            <div class="peak peak-l"></div><div class="peak peak-m"></div><div class="peak peak-r"></div>
+          </div>
           <div class="tile-head"><h2>TriPeaks</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
             <div class="mc-row" style="justify-content:space-around;">
-              <div class="mc-col"><div class="mc back"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back"></div><div class="mc back"></div></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back"></div><div class="mc back"></div></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back"></div><div class="mc back"></div></div></div>
+              <div class="mc-col"><div class="mc back-tripeaks"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back-tripeaks"></div><div class="mc back-tripeaks"></div></div></div>
+              <div class="mc-col"><div class="mc back-tripeaks"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back-tripeaks"></div><div class="mc back-tripeaks"></div></div></div>
+              <div class="mc-col"><div class="mc back-tripeaks"></div><div class="mc-row" style="gap:2px; margin-top:-6px;"><div class="mc back-tripeaks"></div><div class="mc back-tripeaks"></div></div></div>
             </div>
             <div class="mc-row" style="justify-content:center; gap:6px;">
-              <div class="mc back"></div><div class="mc face"></div>
+              <div class="mc back-tripeaks"></div><div class="mc face"></div>
             </div>
           </div>
         </div>
@@ -238,6 +350,12 @@
     <div class="tile-link disabled">
       <div class="tile-frame">
         <div class="tile-felt">
+          <div class="tile-bg-art art-golf">
+            <div class="golf-mound"></div>
+            <div class="golf-hole"></div>
+            <div class="golf-pole"></div>
+            <div class="golf-pennant"></div>
+          </div>
           <div class="tile-head"><h2>Golf</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
             <div class="mc-cols">
@@ -263,18 +381,21 @@
     <div class="tile-link disabled">
       <div class="tile-frame">
         <div class="tile-felt">
+          <div class="tile-bg-art art-yukon">
+            <div class="floe floe-1"></div><div class="floe floe-2"></div><div class="floe floe-3"></div>
+          </div>
           <div class="tile-head"><h2>Yukon</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
             <div class="mc-row" style="justify-content:flex-end;">
               <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
             </div>
             <div class="mc-cols">
-              <div class="mc-col"><div class="mc back"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div></div>
               <div class="mc-col"><div class="mc face"></div></div>
             </div>
           </div>
@@ -286,7 +407,11 @@
     <!-- TUT'S TOMB (Pyramid) — in dev -->
     <div class="tile-link disabled">
       <div class="tile-frame">
-        <div class="tile-felt theme-tut">
+        <div class="tile-felt">
+          <div class="tile-bg-art art-tut">
+            <div class="tut-sun"></div>
+            <div class="tut-pyramid"></div>
+          </div>
           <div class="tile-head"><h2>Tut's Tomb</h2><span class="status-pill dev">In Dev</span></div>
           <div class="mini-board">
             <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
@@ -307,5 +432,30 @@
   </div>
 </div>
 
+<script>
+// Fills every face-up mini card in every deal preview with a real card
+// image, randomized fresh on each page load — uses the exact same
+// cards/ folder and filename convention as the games themselves, so
+// there's no separate asset set to keep in sync. Falls back to the
+// plain ivory box (already the default look of .mc.face) if a file is
+// missing, so a bad path just looks slightly plain rather than broken.
+(function(){
+  const RANKS = ['ace','2','3','4','5','6','7','8','9','10','jack','queen','king'];
+  const SUITS = ['spades','hearts','diamonds','clubs'];
+  function randomCardFile(){
+    const r = RANKS[Math.floor(Math.random()*RANKS.length)];
+    const s = SUITS[Math.floor(Math.random()*SUITS.length)];
+    return 'cards/'+r+'_of_'+s+'.svg';
+  }
+  document.querySelectorAll('.mc.face').forEach(el=>{
+    const img = document.createElement('img');
+    img.src = randomCardFile();
+    img.alt = '';
+    img.draggable = false;
+    img.addEventListener('error', ()=> img.remove(), { once:true });
+    el.appendChild(img);
+  });
+})();
+</script>
 </body>
 </html>
