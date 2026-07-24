@@ -1,13 +1,23 @@
 /*
     styles.css
     Written by: Johnathon Largent
-    Version 2.2
+    Version 2.3
 
    #winmask (the "You Win!" dialog specifically) no longer dims the
    whole screen — it was covering the cascade animation happening
    behind it. New .winmask-modal is a small bounded box instead of a
    full-screen takeover; #nomovesmask keeps the shared full dim since
    there's no animation behind it to preserve a view of.
+
+   Card corner rounding was a flat 9px, which is a huge proportion of
+   a card at the small end of --card-w's clamp (down to ~18% of the
+   width) — enough to clip rank/suit corner pips and read as a
+   rounded-rect badge instead of a real card. New --card-radius scales
+   with --card-w (real cards round at roughly 4-5% of their width) so
+   the rounding stays subtle and consistent at every size. Applied to
+   .pile, .card, .face/.back-img-wrap, .img-fallback, and the
+   drop-glow outline; .backswatch (a fixed-size thumbnail, not tied to
+   --card-w) got a matching fixed reduction instead.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -24,7 +34,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.2';
+  --stylesheet-version: '2.3';
   --felt-1:#0e4432;
   --felt-2:#082c21;
   --wood-1:#7a5230;
@@ -45,6 +55,12 @@
   --card-w: clamp(50px, 8.6vw, 100px);
   --card-h: calc(var(--card-w) * 1.4523);
   --gap: clamp(6px, 1.2vw, 14px);
+
+  /* Real playing cards round their corners at roughly 4-5% of the
+     card's width — this keeps that same subtle look at every size
+     instead of a flat pixel radius that gets disproportionately
+     rounded as --card-w shrinks. */
+  --card-radius: calc(var(--card-w) * 0.045);
 
   /* Extra zoom on top of object-fit:cover, for art with baked-in
      padding. 1.0 = no extra zoom. See the CSS comment on
@@ -324,7 +340,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
    on top and the slot is simply hidden, not removed. */
 .pile{
   width: var(--card-w); height: var(--card-h);
-  border-radius: 9px; position:relative; flex-shrink:0;
+  border-radius: var(--card-radius); position:relative; flex-shrink:0;
   transition: width .2s ease, height .2s ease;
 }
 .pile.slot{
@@ -352,7 +368,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 .tcol.drop-ok::after{
   content:""; position:absolute; left:-4px; top:-4px;
   width: calc(var(--card-w) + 8px); height: calc(100% + 8px);
-  border-radius:12px;
+  border-radius: calc(var(--card-radius) + 3px);
   border:2px solid #7ee6a8; box-shadow:0 0 14px rgba(126,230,168,0.6);
   pointer-events:none; z-index:500;
 }
@@ -379,7 +395,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 .card{
   position:absolute; left:0; top:0;
   width: var(--card-w); height: var(--card-h);
-  border-radius: 9px;
+  border-radius: var(--card-radius);
   background: var(--ivory);
   box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 3px 7px rgba(0,0,0,.4);
   transition: box-shadow .15s ease, width .2s ease, height .2s ease;
@@ -389,7 +405,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 }
 .card.dragging{ cursor:grabbing; z-index:999 !important; filter: drop-shadow(0 10px 14px rgba(0,0,0,.55)); transition:none; }
 .card.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 4px 10px rgba(0,0,0,.5); }
-.face, .back-img-wrap{ position:absolute; inset:0; border-radius:9px; overflow:hidden; background:transparent; }
+.face, .back-img-wrap{ position:absolute; inset:0; border-radius:var(--card-radius); overflow:hidden; background:transparent; }
 .back-img-wrap{ background:#0d3358; }
 .card-face-img, .card-back-img{
   width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; user-select:none;
@@ -401,7 +417,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
    layout is vertical (rank above the suit glyph); .stacked switches to
    horizontal for a card that's covered by another one on top of it, so
    a thin visible strip still shows the suit and not just the rank. */
-.img-fallback{ position:absolute; inset:0; background:var(--ivory); border-radius:9px; overflow:hidden; }
+.img-fallback{ position:absolute; inset:0; background:var(--ivory); border-radius:var(--card-radius); overflow:hidden; }
 .img-fallback .fc-center{
   position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   gap:calc(var(--card-w)*0.05);
@@ -505,11 +521,10 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
    SEngine.backImgSrc() — no other code changes needed. */
 .backpicker{ display:flex; gap:10px; flex-wrap:wrap; }
 .backswatch{
-  width:52px; height:74px; border-radius:7px; cursor:pointer;
+  width:52px; height:74px; border-radius:3px; cursor:pointer;
   border: 2px solid transparent; position:relative; overflow:hidden;
   box-shadow: 0 2px 5px rgba(0,0,0,.4);
   background:#0d3358;
 }
 .backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
 .backswatch.active{ border-color: #7ee6a8; }
-
