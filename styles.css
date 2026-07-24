@@ -1,16 +1,11 @@
 /*
-     Written by: Johnathon Largent
-    Last Updated 24 July 2026 @ 0115 EDT
+    Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 2135 EDT
 
-   Fixed two shared-CSS regressions from the last pass, both of which
-   also broke Klondike since this stylesheet is shared: restored the
-   text-glyph centering/color/size on the base .crest rule (Klondike's
-   plain suit-character crest depends on those, which got stripped
-   when FreeCell's photo-crop version was added — scaled up to 30px to
-   match the new 56px circle), and changed .home-btn from display:flex
-   to display:inline-flex (flex made it block-level in its own parent,
-   forcing New Game onto the next line instead of sitting beside it).
-   Also added an explicit .brand-actions flex rule for reliable spacing.
+   .home-btn no longer guesses a fixed 24px height — it now stretches
+   to match .newgame-btn's actual rendered height (align-items:stretch
+   on .brand-actions + aspect-ratio:1 on .home-btn), since the guessed
+   value was visibly shorter than New Game in practice.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -108,7 +103,7 @@ header{
    a font-size sized to the box keeps it contained inside the circle
    instead of spilling past it. */
 .home-btn{
-  width:24px; height:24px; padding:0; flex-shrink:0;
+  aspect-ratio: 1; height: auto; padding:0; flex-shrink:0;
   border-radius:50%; border:1px solid var(--panel-line);
   background: var(--panel); color: var(--brass-light);
   display:inline-flex; align-items:center; justify-content:center;
@@ -118,7 +113,12 @@ header{
 }
 .home-btn:hover{ background:#123a2c; transform: translateY(-1px); }
 .home-btn:active{ transform: scale(.92); }
-.brand-actions{ display:flex; align-items:center; gap:8px; }
+/* align-items:stretch (not center) is the actual fix here — it makes
+   home-btn's height match newgame-btn's real rendered height exactly,
+   whatever that turns out to be, instead of a guessed fixed px value
+   that was visibly too small. aspect-ratio:1 on .home-btn then keeps
+   it a circle at that height. */
+.brand-actions{ display:flex; align-items:stretch; gap:8px; }
 
 .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
 
