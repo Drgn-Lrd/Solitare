@@ -1,15 +1,14 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.5
+    Last Updated v1.6
 
-   SCORE/TIME moved again — out of .hud-secondary (removed) and into
-   the existing .bottombar as a 3-column grid, flanking the action
-   buttons at the true left/right edges. Reuses the bar's existing
-   top border as the separator instead of inventing a new one, and
-   .bottombar-actions stays genuinely centered (grid-column:2)
-   regardless of whether either chip is visible. Also added a
-   .title-suffix utility (hidden under 560px) for games whose full
-   name is too long to fit alongside the buttons on a phone.
+   Fixed SCORE/TIME overlapping the bottom bar buttons on mobile: the
+   grid's auto-sized middle column doesn't shrink on a narrow screen,
+   so the side chip tracks got squeezed and the chips overflowed onto
+   the buttons instead of wrapping. Under 560px, .bottombar switches
+   to flex-wrap — actions get forced onto their own full-width line,
+   then both chips wrap together onto a second line where
+   space-between pushes them to that line's own opposite edges.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -108,6 +107,18 @@ header{
    narrow viewports, leaving just the game name. */
 @media (max-width:560px){
   .title-suffix{ display:none; }
+  /* .bottombar's grid has an auto-sized middle column (the action
+     buttons) that doesn't shrink to fit a narrow screen — the side
+     chip columns get squeezed and the chips overflow their track
+     instead of wrapping, which is what was overlapping onto the
+     buttons. Switching to flex-wrap here instead: the actions group
+     is forced onto its own full-width line (flex-basis:100%), then
+     both chips wrap together onto a second line, where
+     justify-content:space-between pushes them to that line's own
+     opposite edges. */
+  .bottombar{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; row-gap:8px; }
+  .bottombar-actions{ flex-basis:100%; order:1; }
+  .bottombar .chip{ order:2; }
 }
 /* button.newgame-btn (element+class), not just .newgame-btn — the
    plain-class version was losing this override to .textbtn's own
@@ -433,4 +444,3 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 }
 .backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
 .backswatch.active{ border-color: #7ee6a8; }
-
