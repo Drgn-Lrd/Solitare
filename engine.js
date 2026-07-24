@@ -1,6 +1,17 @@
 /*
     engine.js
     Written by: Johnathon Largent
+    Version 2.8
+
+   fitBoard now rounds cardW to a whole pixel before writing it to
+   --card-w. A fractional --card-w (e.g. 73.4px) was giving the
+   .selected ring and the .drop-ok glow — both sized directly off
+   --card-w/--card-h — a soft anti-aliased edge that browsers render
+   only on the bottom/right of a fractional box, never the top/left.
+   That read as the highlight being lopsided/thicker on two sides,
+   even though the box-shadow/border values themselves were already
+   symmetric. See styles.css's matching change to --card-h.
+
     Version 2.7
 
    Face card art now loads from webp instead of svg — cardImgSrc() is
@@ -51,7 +62,7 @@ window.SEngine = (function(){
 // what lets a settings modal show all three (page/engine/styles) at
 // once. getStylesheetVersion() reads a --stylesheet-version custom
 // property off :root; returns null if styles.css hasn't declared one.
-const ENGINE_VERSION = '2.7';
+const ENGINE_VERSION = '2.8';
 function getStylesheetVersion(){
   const v = getComputedStyle(document.documentElement).getPropertyValue('--stylesheet-version');
   return v ? v.trim().replace(/^['"]|['"]$/g, '') : null;
@@ -292,7 +303,14 @@ function fitBoard(opts){
   // of the screen again. minCardW only ever applies when honoring it
   // still fits — it can shrink the ceiling, never force an overflow.
   let cardW = Math.min(cardWByHeight, cardWByWidth, maxCardW);
-  document.documentElement.style.setProperty('--card-w', cardW+'px');
+  // Rounded to a whole pixel: a fractional --card-w (e.g. 73.4px) gives
+  // every box sized off it a fractional edge, which browsers render by
+  // anti-aliasing the leftover fraction onto the bottom/right side only
+  // — never top/left. That's invisible on the plain card itself, but it
+  // makes anything outlining the card (the .selected ring, the drop-ok
+  // glow) look lopsided, thicker on the bottom and right than the top
+  // and left. Whole-pixel width removes the fraction entirely.
+  document.documentElement.style.setProperty('--card-w', Math.round(cardW)+'px');
 }
 
 /* =========================================================
