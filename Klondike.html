@@ -1,11 +1,10 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.1
+    Last Updated v1.2
 
-   Home button now gets its size measured directly from New Game's
-   real rendered height — handled entirely inside engine.js now
-   (self-initializing, no call needed here), same as FreeCell.
+   Title text changed to "Klondike - Classic Solitaire" (one line —
+   styles.css now forces white-space:nowrap on .brand h1).
 -->
 <html lang="en">
 <head>
@@ -34,7 +33,7 @@
   <div class="brand">
     <div class="crest" aria-hidden="true"></div>
     <div class="brand-text">
-      <h1>Klondike</h1>
+      <h1>Klondike - Classic Solitaire</h1>
       <div class="brand-actions">
         <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
