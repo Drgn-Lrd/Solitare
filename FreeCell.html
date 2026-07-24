@@ -2,6 +2,13 @@
 <!--
     FreeCell.html
     Written by: Johnathon Largent
+    Version 2.5
+
+   renderTableau's column-height line now calls engine.js's new shared
+   E.setColumnHeight(col, pile.length, metrics) instead of carrying its
+   own copy of that formula — same fix as 2.4 below, just moved to the
+   one shared place it belonged (see engine.js's changelog).
+
     Version 2.4
 
    renderTableau's column height had a stray "+ 8" beyond what the
@@ -316,7 +323,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '2.4';
+const PAGE_VERSION = '2.5';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 // Shared timing for the supermove fly-through-the-free-cells animation
@@ -1119,7 +1126,7 @@ function renderTableau(){
       el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
     });
-    col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap) + 'px';
+    E.setColumnHeight(col, pile.length, metrics);
   }
 }
 
