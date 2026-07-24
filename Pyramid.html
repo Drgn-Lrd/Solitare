@@ -1,8 +1,11 @@
-<!DOCTYPE html>
 <!--
-    Tut's Tomb (Pyramid Solitaire)
-    Uses shared styles.css and engine.js
+    Pyramid.html
+    Written by: Johnathon Largent
+    Version 0.1 
+
+   Updated the changelog block format, replaced random idle animations with a milestone-based trap system where the adventurer must actively dodge incoming traps exactly as each horizontal row of the pyramid's card count is cleared (7, 13, 18, 22, 25, 27).
 -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -14,9 +17,9 @@
      THEME OVERRIDES - Egyptian Tomb Vibe
      ========================================================= */
   :root {
-    --felt-1: #4a3722; /* Dusty tomb floor */
+    --felt-1: #4a3722;
     --felt-2: #24190f;
-    --wood-1: #d4af37; /* Gold/Sandstone framing */
+    --wood-1: #d4af37;
     --wood-2: #aa8621;
     --wood-3: #5c430a;
     --panel: #2a1e12;
@@ -48,7 +51,6 @@
     flex-shrink: 0;
   }
 
-  /* Brick background pattern */
   #adventure-track::before {
     content: "";
     position: absolute;
@@ -102,7 +104,6 @@
 
   #pyramid-area {
     position: relative;
-    /* Dimensions set dynamically via JS based on --card-w */
     margin: 0 auto;
   }
 
@@ -118,7 +119,6 @@
 
   .card.covered { filter: brightness(0.5); cursor: not-allowed; }
   
-  /* Highlight matching selections */
   .card.selected {
     box-shadow: 0 0 0 4px #00ffff, 0 4px 15px rgba(0,0,0,0.8);
     transform: translateY(-5px);
@@ -131,7 +131,7 @@
     position: fixed;
     inset: 0;
     background: #000;
-    z-index: 250; /* Above the winmask (200) */
+    z-index: 250;
     display: none;
     flex-direction: column;
     justify-content: center;
@@ -140,13 +140,8 @@
     transition: opacity 1.5s;
   }
 
-  #cinematic-overlay.active {
-    display: flex;
-  }
-  #cinematic-overlay.fade-in {
-    opacity: 1;
-  }
-
+  #cinematic-overlay.active { display: flex; }
+  #cinematic-overlay.fade-in { opacity: 1; }
   #cinematic-hero { font-size: 5rem; margin-bottom: 20px; }
   
   #treasure-reveal {
@@ -311,7 +306,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.1';
+const PAGE_VERSION = '0.1';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 /* =========================================================
@@ -383,7 +378,6 @@ function drawFromStock() {
     if (state.stock.length === 0) {
         if (state.waste.length === 0) return;
         undo.push();
-        // Relaxed rules: Infinite reshuffles
         state.stock = state.waste.reverse().map(c => ({...c, faceUp: false}));
         state.waste = [];
         E.clearSelection();
@@ -404,21 +398,29 @@ function drawFromStock() {
 function removeCards(card1, source1, card2, source2) {
     undo.push();
     
+    let isPyramidCardRemoved = false;
+    
     const removeCard = (card, source) => {
         if (source === 'pyramid') {
             const pCard = state.pyramid.find(p => p.card.id === card.id);
             pCard.removed = true;
             state.cardsRemaining--;
             addScore(15);
-            triggerAdventurerProgress();
+            isPyramidCardRemoved = true;
         } else if (source === 'waste') {
-            state.waste.pop(); // Waste is always top card
+            state.waste.pop();
             addScore(5);
         }
     };
 
     removeCard(card1, source1);
     if (card2) removeCard(card2, source2);
+
+    if (isPyramidCardRemoved) {
+        let cleared = 28 - state.cardsRemaining;
+        let isTrap = [7, 13, 18, 22, 25, 27].includes(cleared);
+        triggerAdventurerProgress(isTrap);
+    }
 
     state.selected = null;
     E.clearSelection();
@@ -428,31 +430,26 @@ function removeCards(card1, source1, card2, source2) {
 function handleCardClick(card, source) {
     const val = E.rankValue(card.rank);
     
-    // Immediate King removal
     if (val === 13) {
         removeCards(card, source);
         return;
     }
 
     if (!state.selected) {
-        // Select first card
         state.selected = { card, source };
         const domEl = document.querySelector(`.card[data-id="${card.id}"]`);
         if (domEl) domEl.classList.add('selected');
     } else {
-        // Deselect if tapping the same card
         if (state.selected.card.id === card.id) {
             state.selected = null;
             E.clearSelection();
             return;
         }
 
-        // Check for 13 match
         const selectedVal = E.rankValue(state.selected.card.rank);
         if (selectedVal + val === 13) {
             removeCards(state.selected.card, state.selected.source, card, source);
         } else {
-            // Unselect old, select new
             E.clearSelection();
             state.selected = { card, source };
             const domEl = document.querySelector(`.card[data-id="${card.id}"]`);
@@ -464,25 +461,50 @@ function handleCardClick(card, source) {
 /* =========================================================
    ADVENTURER ANIMATIONS
    ========================================================= */
-function triggerAdventurerProgress() {
+function spawnTrap(targetLeft) {
+    const track = document.getElementById('adventure-track');
+    const trap = document.createElement('div');
+    const traps = ['🪨', '🏹', '🐍', '🦂'];
+    trap.innerHTML = traps[Math.floor(Math.random() * traps.length)];
+    trap.style.position = 'absolute';
+    trap.style.fontSize = '24px';
+    trap.style.zIndex = '1';
+    trap.style.bottom = '5px';
+    trap.style.left = `${targetLeft + 20}%`;
+    trap.style.transition = 'left 1s linear, opacity 1s ease-in';
+    
+    track.appendChild(trap);
+    
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            trap.style.left = `${targetLeft - 10}%`;
+            trap.style.opacity = '0';
+        });
+    });
+    
+    const adventurer = document.getElementById('adventurer');
+    setTimeout(() => {
+        const anim = ['jump', 'dodge'][Math.floor(Math.random() * 2)];
+        adventurer.classList.add(anim);
+        setTimeout(() => adventurer.classList.remove(anim), 600);
+    }, 500);
+    
+    setTimeout(() => trap.remove(), 1000);
+}
+
+function triggerAdventurerProgress(isTrap) {
     const adventurer = document.getElementById('adventurer');
     const progressPercentage = ((28 - state.cardsRemaining) / 28);
     const targetLeft = 2 + (progressPercentage * 90);
     adventurer.style.left = `${targetLeft}%`;
-    adventurer.classList.add('jump'); 
-    setTimeout(() => adventurer.classList.remove('jump'), 600);
-}
-
-// Random idle animations
-setInterval(() => {
-    if (state.cardsRemaining > 0 && state.cardsRemaining < 28) {
-        const adventurer = document.getElementById('adventurer');
-        const anims = ['jump', 'dodge'];
-        const randAnim = anims[Math.floor(Math.random() * anims.length)];
-        adventurer.classList.add(randAnim);
-        setTimeout(() => adventurer.classList.remove(randAnim), 600);
+    
+    if (isTrap) {
+        spawnTrap(targetLeft);
+    } else {
+        adventurer.classList.add('jump'); 
+        setTimeout(() => adventurer.classList.remove('jump'), 600);
     }
-}, 4000);
+}
 
 /* =========================================================
    RENDERING
@@ -490,7 +512,6 @@ setInterval(() => {
 function renderAll() {
     E.purgeStrayCards();
     
-    // Determine card sizing based on 7 columns wide
     E.fitBoard({
         columns: 7,
         getMaxStackDepth: () => 1,
@@ -504,7 +525,6 @@ function renderAll() {
     
     updateCoveredStatus();
 
-    // Re-apply selection visuals if re-rendering during selection
     if (state.selected) {
         const domEl = document.querySelector(`.card[data-id="${state.selected.card.id}"]`);
         if (domEl) domEl.classList.add('selected');
@@ -522,7 +542,6 @@ function renderPyramid() {
     const metrics = E.cardMetrics(0);
     const gap = 10;
     
-    // Set container size so it centers naturally
     container.style.width = `${(metrics.w * 7) + (gap * 6)}px`;
     container.style.height = `${metrics.h + (metrics.h * 0.5 * 6)}px`;
 
@@ -532,12 +551,11 @@ function renderPyramid() {
         const el = createTutsCardEl(p.card, 'pyramid');
         el.style.position = 'absolute';
         
-        // Pyramid centering math
         const rowWidth = (p.row + 1) * metrics.w + (p.row * gap);
         const startX = (container.offsetWidth - rowWidth) / 2;
         
         el.style.left = `${startX + (p.col * (metrics.w + gap))}px`;
-        el.style.top = `${p.row * (metrics.h * 0.55)}px`; // 55% vertical overlap
+        el.style.top = `${p.row * (metrics.h * 0.55)}px`; 
         
         p.el = el;
         container.appendChild(el);
@@ -577,7 +595,6 @@ function handleWin() {
     if (state.cascadePlayed) return;
     state.cascadePlayed = true;
 
-    // Trigger Cinematic
     const overlay = document.getElementById('cinematic-overlay');
     const hero = document.getElementById('cinematic-hero');
     const treasure = document.getElementById('treasure-reveal');
@@ -586,11 +603,10 @@ function handleWin() {
     setTimeout(() => overlay.classList.add('fade-in'), 50);
 
     setTimeout(() => {
-        hero.innerHTML = '🤠 🧳'; // Open chest
+        hero.innerHTML = '🤠 🧳'; 
         treasure.innerHTML = TREASURES[Math.floor(Math.random() * TREASURES.length)];
         overlay.classList.add('show-treasure');
         
-        // After cinematic, launch standard win cascade + modal
         setTimeout(() => {
             overlay.classList.remove('fade-in');
             setTimeout(() => {
@@ -603,9 +619,8 @@ function handleWin() {
 }
 
 function launchWinCascade() {
-    // Generate dummy cards for the engine cascade effect using the discarded deck
     const cascadeCards = state.waste.slice(0, 15).map(c => ({
-        card: c, sourceEl: document.getElementById('chest') // Cascade from the chest UI
+        card: c, sourceEl: document.getElementById('chest')
     }));
     
     E.startWinCascade(cascadeCards, (c, cov) => E.buildFaceEl(c, cov), () => E.cardMetrics(), { trail: true });
@@ -637,7 +652,11 @@ const undo = E.createUndoStack(
       state.cardsRemaining = snap.cardsRem;
       state.selected = null; 
       E.clearSelection(); 
-      triggerAdventurerProgress(); // Reset position visually
+      
+      const adventurer = document.getElementById('adventurer');
+      const progressPercentage = ((28 - state.cardsRemaining) / 28);
+      adventurer.style.left = `${2 + (progressPercentage * 90)}%`;
+
       renderAll(); 
   },
   document.getElementById('btn-undo')
@@ -648,7 +667,6 @@ function addScore(n) { state.score = Math.max(0, state.score+n); renderHUD(); }
 function showHint() {
     const toastEl = document.getElementById('hint-toast');
     
-    // Look for Kings first
     let k = state.pyramid.find(p => !p.removed && !isCovered(p.row, p.col) && E.rankValue(p.card.rank) === 13);
     if(k) {
         E.showToast(toastEl, 'Tap the King to clear it.');
@@ -661,7 +679,6 @@ function showHint() {
         return;
     }
 
-    // Look for a 13 pair across pyramid & waste
     const available = state.pyramid.filter(p => !p.removed && !isCovered(p.row, p.col)).map(p => ({val: E.rankValue(p.card.rank), el: p.el}));
     if (state.waste.length) {
         available.push({ val: E.rankValue(state.waste[state.waste.length-1].rank), el: document.querySelector('#pile-waste .card') });
@@ -690,8 +707,6 @@ function syncTimerInterval(){
    WINNABLE DECK GENERATOR (DFS SOLVER)
    ========================================================= */
 function generateWinnableDeck() {
-    // Attempt up to 200 deals. Because of the relaxed "infinite passes" rule,
-    // the search space is extremely small and over 90% of randomized deals are naturally winnable.
     for (let attempt = 0; attempt < 200; attempt++) {
         let deck = E.shuffle(E.buildDeck());
         if (isDeckWinnable(deck)) return deck;
@@ -710,7 +725,7 @@ function isDeckWinnable(deck) {
 
     function solve(remaining) {
         iterations++;
-        if (iterations > 2500) return false; // Bailout for extremely deep/rare traps
+        if (iterations > 2500) return false; 
         if (remaining === 0) return true;
         
         let avail = [];
@@ -727,18 +742,15 @@ function isDeckWinnable(deck) {
             }
         }
 
-        // 1. Prioritize Kings (Always safe to remove immediately without consuming pairs)
         for (let idx of avail) {
             if (pVals[idx] === 13) {
                 pState[idx] = false;
                 let won = solve(remaining - 1);
                 pState[idx] = true;
-                return won; // If you can remove a King, you ALWAYS should. No need to branch.
+                return won; 
             }
         }
 
-        // 2. Try removing valid pairs
-        // Pyramid + Pyramid
         for (let i = 0; i < avail.length; i++) {
             for (let j = i + 1; j < avail.length; j++) {
                 if (pVals[avail[i]] + pVals[avail[j]] === 13) {
@@ -751,7 +763,6 @@ function isDeckWinnable(deck) {
             }
         }
 
-        // Pyramid + Stock
         for (let idx of avail) {
             let needed = 13 - pVals[idx];
             if (stockCounts[needed] > 0) {
@@ -798,11 +809,9 @@ function newGame() {
     undo.reset();
     E.clearSelection();
     
-    // Reset adventurer position instantly
     const adventurer = document.getElementById('adventurer');
     adventurer.style.transition = 'none';
     adventurer.style.left = '2%';
-    // Restore transition after a tiny delay
     setTimeout(() => { adventurer.style.transition = 'left 0.5s ease-out'; }, 50);
 
     document.getElementById('winmask').classList.remove('show');
@@ -818,14 +827,12 @@ document.getElementById('pile-stock').addEventListener('click', drawFromStock);
 document.getElementById('btn-undo').addEventListener('click', () => undo.undo());
 document.getElementById('btn-hint').addEventListener('click', () => { E.clearSelection(); state.selected = null; showHint(); });
 
-// Resize handling
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(renderAll, 100);
 });
 
-// Modal Logic
 const confirmOverlay = document.getElementById('confirm-overlay');
 document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
 document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
@@ -842,7 +849,6 @@ document.getElementById('win-newgame').addEventListener('click', ()=>{
   newGame();
 });
 
-// Settings Logic
 const settingsShell = E.wireSettingsShell({
   state, pendingSettings,
   overlayEl: document.getElementById('settings-overlay'),
@@ -864,7 +870,7 @@ const settingsShell = E.wireSettingsShell({
       
       const stylesVersion = E.getStylesheetVersion() || 'unknown';
       document.getElementById('version-info').textContent =
-        'Tut\'s Tomb v' + PAGE_VERSION + ' · engine.js v' + E.ENGINE_VERSION + ' · styles.css v' + stylesVersion;
+        'Pyramid.html v' + PAGE_VERSION + ' · engine.js v' + E.ENGINE_VERSION + ' · styles.css v' + stylesVersion;
   }
 });
 
