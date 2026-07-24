@@ -1,14 +1,13 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.6
+    Last Updated v1.7
 
-   Fixed SCORE/TIME overlapping the bottom bar buttons on mobile: the
-   grid's auto-sized middle column doesn't shrink on a narrow screen,
-   so the side chip tracks got squeezed and the chips overflowed onto
-   the buttons instead of wrapping. Under 560px, .bottombar switches
-   to flex-wrap — actions get forced onto their own full-width line,
-   then both chips wrap together onto a second line where
-   space-between pushes them to that line's own opposite edges.
+   The v1.6 mobile fix never actually applied — same class of bug as
+   the button.newgame-btn cascade issue: the @media override sat
+   BEFORE the base .bottombar rule in the file, so the base rule won
+   regardless of viewport width. Moved the override to after the base
+   rule, where it actually takes effect. Same 560px breakpoint as
+   .title-suffix, as asked.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -107,18 +106,6 @@ header{
    narrow viewports, leaving just the game name. */
 @media (max-width:560px){
   .title-suffix{ display:none; }
-  /* .bottombar's grid has an auto-sized middle column (the action
-     buttons) that doesn't shrink to fit a narrow screen — the side
-     chip columns get squeezed and the chips overflow their track
-     instead of wrapping, which is what was overlapping onto the
-     buttons. Switching to flex-wrap here instead: the actions group
-     is forced onto its own full-width line (flex-basis:100%), then
-     both chips wrap together onto a second line, where
-     justify-content:space-between pushes them to that line's own
-     opposite edges. */
-  .bottombar{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; row-gap:8px; }
-  .bottombar-actions{ flex-basis:100%; order:1; }
-  .bottombar .chip{ order:2; }
 }
 /* button.newgame-btn (element+class), not just .newgame-btn — the
    plain-class version was losing this override to .textbtn's own
@@ -168,6 +155,23 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 .bottombar .chip{ justify-self:start; }
 .bottombar .chip:last-of-type{ justify-self:end; }
 .bottombar-actions{ display:flex; justify-content:center; align-items:stretch; gap: clamp(10px,4vw,28px); grid-column:2; }
+/* Same breakpoint as .title-suffix (560px) — below that, the grid's
+   auto-sized middle column (the action buttons) doesn't shrink to
+   fit, so the side chip tracks get squeezed and the chips overflow
+   onto the buttons instead of wrapping. This has to come AFTER the
+   base .bottombar rule above: an earlier attempt put an equivalent
+   override higher up in the file, before the base rule, and the base
+   rule silently won the cascade regardless of viewport width — same
+   class of bug as the button.newgame-btn fix elsewhere in this file.
+   Switching to flex-wrap here instead: the actions group is forced
+   onto its own full-width line (flex-basis:100%), then both chips
+   wrap together onto a second line, where justify-content:
+   space-between pushes them to that line's own opposite edges. */
+@media (max-width:560px){
+  .bottombar{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; row-gap:8px; }
+  .bottombar-actions{ flex-basis:100%; order:1; }
+  .bottombar .chip{ order:2; }
+}
 .bottombtn{
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
   background: var(--panel); border:1px solid var(--panel-line); border-radius:14px;
