@@ -1,14 +1,16 @@
 /*
      Written by: Johnathon Largent
-    Last Updated 24 July 2026 @ 0100 EDT
+    Last Updated 24 July 2026 @ 0115 EDT
 
-   .home-btn now holds a contained emoji instead of an SVG (overflow:
-   hidden keeps it inside the circle rather than spilling past it, which
-   is what was happening before). .crest enlarged to 56px so it spans
-   the full height of the title+button-row stack, and generic base
-   .crest styling no longer bakes in a background-image — that's
-   FreeCell-specific and belongs in FreeCell.html's own override, not
-   the shared stylesheet other games also use.
+   Fixed two shared-CSS regressions from the last pass, both of which
+   also broke Klondike since this stylesheet is shared: restored the
+   text-glyph centering/color/size on the base .crest rule (Klondike's
+   plain suit-character crest depends on those, which got stripped
+   when FreeCell's photo-crop version was added — scaled up to 30px to
+   match the new 56px circle), and changed .home-btn from display:flex
+   to display:inline-flex (flex made it block-level in its own parent,
+   forcing New Game onto the next line instead of sitting beside it).
+   Also added an explicit .brand-actions flex rule for reliable spacing.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -86,6 +88,8 @@ header{
 .brand .crest{
   width:56px; height:56px; border-radius:50%; flex-shrink:0;
   background: radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
+  display:flex; align-items:center; justify-content:center;
+  font-size:30px; color:#3a2a08; font-weight:bold; line-height:1;
   box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008;
 }
 .brand h1{
@@ -107,13 +111,14 @@ header{
   width:24px; height:24px; padding:0; flex-shrink:0;
   border-radius:50%; border:1px solid var(--panel-line);
   background: var(--panel); color: var(--brass-light);
-  display:flex; align-items:center; justify-content:center;
+  display:inline-flex; align-items:center; justify-content:center;
   overflow:hidden; cursor:pointer; text-decoration:none;
   font-size:13px; line-height:1;
   transition: background .15s ease, transform .15s ease;
 }
 .home-btn:hover{ background:#123a2c; transform: translateY(-1px); }
 .home-btn:active{ transform: scale(.92); }
+.brand-actions{ display:flex; align-items:center; gap:8px; }
 
 .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
 
