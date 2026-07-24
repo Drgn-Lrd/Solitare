@@ -1,6 +1,6 @@
 /*
-     Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1815 EDT
+    Written by: Johnathon Largent
+    Last Updated 23 July 2026 @ 2130 EDT
 
    fitBoard now reads the real, browser-computed gap and top-row
    margin instead of flat guesses (10px/18px) — those guesses were
