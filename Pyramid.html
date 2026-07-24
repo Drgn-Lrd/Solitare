@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tut's Tomb - Adventurer's Quest</title>
+    <style>
+        :root {
+            --bg-color: #1a1512;
+            --gold: #d4af37;
+            --stone: #8b7355;
+            --highlight: #f8e5a0;
+            --danger: #b22222;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at center, #2c241b 0%, #100c0a 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--gold);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* --- Title & Adventure Bar --- */
+        #top-ui {
+            width: 100%;
+            background: linear-gradient(to bottom, #111, #222);
+            border-bottom: 3px solid var(--gold);
+            z-index: 10;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+        }
+
+        h1 {
+            margin: 0;
+            padding: 10px;
+            text-align: center;
+            font-size: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            text-shadow: 0 0 10px var(--gold);
+            border-bottom: 1px solid #333;
+        }
+
+        #adventure-track {
+            height: 60px;
+            position: relative;
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><text x="10" y="25" fill="%23333">🧱</text></svg>') repeat-x;
+            overflow: hidden;
+        }
+
+        #adventurer {
+            position: absolute;
+            bottom: 5px;
+            left: 2%;
+            font-size: 2rem;
+            transition: left 0.5s ease-out;
+            z-index: 2;
+        }
+
+        /* Animation classes for dodging/jumping */
+        .jump { animation: jumpAnim 0.6s ease; }
+        .dodge { animation: dodgeAnim 0.5s ease; }
+
+        @keyframes jumpAnim {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-25px); }
+            100% { transform: translateY(0); }
+        }
+        @keyframes dodgeAnim {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(20deg) translateY(5px); }
+            100% { transform: rotate(0deg); }
+        }
+
+        #chest {
+            position: absolute;
+            bottom: 5px;
+            right: 2%;
+            font-size: 2rem;
+        }
+
+        /* --- Game Area --- */
+        #game-board {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 20px;
+        }
+
+        #pyramid {
+            position: relative;
+            width: 600px;
+            height: 350px;
+        }
+
+        .card {
+            width: 60px;
+            height: 90px;
+            background: #fff;
+            border-radius: 5px;
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #000;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, opacity 0.5s;
+            user-select: none;
+            border: 2px solid var(--stone);
+        }
+
+        .card.red { color: #d00; }
+        .card.black { color: #111; }
+        
+        .card:not(.covered):hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px var(--gold);
+        }
+
+        .card.selected {
+            border: 3px solid #00ffcc;
+            box-shadow: 0 0 20px #00ffcc;
+            transform: translateY(-5px);
+        }
+
+        .card.covered {
+            filter: brightness(0.5);
+            cursor: not-allowed;
+        }
+
+        .card.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* --- Deck Area --- */
+        #deck-area {
+            display: flex;
+            gap: 40px;
+            margin-top: 20px;
+            background: rgba(0,0,0,0.5);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid var(--stone);
+        }
+
+        .pile {
+            width: 60px;
+            height: 90px;
+            border: 2px dashed var(--stone);
+            border-radius: 5px;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--stone);
+        }
+
+        #stock-pile { cursor: pointer; background: repeating-linear-gradient(45deg, #8b7355, #8b7355 10px, #5c4c37 10px, #5c4c37 20px); }
+        #stock-pile:hover { box-shadow: 0 0 10px var(--highlight); }
+
+        /* --- Cinematic Win Screen --- */
+        #cinematic-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 2s;
+        }
+
+        .zoom-active #cinematic-overlay { display: flex; }
+
+        #cinematic-hero { font-size: 5rem; margin-bottom: 20px; }
+        
+        #treasure-reveal {
+            font-size: 0;
+            opacity: 0;
+            filter: drop-shadow(0 0 0px var(--gold));
+            transition: all 3s cubic-bezier(0.1, 0.8, 0.2, 1);
+        }
+
+        .show-treasure #treasure-reveal {
+            font-size: 8rem;
+            opacity: 1;
+            filter: drop-shadow(0 0 50px var(--gold));
+            transform: scale(1.2) rotate(360deg);
+        }
+
+        #win-msg {
+            margin-top: 30px;
+            font-size: 2rem;
+            opacity: 0;
+            transition: opacity 1s 2.5s;
+        }
+        
+        .show-treasure #win-msg { opacity: 1; }
+
+    </style>
+</head>
+<body>
+
+    <div id="top-ui">
+        <h1>Tut's Tomb</h1>
+        <div id="adventure-track">
+            <div id="adventurer">🤠</div>
+            <div id="chest">💎</div>
+        </div>
+    </div>
+
+    <div id="game-board">
+        <div id="pyramid"></div>
+        <div id="deck-area">
+            <div class="pile" id="stock-pile" onclick="drawCard()"></div>
+            <div class="pile" id="discard-pile"></div>
+        </div>
+    </div>
+
+    <div id="cinematic-overlay">
+        <div id="cinematic-hero">🤠 🧰</div>
+        <div id="treasure-reveal"></div>
+        <div id="win-msg">THE TOMB IS YOURS!</div>
+    </div>
+
+    <script>
+        // --- Game Logic & Setup ---
+        const suits = ['♥', '♦', '♣', '♠'];
+        const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+        const treasures = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
+        
+        let deck = [];
+        let pyramidCards = [];
+        let discardPile = [];
+        let selectedCard = null;
+        let cardsRemaining = 28;
+
+        function getCardValue(val) {
+            if (val === 'A') return 1;
+            if (val === 'J') return 11;
+            if (val === 'Q') return 12;
+            if (val === 'K') return 13;
+            return parseInt(val);
+        }
+
+        function createDeck() {
+            deck = [];
+            for (let s of suits) {
+                for (let v of values) {
+                    deck.push({ 
+                        suit: s, 
+                        value: v, 
+                        numValue: getCardValue(v),
+                        color: (s === '♥' || s === '♦') ? 'red' : 'black'
+                    });
+                }
+            }
+            // Shuffle
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+        }
+
+        function buildPyramid() {
+            const pyramidEl = document.getElementById('pyramid');
+            pyramidEl.innerHTML = '';
+            pyramidCards = [];
+            let cardIndex = 0;
+
+            const cardWidth = 60;
+            const cardHeight = 90;
+            const gapX = 70;
+            const gapY = 40;
+            
+            // 7 rows (0 to 6)
+            for (let row = 0; row < 7; row++) {
+                for (let col = 0; col <= row; col++) {
+                    const cardData = deck.pop();
+                    cardData.row = row;
+                    cardData.col = col;
+                    cardData.removed = false;
+
+                    const el = document.createElement('div');
+                    el.className = `card ${cardData.color}`;
+                    
+                    // Positioning math to center the pyramid
+                    const leftOffset = 270 - (row * (gapX / 2)) + (col * gapX);
+                    const topOffset = row * gapY;
+                    
+                    el.style.left = `${leftOffset}px`;
+                    el.style.top = `${topOffset}px`;
+                    el.innerHTML = `${cardData.value}<br/>${cardData.suit}`;
+                    el.id = `pyr-${row}-${col}`;
+                    
+                    el.onclick = () => handleCardClick(cardData, el, 'pyramid');
+
+                    pyramidEl.appendChild(el);
+                    pyramidCards.push({ data: cardData, element: el });
+                }
+            }
+            updateCoveredStatus();
+        }
+
+        function updateCoveredStatus() {
+            pyramidCards.forEach(pc => {
+                if (pc.data.removed) return;
+                const r = pc.data.row;
+                const c = pc.data.col;
+                // Check if covered by row+1, col or row+1, col+1
+                const child1 = pyramidCards.find(p => p.data.row === r + 1 && p.data.col === c && !p.data.removed);
+                const child2 = pyramidCards.find(p => p.data.row === r + 1 && p.data.col === c + 1 && !p.data.removed);
+                
+                if (child1 || child2) {
+                    pc.element.classList.add('covered');
+                } else {
+                    pc.element.classList.remove('covered');
+                }
+            });
+        }
+
+        function drawCard() {
+            if (deck.length === 0) {
+                // Relaxed rules: reset discard pile to deck if empty
+                if (discardPile.length === 0) return; 
+                deck = discardPile.reverse();
+                discardPile = [];
+                renderDiscard();
+                return;
+            }
+            const card = deck.pop();
+            discardPile.push(card);
+            renderDiscard();
+            
+            if (selectedCard) clearSelection();
+        }
+
+        function renderDiscard() {
+            const discardEl = document.getElementById('discard-pile');
+            discardEl.innerHTML = '';
+            
+            if (discardPile.length > 0) {
+                const topCard = discardPile[discardPile.length - 1];
+                const el = document.createElement('div');
+                el.className = `card ${topCard.color}`;
+                el.style.position = 'relative';
+                el.innerHTML = `${topCard.value}<br/>${topCard.suit}`;
+                el.onclick = () => handleCardClick(topCard, el, 'discard');
+                discardEl.appendChild(el);
+            }
+        }
+
+        // --- Interaction Logic ---
+        function handleCardClick(cardData, element, source) {
+            // Cannot click covered pyramid cards
+            if (source === 'pyramid' && element.classList.contains('covered')) return;
+
+            // Single King click (Kings = 13, remove immediately)
+            if (cardData.numValue === 13) {
+                removeCard(cardData, element, source);
+                clearSelection();
+                return;
+            }
+
+            if (!selectedCard) {
+                // Select first card
+                selectedCard = { data: cardData, element: element, source: source };
+                element.classList.add('selected');
+            } else {
+                // Deselect if clicking same card
+                if (selectedCard.element === element) {
+                    clearSelection();
+                    return;
+                }
+
+                // Check for match (sum to 13)
+                if (selectedCard.data.numValue + cardData.numValue === 13) {
+                    removeCard(selectedCard.data, selectedCard.element, selectedCard.source);
+                    removeCard(cardData, element, source);
+                }
+                clearSelection();
+            }
+        }
+
+        function clearSelection() {
+            if (selectedCard) selectedCard.element.classList.remove('selected');
+            selectedCard = null;
+        }
+
+        function removeCard(cardData, element, source) {
+            if (source === 'pyramid') {
+                cardData.removed = true;
+                element.classList.add('hidden');
+                cardsRemaining--;
+                updateCoveredStatus();
+                updateAdventurerProgress();
+                
+                if (cardsRemaining === 0) {
+                    setTimeout(triggerWinCinematic, 500);
+                }
+            } else if (source === 'discard') {
+                discardPile.pop();
+                renderDiscard();
+            }
+        }
+
+        // --- Animations & Polish ---
+        
+        // Randomly make the adventurer dodge/jump while idle
+        setInterval(() => {
+            if (cardsRemaining > 0 && cardsRemaining < 28) {
+                const adventurer = document.getElementById('adventurer');
+                const anims = ['jump', 'dodge'];
+                const randAnim = anims[Math.floor(Math.random() * anims.length)];
+                adventurer.classList.add(randAnim);
+                setTimeout(() => adventurer.classList.remove(randAnim), 600);
+            }
+        }, 3500);
+
+        function updateAdventurerProgress() {
+            const adventurer = document.getElementById('adventurer');
+            // Progress from 2% to 92% across the screen
+            const progressPercentage = ((28 - cardsRemaining) / 28);
+            const targetLeft = 2 + (progressPercentage * 90);
+            adventurer.style.left = `${targetLeft}%`;
+            adventurer.classList.add('jump'); // Jump whenever progress is made
+            setTimeout(() => adventurer.classList.remove('jump'), 600);
+        }
+
+        function triggerWinCinematic() {
+            document.body.classList.add('zoom-active');
+            
+            // Wait for black screen to fade in, then show treasure
+            setTimeout(() => {
+                const cinematicOverlay = document.getElementById('cinematic-overlay');
+                const treasureReveal = document.getElementById('treasure-reveal');
+                const hero = document.getElementById('cinematic-hero');
+                
+                // Open chest visualization
+                hero.innerHTML = '🤠 🧳'; // Open chest emoji (using luggage as proxy or just assume opened)
+                
+                // Pick random treasure
+                const randomTreasure = treasures[Math.floor(Math.random() * treasures.length)];
+                treasureReveal.innerHTML = randomTreasure;
+                
+                // Trigger CSS animations
+                cinematicOverlay.classList.add('show-treasure');
+            }, 1000);
+        }
+
+        // Initialize Game
+        createDeck();
+        buildPyramid();
+
+    </script>
+</body>
+</html>
