@@ -1,15 +1,10 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.9
+    Last Updated v1.10
 
-   .bottombar rebuilt with named grid-template-areas (score/actions/
-   time, plus gamenum on mobile) so SCORE/game#/TIME each get a fixed
-   slot regardless of which are actually visible — the previous
-   order+space-between approach repositioned things based on which
-   chips happened to be shown. .bottombtn now has responsive shrinking
-   for a 4th button (Show Next) and an image-icon variant. Added
-   .card.peek for the new Peek Mode toggle (dimmed real face instead
-   of a card back, pointer-events blocked).
+   Renamed .card.peek to .card.thoughtful, matching the actual
+   solitaire terminology ("Thoughtful") instead of the placeholder
+   name it launched with.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -365,12 +360,14 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
    completely regardless of the source image's own aspect ratio,
    cropping any overflow rather than leaving empty gaps.
    ========================================================= */
-/* "Peek" mode (see the Klondike settings toggle): shows a face-down
-   card's real face instead of its back, but visibly dimmed/desaturated
-   so it still reads as "not actually in play" — the point is to let
-   someone plan ahead, not to make the card usable, so it also blocks
-   pointer events entirely rather than becoming draggable. */
-.card.peek{
+/* "Thoughtful" mode (see the Klondike settings toggle): shows a
+   face-down tableau card's real face instead of its back, but visibly
+   dimmed/desaturated so it still reads as "not actually in play" — the
+   point is to let someone plan ahead, not to make the card usable, so
+   it also blocks pointer events entirely rather than becoming
+   draggable. Deliberately scoped to the tableau only — the draw/stock
+   pile is excluded (see Klondike.html's renderStock). */
+.card.thoughtful{
   opacity: 0.55;
   filter: grayscale(0.6);
   pointer-events: none;

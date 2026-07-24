@@ -1,17 +1,16 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.6
+    Last Updated v1.7
 
-   Added Peek Mode (settings toggle): shows face-down cards' real
-   faces, dimmed, via a rendering-only fake card wrapper — the actual
-   card.faceUp is never touched, so game rules are completely
-   unaffected, and .peek (styles.css) blocks pointer-events so they
-   still can't be interacted with. Applies instantly, no new game
-   needed. Also added "Show Next" (spade icon, highlights every
-   foundation-eligible card including the waste top) and fixed the
-   same Preview Win Screen bug as FreeCell (dismissing a preview was
-   unconditionally calling newGame() and wiping the real game).
+   Renamed "Peek Mode" to "Thoughtful" (the actual standard solitaire
+   term) and scoped it to the tableau only — the draw pile is
+   deliberately excluded (renderStock always shows a back now). Win
+   cascade now launches King-to-Ace instead of Ace-to-King. Dismissing
+   a win preview now force-removes any still-flying cascade card
+   artifacts instead of waiting for their own cleanup timer. Show Next
+   now also highlights Thoughtful-revealed tableau cards, not just
+   genuinely face-up ones.
 -->
 <html lang="en">
 <head>
@@ -167,10 +166,10 @@
     </div>
     <div class="field">
       <div class="toggrow">
-        <span>Peek Mode</span>
-        <label class="switch"><input type="checkbox" id="tog-peek"><span class="slider"></span></label>
+        <span>Thoughtful</span>
+        <label class="switch"><input type="checkbox" id="tog-thoughtful"><span class="slider"></span></label>
       </div>
-      <div class="fieldnote">Shows face-down cards, dimmed — for planning ahead, not for playing them; they still can't be touched.</div>
+      <div class="fieldnote">Shows face-down tableau cards, dimmed, for planning ahead — doesn't include the draw pile, and they still can't be touched.</div>
     </div>
 
     <div class="field">
@@ -201,7 +200,7 @@ const state = {
   drawCount: 1,
   showTimer: false,
   showScore: false,
-  peekMode: false,
+  thoughtful: false,
   backStyle: 'back_10.png',
   stock: [], waste: [],
   foundations: {S:[],H:[],D:[],C:[]},
@@ -211,7 +210,7 @@ const state = {
   timerHandle: null,
   cascadePlayed: false
 };
-const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'back_10.png', peekMode:false };
+const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'back_10.png', thoughtful:false };
 const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
 
 /* =========================================================
@@ -477,14 +476,10 @@ function renderStock(){
   p.querySelectorAll('.card').forEach(e=>e.remove());
   if(state.stock.length){
     const top = state.stock[state.stock.length-1];
-    // Peek mode never touches the real card object (top.faceUp stays
-    // false) — this is a separate fake wrapper purely for rendering,
-    // same trick already used here for the normal always-a-back case.
-    const peeking = state.peekMode;
-    const fake = {id:'stocktop', rank:top.rank, suit:top.suit, faceUp:peeking};
-    const el = makeCardEl(fake,'stock','stock',state.stock.length-1);
-    if(peeking) el.classList.add('peek');
-    p.appendChild(el);
+    // Thoughtful mode deliberately does NOT extend to the stock/draw
+    // pile — only tableau cards get revealed by it. Always a back here.
+    const fake = {id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false};
+    p.appendChild(makeCardEl(fake,'stock','stock',state.stock.length-1));
   }
 }
 function renderWaste(){
@@ -518,13 +513,13 @@ function renderTableau(){
     col.querySelectorAll('.card').forEach(e=>e.remove());
     const pile = state.tableau[c];
     pile.forEach((card, i)=>{
-      let renderCard = card, peeking = false;
-      if(!card.faceUp && state.peekMode){
+      let renderCard = card, revealing = false;
+      if(!card.faceUp && state.thoughtful){
         renderCard = { ...card, faceUp: true }; // rendering-only — real card object is untouched
-        peeking = true;
+        revealing = true;
       }
       const el = makeCardEl(renderCard,'tableau',c,i, i<pile.length-1);
-      if(peeking) el.classList.add('peek');
+      if(revealing) el.classList.add('thoughtful');
       el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
     });
@@ -556,7 +551,7 @@ function checkWin(){
 function launchCascade(){
   const cards = [];
   const maxLen = Math.max(0, ...SUITS.map(s=>state.foundations[s].length));
-  for(let i=0;i<maxLen;i++){
+  for(let i=maxLen-1;i>=0;i--){
     for(const s of SUITS){
       if(state.foundations[s][i]) cards.push({ card: state.foundations[s][i], sourceEl: document.getElementById('f-'+s) });
     }
@@ -564,18 +559,19 @@ function launchCascade(){
   E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
 }
 let previewingWin = false;
+let previewCascadeLayer = null;
 function previewWinScreen(){
   previewingWin = true;
   const deck = E.shuffle(E.buildDeck());
   const bySuit = {S:[],H:[],D:[],C:[]};
   deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
   const cards = [];
-  for(let i=0;i<13;i++){
+  for(let i=12;i>=0;i--){
     for(const s of SUITS){
       if(bySuit[s][i]) cards.push({ card: bySuit[s][i], sourceEl: document.getElementById('f-'+s) });
     }
   }
-  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
   document.getElementById('win-sub').textContent = 'Preview — not a real win';
   document.getElementById('win-newgame').textContent = 'Close Preview';
   setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
@@ -706,17 +702,17 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraSnapshot: ()=>({ drawCount: pendingSettings.drawCount, peekMode: pendingSettings.peekMode }),
+  extraSnapshot: ()=>({ drawCount: pendingSettings.drawCount, thoughtful: pendingSettings.thoughtful }),
   extraRestore: (snap)=>{
     pendingSettings.drawCount = snap.drawCount; refreshDrawPicker();
-    pendingSettings.peekMode = snap.peekMode; state.peekMode = snap.peekMode;
-    document.getElementById('tog-peek').checked = snap.peekMode;
+    pendingSettings.thoughtful = snap.thoughtful; state.thoughtful = snap.thoughtful;
+    document.getElementById('tog-thoughtful').checked = snap.thoughtful;
     renderAll();
   },
   extraOnOpen: ()=>{
     pendingSettings.drawCount = state.drawCount; refreshDrawPicker(); refreshDrawNote();
-    pendingSettings.peekMode = state.peekMode;
-    document.getElementById('tog-peek').checked = state.peekMode;
+    pendingSettings.thoughtful = state.thoughtful;
+    document.getElementById('tog-thoughtful').checked = state.thoughtful;
   }
 });
 function refreshDrawPicker(){
@@ -732,9 +728,9 @@ document.querySelectorAll('#seg-draw button').forEach(b=>{
     refreshDrawNote();
   });
 });
-document.getElementById('tog-peek').addEventListener('change', (e)=>{
-  pendingSettings.peekMode = e.target.checked;
-  state.peekMode = e.target.checked;
+document.getElementById('tog-thoughtful').addEventListener('change', (e)=>{
+  pendingSettings.thoughtful = e.target.checked;
+  state.thoughtful = e.target.checked;
   renderAll();
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
@@ -755,6 +751,7 @@ document.getElementById('settings-preview-win').addEventListener('click', ()=>{
 });
 document.getElementById('win-newgame').addEventListener('click', ()=>{
   document.getElementById('winmask').classList.remove('show');
+  if(previewCascadeLayer){ previewCascadeLayer.remove(); previewCascadeLayer = null; }
   if(previewingWin){
     previewingWin = false;
     document.getElementById('win-newgame').textContent = 'Play Again';
@@ -783,7 +780,7 @@ function findFoundationEligibleCards(){
     const pile = state.tableau[col];
     if(!pile.length) continue;
     const top = pile[pile.length-1];
-    if(!top.faceUp) continue;
+    if(!top.faceUp && !state.thoughtful) continue; // genuinely hidden — skip; Thoughtful reveals it, so it counts then
     if(SUITS.some(s=>canPlaceOnFoundation(top, state.foundations[s], s))) cards.push(top);
   }
   return cards;

@@ -1,15 +1,12 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.6
+    Last Updated v1.7
 
-   Added a "Show Next" button (spade icon) to the bottom bar that
-   highlights every free-cell/tableau card currently eligible for a
-   foundation. Fixed the real bug in Preview Win Screen: it claimed
-   not to touch your game, but the ONLY way to dismiss the dialog
-   (the "Play Again" button) unconditionally called newGame() — now
-   tracked via previewingWin, so dismissing a preview just closes it.
-   Free-cell slider expanded from 3-5 to 2-8, still defaults to 4.
+   Win cascade now launches King-to-Ace instead of Ace-to-King (both
+   the real win and the preview). Dismissing a win preview now
+   force-removes any still-flying cascade card artifacts instead of
+   waiting for their own 6s cleanup timer.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -1139,7 +1136,7 @@ function checkWin(){
       state.cascadePlayed = true;
       const cards = [];
       const maxLen = Math.max(0, ...SUITS.map(s=>state.foundations[s].length));
-      for(let i=0;i<maxLen;i++){
+      for(let i=maxLen-1;i>=0;i--){
         for(const s of SUITS){
           if(state.foundations[s][i]) cards.push({ card: state.foundations[s][i], sourceEl: document.getElementById('f-'+s) });
         }
@@ -1409,20 +1406,23 @@ document.getElementById('btn-play-game-number').addEventListener('click', ()=>{
 // your actual in-progress game is untouched. The dismiss button used
 // to always call newGame() though, which DID wipe your real game the
 // moment you closed the preview — previewingWin below is what fixes
-// that: dismiss now only starts a new game for a real win.
+// that: dismiss now only starts a new game for a real win. previewCascadeLayer
+// is separate: it's for force-removing the still-flying card artifacts
+// if you dismiss before their own animation has finished.
 let previewingWin = false;
+let previewCascadeLayer = null;
 function previewWinScreen(){
   previewingWin = true;
   const deck = E.shuffle(E.buildDeck());
   const bySuit = {S:[],H:[],D:[],C:[]};
   deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
   const cards = [];
-  for(let i=0;i<13;i++){
+  for(let i=12;i>=0;i--){
     for(const s of SUITS){
       if(bySuit[s][i]) cards.push({ card: bySuit[s][i], sourceEl: document.getElementById('f-'+s) });
     }
   }
-  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
   document.getElementById('win-sub').textContent = 'Preview — not a real win';
   document.getElementById('win-newgame').textContent = 'Close Preview';
   setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
@@ -1430,6 +1430,7 @@ function previewWinScreen(){
 
 document.getElementById('win-newgame').addEventListener('click', ()=>{
   document.getElementById('winmask').classList.remove('show');
+  if(previewCascadeLayer){ previewCascadeLayer.remove(); previewCascadeLayer = null; }
   if(previewingWin){
     previewingWin = false;
     document.getElementById('win-newgame').textContent = 'Play Again';

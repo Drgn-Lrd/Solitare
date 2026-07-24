@@ -1,10 +1,11 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.6
+    Last Updated v1.7
 
-   Added pulseAll(els, duration) — highlights several cards at once for
-   a fixed duration, for the new "Show Next" foundation-preview button
-   (same idea as pulse(), just for a batch instead of one card).
+   startWinCascade now returns its layer element, so a caller (e.g.
+   dismissing a win preview) can force-remove any still-animating
+   card artifacts immediately instead of waiting for the internal
+   auto-cleanup timeout.
  */
 /*
      Written by: Johnathon Largent
@@ -613,6 +614,7 @@ function startWinCascade(cards, buildFaceElFn, getCardMetrics){
     setTimeout(()=> spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP), i*STAGGER);
   });
   setTimeout(()=>{ layer.remove(); }, cards.length*STAGGER + 6000);
+  return layer;
 }
 function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, bounceDamp){
   if(!entry.sourceEl) return;
