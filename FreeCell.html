@@ -1,16 +1,12 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 2000 EDT
+    Last Updated 23 July 2026 @ 2030 EDT
 
-   Found the actual bug behind the supermove animation never visibly
-   traveling: destEl.style.visibility='hidden' was set BEFORE cloning
-   it, so the clone inherited visibility:hidden from the source
-   element's inline style and was invisible for its entire flight —
-   every prior version had this same flaw, which is why nothing was
-   ever visibly seen going through the free cells regardless of
-   timing or click vs. drag. Clone now explicitly gets visibility:
-   visible.
+   Crest crop is now precisely measured against the actual
+   images/FreeCell.webp (900x491) rather than guessed — crops the
+   180x180px region at (235,140), his head/shoulders/hands on the
+   bars, via background-size/-position math.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -41,6 +37,20 @@
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
+  }
+
+  /* Crest: a circular crop of the same background photo (the prisoner
+     gripping the bars), replacing the plain brass-circle + suit glyph.
+     Measured directly against the actual images/FreeCell.webp
+     (900x491): crops the 180x180px region at (235,140) — his head,
+     shoulders, and both hands on the bars — via background-size/
+     -position math, so it scales correctly if the crest's own size
+     ever changes rather than needing a separate cropped image file. */
+  .brand .crest{
+    background-image: url('images/FreeCell.webp');
+    background-size: 500% 272.78%;
+    background-position: 32.64% 45.02%;
+    box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008, inset 0 0 0 2px var(--brass);
   }
 
   /* King Watcher: just the head/crown of the real King of Spades card
@@ -108,18 +118,20 @@
 
 <header>
   <div class="brand">
-    <div class="crest">♣</div>
+    <div class="crest" aria-hidden="true"></div>
     <div class="brand-text">
       <h1>FreeCell</h1>
       <small>Solitaire</small>
       <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6.5 10v9a1 1 0 0 0 1 1h3v-6h3v6h3a1 1 0 0 0 1-1v-9"/></svg>
+        </a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
-        <a class="textbtn newgame-btn" href="index.html">Home</a>
       </div>
-      <div class="chip" id="game-number-chip" style="display:none"><span id="game-number-display"></span></div>
     </div>
   </div>
   <div class="hud">
+    <div class="chip" id="game-number-chip" style="display:none"><span id="game-number-display"></span></div>
     <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
     <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
@@ -775,6 +787,52 @@ function autoMoveAll(){
   }
   return movedAny;
 }
+// Runs the exact same "send eligible top cards home, repeat" logic as
+// autoMoveAll above, but against a scratch copy of the piles so it can
+// answer "would clicking Auto Move right now fully win the game" without
+// touching real state — a faithful simulation of what the button
+// actually does, not a heuristic guess. Used to swap Auto Move into
+// Finish Game once that's true.
+function wouldAutoMoveWinGame(){
+  const tableau = state.tableau.map(col=>col.slice());
+  const freecells = state.freecells.map(fc=>fc.slice());
+  const foundations = {};
+  SUITS.forEach(s=>{ foundations[s] = state.foundations[s].slice(); });
+  let progress = true, guard = 0;
+  while(progress && guard < 300){
+    guard++; progress = false;
+    for(let i=0;i<freecells.length;i++){
+      if(freecells[i].length && canPlaceOnFoundation(freecells[i][0], foundations[freecells[i][0].suit], freecells[i][0].suit)){
+        foundations[freecells[i][0].suit].push(freecells[i].pop());
+        progress = true;
+      }
+    }
+    for(let c=0;c<tableau.length;c++){
+      const pile = tableau[c];
+      if(pile.length && canPlaceOnFoundation(pile[pile.length-1], foundations[pile[pile.length-1].suit], pile[pile.length-1].suit)){
+        foundations[pile[pile.length-1].suit].push(pile.pop());
+        progress = true;
+      }
+    }
+  }
+  let total = 0;
+  SUITS.forEach(s=>{ total += foundations[s].length; });
+  return total===52;
+}
+function updateAutoMoveButton(){
+  const btn = document.getElementById('btn-automove');
+  if(!btn) return;
+  const icon = btn.querySelector('.bicon'), label = btn.querySelector('.blabel');
+  if(wouldAutoMoveWinGame()){
+    icon.textContent = '♥'; icon.style.color = '#e24b4a';
+    label.textContent = 'Finish Game';
+    btn.title = 'Send every remaining card home and win';
+  } else {
+    icon.textContent = '⇧'; icon.style.color = '';
+    label.textContent = 'Auto Move';
+    btn.title = 'Send eligible top cards home';
+  }
+}
 
 /* =========================================================
    HINT / NO-MOVES SCANNER
@@ -987,6 +1045,7 @@ function renderAll(){
   renderFreecells();
   renderFoundations();
   renderTableau();
+  updateAutoMoveButton();
   const won = checkWin();
   if(!won) checkNoMoves();
 }
