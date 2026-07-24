@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.2
+    Last Updated v1.3
 
-   Title text changed to "Klondike - Classic Solitaire" (one line —
-   styles.css now forces white-space:nowrap on .brand h1).
+   SCORE/TIME chips moved to a new secondary row under the header
+   (see #hud-secondary), out of .hud — with this title's length, .hud
+   had no room left for them and was wrapping them onto a second line
+   that broke out of the header's height. applyHudVisibility now also
+   collapses that row entirely when both chips are off.
 -->
 <html lang="en">
 <head>
@@ -41,12 +44,14 @@
     </div>
   </div>
   <div class="hud">
-    <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
-    <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
+<div class="hud-secondary" id="hud-secondary" style="display:none">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
 
 <div class="stage">
   <div class="table-frame">
@@ -562,6 +567,7 @@ function syncTimerInterval(){
 function applyHudVisibility(){
   document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
   document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
+  document.getElementById('hud-secondary').style.display = (state.showScore || state.showTimer) ? 'flex':'none';
 }
 function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
 
