@@ -1,15 +1,16 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.3
+    Last Updated v1.4
 
-   Found the real bug behind New Game rendering so much bigger than
-   the title: .newgame-btn's font-size/padding overrides were losing
-   to .textbtn's own values, because .textbtn happens to be declared
-   LATER in this file and wins cascade ties at equal specificity.
-   Changed the selector to button.newgame-btn (element+class) so the
-   override always wins regardless of source order. Also scaled the
-   whole header up (crest 34px→64px, everything else 17px→32px),
-   keeping the same proportions as the previous pass.
+   Measured the actual screenshot pixels to ground these: title's box
+   was already 32px tall (matching the button), but its font-size
+   (16px) left most of that box empty, which is why it read as
+   smaller than the button despite the box heights matching — bumped
+   to 26px so the glyphs actually fill the box. Also added
+   .hud-secondary for SCORE/TIME, moved out of .hud into their own row
+   under the header — with a long title (Klondike's especially) .hud
+   had no room left and flex-wrap was dropping them onto an awkward
+   second line that broke out of the header's height.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -95,7 +96,7 @@ header{
    exactly half the crest's height — the button row below it is the
    other half, so the two stack to the crest's full height overall. */
 .brand h1{
-  margin:0; height:32px; line-height:32px; font-size:16px; letter-spacing:1px; font-weight:400;
+  margin:0; height:32px; line-height:32px; font-size:26px; letter-spacing:1px; font-weight:400;
   font-variant: small-caps; white-space:nowrap;
   color: var(--brass-light);
   text-shadow: 0 1px 0 #000;
@@ -130,6 +131,18 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 .brand-actions{ display:flex; align-items:stretch; gap:8px; }
 
 .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
+
+/* SCORE/TIME live here instead of in .hud — with a long title (like
+   "Klondike - Classic Solitaire") the main header row has no room to
+   spare, and .hud's flex-wrap was dropping them onto an awkward
+   second line that broke out of the header's fixed height. This row
+   sits directly under the header, right-aligned under Help/Settings,
+   and collapses to nothing when both chips are hidden (see
+   applyHudVisibility in each game file). */
+.hud-secondary{
+  display:flex; justify-content:flex-end; gap: clamp(5px,1.4vw,12px);
+  padding: 0 clamp(10px,3vw,28px) 8px;
+}
 
 /* Bottom action bar (Undo / Hint / Auto Move) — deliberately at the
    very bottom of the screen for thumb reach on a phone. */
