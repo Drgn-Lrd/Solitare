@@ -1,71 +1,15 @@
 /*
     styles.css
     Written by: Johnathon Largent
-    Version 2.8
+    Version 2.9
 
-   The "highlight is thicker on the bottom/right" issue (see 2.7's
-   entry below) wasn't actually the shadow offset — it was
-   --card-w/--card-h resolving to fractional pixel values, which gave
-   every box sized off them (cards, the selection ring, the drop-ok
-   glow) an anti-aliased edge that browsers only draw on the
-   bottom/right of a fractional-width box. --card-h is now wrapped in
-   round(...,1px); the matching fix for --card-w itself is in
-   engine.js's fitBoard (JS overwrites --card-w at runtime, so this
-   file's own clamp() value was never the one actually in effect).
-
-    Version 2.7
-
-   .card.selected's highlight (the "move highlighting" ring shown when
-   a card is picked for click-to-move) looked lopsided — thicker on
-   the bottom and right than the top and left. The green ring itself
-   (box-shadow "0 0 0 3px", spread only, no offset) was always
-   symmetric; the culprit was the second shadow in that same
-   declaration, "0 4px 10px rgba(0,0,0,.5)" — a drop-shadow with a 4px
-   DOWNWARD offset. Shifted down, its blur mostly hides under the card
-   on top but bleeds out visibly below/beside it, reading as extra
-   bulk on the bottom/right while the top stayed thin. Zeroed the
-   offset (now "0 0 10px") so that shadow blurs evenly in every
-   direction like the ring it's paired with.
-
-    Version 2.6
-
-   .table-frame (the wood frame, previously fully opaque) now gets the
-   same rgba()+var() transparency treatment .table-felt already had,
-   sharing one combined control, --table-opacity (66% to start) —
-   renamed from --felt-opacity since it now covers both layers. With
-   the wood no longer opaque, the page's own background (each game's
-   html,body rule — see FreeCell.html's background photo) shows
-   through the whole table, not just wood-on-wood as before. Cards
-   remain fully solid throughout; nothing about how a .card paints
-   changed here.
-
-   Felt playing surface (.table-felt) transparency now uses
-   rgba(var(--rgb-triplet), var(--felt-opacity)) instead of
-   color-mix(). Functionally the two should produce the same math, but
-   color-mix() showed no visible change even at low values in testing
-   — rgba()+var() is older, more universally-supported syntax and is
-   the safer bet. One important caveat either way: .table-felt's
-   immediate backdrop is .table-frame's OPAQUE wood background, not
-   the page behind it — so "transparent felt" reveals wood-brown
-   showing through, not whatever is behind the whole table. If the
-   goal is to see the actual page background through the felt,
-   .table-frame needs its own opacity treatment too.
-
-   #winmask (the "You Win!" dialog specifically) no longer dims the
-   whole screen — it was covering the cascade animation happening
-   behind it. New .winmask-modal is a small bounded box instead of a
-   full-screen takeover; #nomovesmask keeps the shared full dim since
-   there's no animation behind it to preserve a view of.
-
-   Card corner rounding was a flat 9px, which is a huge proportion of
-   a card at the small end of --card-w's clamp (down to ~18% of the
-   width) — enough to clip rank/suit corner pips and read as a
-   rounded-rect badge instead of a real card. New --card-radius scales
-   with --card-w (real cards round at roughly 4-5% of their width) so
-   the rounding stays subtle and consistent at every size. Applied to
-   .pile, .card, .face/.back-img-wrap, .img-fallback, and the
-   drop-glow outline; .backswatch (a fixed-size thumbnail, not tied to
-   --card-w) got a matching fixed reduction instead.
+   .tcol.drop-ok::after was computing its bottom edge indirectly —
+   height:calc(100% + 8px) paired with top:-4px, requiring two
+   separate values to combine into a symmetric result. Replaced with
+   top:-4px + bottom:-4px directly (no height/calc at all): the
+   browser now sizes the box to fill exactly the gap between those
+   two anchors, which is symmetric by construction, not by two numbers
+   happening to add up right.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -82,7 +26,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.8';
+  --stylesheet-version: '2.9';
   /* Stored as bare "r,g,b" triplets (not full color values) so they can
      be dropped into rgba(var(--x), alpha) for the felt's transparency
      — rgba() with a var() alpha channel is old, well-supported syntax,
@@ -443,8 +387,9 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
    actual card stack. */
 .pile.slot.drop-ok{ border-color:#7ee6a8; box-shadow: 0 0 14px #7ee6a888, inset 0 0 10px rgba(0,0,0,0.35);}
 .tcol.drop-ok::after{
-  content:""; position:absolute; left:-4px; top:-4px;
-  width: calc(var(--card-w) + 8px); height: calc(100% + 8px);
+  content:""; position:absolute;
+  top:-4px; bottom:-4px; left:-4px;
+  width: calc(var(--card-w) + 8px);
   border-radius: calc(var(--card-radius) + 3px);
   border:2px solid #7ee6a8; box-shadow:0 0 14px rgba(126,230,168,0.6);
   pointer-events:none; z-index:500;
