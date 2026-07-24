@@ -1,6 +1,18 @@
 /*
     engine.js
     Written by: Johnathon Largent
+    Version 2.9
+
+   New shared setColumnHeight(col, pileLength, metrics), exported
+   alongside cardMetrics. The tableau column height formula (and its
+   exact pairing with .tcol.drop-ok::after's +/-4px overhang in
+   styles.css) was duplicated in Klondike/FreeCell/Yukon's own
+   renderTableau() — each with its own copy of the same line, which is
+   exactly how one of them silently picked up a stray "+ 8" the others
+   didn't share a fix for. Pulled out here so that formula, and its
+   relationship to the highlight CSS, can only be defined in one place
+   going forward.
+
     Version 2.8
 
    fitBoard now rounds cardW to a whole pixel before writing it to
@@ -62,7 +74,7 @@ window.SEngine = (function(){
 // what lets a settings modal show all three (page/engine/styles) at
 // once. getStylesheetVersion() reads a --stylesheet-version custom
 // property off :root; returns null if styles.css hasn't declared one.
-const ENGINE_VERSION = '2.8';
+const ENGINE_VERSION = '2.9';
 function getStylesheetVersion(){
   const v = getComputedStyle(document.documentElement).getPropertyValue('--stylesheet-version');
   return v ? v.trim().replace(/^['"]|['"]$/g, '') : null;
@@ -221,6 +233,21 @@ function cardMetrics(overlapFrac){
   const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w')) || 80;
   const h = w * CARD_RATIO;
   return { w, h, overlap: h*(overlapFrac==null?0.183:overlapFrac), fan: w*0.22 };
+}
+
+// Sets a tableau column's height to EXACTLY the visible card stack's
+// height (from the top of the first card to the bottom of the last
+// one) — no extra padding. This used to be duplicated in each game's
+// own renderTableau() with a stray "+ 8" added on top, which doubled
+// up with .tcol.drop-ok::after's own +/-4px overhang (styles.css) and
+// made that highlight lopsided: ~4px past the last card on top but
+// ~12-17px past it on the bottom. Pulled out here, once, specifically
+// so that relationship — column height + highlight overhang — can
+// only ever be defined in one matching pair of places (this function
+// and the CSS rule next to it) instead of drifting out of sync in
+// three separate copies again.
+function setColumnHeight(col, pileLength, metrics){
+  col.style.height = (metrics.h + Math.max(pileLength-1,0)*metrics.overlap) + 'px';
 }
 
 // opts: {
@@ -873,7 +900,7 @@ return {
   buildDeck, shuffle,
   buildFaceEl, buildBackEl, makeCardEl, purgeStrayCards,
   preloadAllCardImages,
-  CARD_RATIO, cardMetrics, fitBoard,
+  CARD_RATIO, cardMetrics, setColumnHeight, fitBoard,
   attachCardEvents, initInteractions, clearSelection, getSelected, makePaddedResolver,
   createUndoStack,
   showToast, pulse, pulseAll,
