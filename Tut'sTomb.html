@@ -2,26 +2,46 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.0
+    Version 1.1
 
-   New file: Tut's Tomb (relaxed Pyramid). Pair exposed cards summing to
-   13 to clear the pyramid, with infinite waste-pile reshuffles. Adds an
-   Indiana Jones-style adventurer track across the header that advances
-   (dodging a trap) every time a full pyramid row is cleared, ending on
-   a chest that opens into a random treasure on the win screen instead
-   of the usual card cascade. Settings includes a Force Winnable toggle
-   that guarantees a solvable deal.
+   Reworked the adventurer track: three distinct obstacle reactions
+   (duck under a falling boulder, step back from an arrow, jump a
+   snake/scorpion) instead of one generic dodge, plus lit checkpoint
+   markers at each row-clear point, a filling progress trail, and a
+   dust-puff run cycle. File itself is now built from Klondike.html's
+   structure/conventions (header, modals, settings shell, undo, hint,
+   changelog format) rather than the earlier Pyramid.html reference
+   draft — that file was a rules sketch only, never meant as the
+   architectural baseline.
 -->
 <!--
-  Tut's Tomb — built on the shared engine.js + styles.css, same as
-  Klondike/FreeCell/Yukon. This file only contains what's actually
-  specific to this game: the 28-card pyramid deal, the pair-to-13 /
-  lone-King rules, the relaxed (infinite-cycle) stock pile, the
-  adventurer-track progress animation, and the chest/treasure win
-  sequence that replaces engine.js's normal card-cascade. Everything
-  else — card asset loading/fallback, screen-fit sizing, undo stack,
-  hint pulse/toast, and the Settings modal shell (card back picker +
-  timer/score toggles) — comes from engine.js/styles.css untouched.
+  Tut's Tomb — built on the shared engine.js + styles.css, structured
+  the same way Klondike.html is (header/HUD, table-frame/felt, bottom
+  bar, confirm/help/settings overlays, undo stack, hint pulse+toast,
+  screen-fit sizing, Settings modal shell). What's actually specific to
+  this game:
+    1. DEAL — 28 cards in a 7-row pyramid (row 0 = 1 card at the apex,
+       row 6 = 7 cards at the base), the remaining 24 face-down in the
+       stock.
+    2. RULES — tap two exposed (uncovered) cards that sum to 13 to
+       clear them, or a lone King (worth 13) by itself. A pyramid card
+       is exposed once both cards directly below it (row+1, same/+1
+       col) are already cleared. No drag/drop — this is click-to-pair,
+       not pile-to-pile movement, so engine.js's initInteractions
+       pipeline isn't used here; card clicks are wired directly.
+    3. STOCK — "relaxed" rules: the waste can be recycled back into the
+       stock and redrawn indefinitely, never truly running out.
+    4. ADVENTURER TRACK — replaces Klondike's plain HUD chips with a
+       header-adjacent progress bar. Every cleared pyramid card nudges
+       the adventurer forward proportionally (28 cards = the full
+       track); clearing an entire pyramid ROW (28→21→15→10→6→3→1 cards
+       left, i.e. 7/13/18/22/25/27 cleared) also spawns one of three
+       obstacles, each with its own reaction animation. Reaching 0
+       cards left plays a chest-opening/treasure-reveal cinematic
+       (see handleWin) instead of engine.js's normal win cascade.
+    5. FORCE WINNABLE — a DFS solver (isDeckWinnable) with memoization,
+       tried against up to 500 shuffles, guarantees a clearable deal
+       when the Settings toggle is on.
 -->
 <html lang="en">
 <head>
@@ -33,9 +53,9 @@
 <style>
   /* =========================================================
      THEME OVERRIDES — Egyptian Tomb / Indiana Jones vibe.
-     Only the shared color variables change here; layout, sizing,
-     and positioning of the crest/chips/buttons stay whatever
-     styles.css already defines, same as every other game.
+     Only the shared color variables change here; the crest/chip/
+     button positions and sizes stay whatever styles.css already
+     defines, same as every other game.
      ========================================================= */
   :root {
     --felt-1-rgb: 74,55,34;      /* #4a3722 sandstone */
@@ -59,8 +79,8 @@
 
   /* Crest: the attached Tut's Tomb artwork (already teal-backed, so
      it reads as a turquoise-and-gold medallion — an authentic Egyptian
-     pairing, not a mismatch) dropped straight into the shared brass
-     crest circle, same treatment as Klondike's ace-of-spades crest. */
+     pairing) dropped into the shared brass crest circle, same
+     treatment as Klondike's ace-of-spades crest. */
   .brand .crest {
     background-image: url("images/Tut'sTomb.webp"), radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
     background-size: cover, cover;
@@ -69,59 +89,143 @@
   }
 
   /* =========================================================
-     ADVENTURER TRACK — sits under the header, above the table.
+     ADVENTURER TRACK
+     Sits under the header, above the table. A sand-toned strip with:
+       - a gold "sand trail" fill showing overall progress
+       - six lit/unlit checkpoint torches, one per pyramid row cleared
+       - the adventurer runner (outer div = position, inner div = the
+         run-bob / duck / step-back / jump reaction, kept separate so
+         the two transitions never fight each other)
+       - a chest at the far end that glows brighter as he nears it
      ========================================================= */
   #adventure-track {
-    height: 48px;
-    background: linear-gradient(180deg, #111, #1a1512);
-    border-bottom: 2px solid var(--wood-3);
+    height: 56px;
     position: relative;
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.8);
     flex-shrink: 0;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.05) 40%, rgba(0,0,0,0.3)),
+      repeating-linear-gradient(90deg, rgba(212,175,55,0.05) 0 2px, transparent 2px 26px),
+      linear-gradient(180deg, #3a2a16, #241a0d);
+    border-bottom: 2px solid var(--wood-3);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.8), inset 0 -10px 20px -10px rgba(0,0,0,0.6);
   }
 
-  #adventure-track::before {
+  #adventure-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 2%;
+    background: linear-gradient(90deg, rgba(212,175,55,0) 0%, rgba(212,175,55,0.28) 70%, rgba(248,229,160,0.4) 100%);
+    transition: width 0.5s ease-out;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .adv-checkpoint {
+    position: absolute;
+    bottom: 8px;
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.18), transparent);
+    z-index: 1;
+    transform: translateX(-50%);
+  }
+  .adv-checkpoint::before {
     content: "";
     position: absolute;
-    inset: 0;
-    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20"><rect width="30" height="20" fill="none" stroke="%233a2a18" stroke-width="2"/><path d="M15,0 v20 M0,10 h30" stroke="%233a2a18" stroke-width="2"/></svg>') repeat;
-    opacity: 0.5;
+    top: -6px; left: 50%;
+    transform: translateX(-50%);
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: #4a3a22;
+    box-shadow: 0 0 0 1px #1a1108;
+    transition: background 0.4s, box-shadow 0.4s;
+  }
+  .adv-checkpoint.lit::before {
+    background: var(--brass-light);
+    box-shadow: 0 0 10px 3px rgba(248,229,160,0.85), 0 0 2px #fff;
   }
 
   #adventurer {
     position: absolute;
+    bottom: 4px;
     left: 2%;
-    font-size: 32px;
+    font-size: 30px;
     line-height: 1;
-    transition: left 0.5s ease-out;
-    z-index: 2;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+    transition: left 0.55s cubic-bezier(0.3,0.1,0.2,1);
+    z-index: 3;
+    transform: translateX(-50%);
+  }
+  #adventurer-inner {
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.6));
+    transform-origin: 50% 90%;
   }
 
   #chest {
     position: absolute;
-    right: 2%;
-    font-size: 32px;
+    bottom: 6px;
+    right: 3%;
+    font-size: 30px;
     line-height: 1;
+    z-index: 2;
+    filter: drop-shadow(0 0 8px rgba(248,229,160,0.5));
+    transition: filter 0.6s ease;
+  }
+  #chest.near { filter: drop-shadow(0 0 16px rgba(248,229,160,0.95)); }
+
+  .dust-puff {
+    position: absolute;
+    bottom: 6px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: rgba(212,175,55,0.4);
     z-index: 1;
-    filter: drop-shadow(0 0 8px var(--brass-light));
+    pointer-events: none;
+    animation: dustFade 0.6s ease-out forwards;
   }
 
-  .jump { animation: jumpAnim 0.6s ease; }
-  .dodge { animation: dodgeAnim 0.5s ease; }
-
+  @keyframes dustFade {
+    0%   { opacity: 0.55; transform: translateX(-50%) scale(0.6) translateY(0); }
+    100% { opacity: 0;    transform: translateX(-50%) scale(1.5) translateY(6px); }
+  }
+  /* Idle run-cycle bob — plays whenever the adventurer advances
+     without hitting an obstacle threshold. */
+  @keyframes runBob {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25%      { transform: translateY(-4px) rotate(-4deg); }
+    50%      { transform: translateY(0) rotate(0deg); }
+    75%      { transform: translateY(-4px) rotate(4deg); }
+  }
+  /* Leap — a snake/scorpion underfoot. */
   @keyframes jumpAnim {
-    0% { transform: translateY(0); }
-    50% { transform: translateY(-15px); }
-    100% { transform: translateY(0); }
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    45%      { transform: translateY(-20px) rotate(-6deg); }
+    100%     { transform: translateY(0) rotate(0deg); }
   }
-  @keyframes dodgeAnim {
-    0% { transform: rotate(0deg); }
-    50% { transform: rotate(20deg) translateY(4px); }
-    100% { transform: rotate(0deg); }
+  /* Duck — something falling from above (a loosed boulder). */
+  @keyframes duckAnim {
+    0%, 100% { transform: scaleY(1) translateY(0); }
+    35%      { transform: scaleY(0.55) translateY(11px); }
+    65%      { transform: scaleY(0.55) translateY(11px); }
+  }
+  /* Step back — a frontal threat (a loosed arrow). */
+  @keyframes stepbackAnim {
+    0%, 100% { transform: translateX(0) rotate(0deg); }
+    35%      { transform: translateX(-15px) rotate(-9deg); }
+    65%      { transform: translateX(-15px) rotate(-9deg); }
+  }
+  #adventurer-inner.running  { animation: runBob 0.55s ease-in-out; }
+  #adventurer-inner.jump     { animation: jumpAnim 0.6s ease; }
+  #adventurer-inner.duck     { animation: duckAnim 0.65s ease; }
+  #adventurer-inner.stepback { animation: stepbackAnim 0.6s ease; }
+
+  .obstacle {
+    position: absolute;
+    bottom: 6px;
+    font-size: 22px;
+    z-index: 2;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));
+    transform: translateX(-50%);
   }
 
   /* =========================================================
@@ -135,12 +239,7 @@
     flex-direction: column;
     align-items: center;
   }
-
-  #pyramid-area {
-    position: relative;
-    margin: 0 auto;
-  }
-
+  #pyramid-area { position: relative; margin: 0 auto; }
   .stockwaste-row {
     display: flex;
     justify-content: center;
@@ -150,42 +249,35 @@
     border-top: 1px dashed rgba(255,255,255,0.1);
     width: 100%;
   }
-
   .card.covered { filter: brightness(0.5); cursor: not-allowed; }
-
   .card.selected {
-    box-shadow: 0 0 0 4px #00ffff, 0 4px 15px rgba(0,0,0,0.8);
+    box-shadow: 0 0 0 4px #00e0e6, 0 4px 15px rgba(0,0,0,0.8);
     transform: translateY(-5px);
   }
 
   /* =========================================================
      CINEMATIC WIN OVERLAY — chest opens, treasure reveal, then
-     the normal winmask. Replaces engine.js's card-cascade win.
+     the normal winmask. Replaces engine.js's card cascade.
      ========================================================= */
   #cinematic-overlay {
-    position: fixed;
-    inset: 0;
+    position: fixed; inset: 0;
     background: rgba(0,0,0,0.9);
     z-index: 250;
     display: none;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
+    justify-content: center; align-items: center;
     opacity: 0;
     transition: opacity 1.5s;
   }
-
   #cinematic-overlay.active { display: flex; }
   #cinematic-overlay.fade-in { opacity: 1; }
   #cinematic-hero { font-size: 6rem; margin-bottom: 20px; display: flex; gap: 30px; align-items: center; }
-
   #treasure-reveal {
     font-size: 0;
     opacity: 0;
     filter: drop-shadow(0 0 0px var(--brass-light));
     transition: all 2.5s cubic-bezier(0.1, 0.8, 0.2, 1);
   }
-
   .show-treasure #treasure-reveal {
     font-size: 8rem;
     opacity: 1;
@@ -214,7 +306,8 @@
 </header>
 
 <div id="adventure-track">
-  <div id="adventurer"></div>
+  <div id="adventure-fill"></div>
+  <div id="adventurer"><div id="adventurer-inner"></div></div>
   <div id="chest"></div>
 </div>
 
@@ -243,7 +336,6 @@
   <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
 
-<!-- Cinematic Overlay -->
 <div id="cinematic-overlay">
   <div id="cinematic-hero"></div>
   <div id="treasure-reveal"></div>
@@ -276,8 +368,8 @@
       <li>Select two exposed cards that add up to <b>13</b> to remove them.</li>
       <li>Valid pairs: 10+3, J+2, Q+A, etc.</li>
       <li><b>Kings</b> are worth 13 and can be removed by themselves with a single tap.</li>
-      <li>Tap the draw pile to cycle through cards. <b>Relaxed Rules:</b> you can cycle the deck infinitely.</li>
-      <li>Clear the entire pyramid to win the game and claim the treasure!</li>
+      <li>Tap the draw pile to cycle through cards. <b>Relaxed Rules:</b> you can cycle the deck indefinitely.</li>
+      <li>Clear a full pyramid row to send the adventurer past an obstacle; clear the whole pyramid to reach the chest and claim the treasure!</li>
     </ul>
     <div class="modal-actions">
       <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
@@ -314,7 +406,6 @@
         <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
       </div>
     </div>
-
     <div class="field">
       <div class="toggrow">
         <span>Show Score</span>
@@ -340,8 +431,24 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.0';
+const PAGE_VERSION = '1.1';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
+
+// Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
+// cards respectively) finishes — these double as the adventurer's
+// checkpoint positions and the moments an obstacle appears. The 28th
+// (final, single peak) card isn't in this list — clearing it is the win,
+// handled separately by handleWin().
+const ROW_CLEAR_THRESHOLDS = [7, 13, 18, 22, 25, 27];
+
+// Each obstacle has its own reaction, so "dodging" actually reads as
+// three different things happening rather than one generic hop.
+const OBSTACLES = [
+  { icon: '🪨', reaction: 'duck',     msg: 'Ducked a falling boulder!' },
+  { icon: '🏹', reaction: 'stepback', msg: 'Stepped back from a loosed arrow!' },
+  { icon: '🐍', reaction: 'jump',     msg: 'Leapt over a coiled cobra!' },
+  { icon: '🦂', reaction: 'jump',     msg: 'Hopped clear of a scorpion!' }
+];
 
 /* =========================================================
    SVG ASSETS
@@ -356,7 +463,6 @@ const SVG_ADVENTURER = `<svg viewBox="0 0 100 100" width="1em" height="1em" styl
   <rect x="38" y="15" width="24" height="3" fill="#332211"/>
   <path d="M 30 50 Q 15 50, 15 65 Q 15 75, 25 75" fill="none" stroke="#4a2e15" stroke-width="3"/>
 </svg>`;
-
 const SVG_CHEST_CLOSED = `<svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;">
   <rect x="15" y="40" width="70" height="45" fill="#8b5a2b" rx="5"/>
   <path d="M 15 45 C 15 15, 85 15, 85 45 Z" fill="#7a4a20"/>
@@ -366,7 +472,6 @@ const SVG_CHEST_CLOSED = `<svg viewBox="0 0 100 100" width="1em" height="1em" st
   <circle cx="50" cy="45" r="8" fill="#ffd700"/>
   <circle cx="50" cy="45" r="3" fill="#333"/>
 </svg>`;
-
 const SVG_CHEST_OPEN = `<svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;">
   <rect x="15" y="55" width="70" height="35" fill="#8b5a2b" rx="5"/>
   <path d="M 15 55 L 25 20 L 75 20 L 85 55 Z" fill="#7a4a20"/>
@@ -378,14 +483,6 @@ const SVG_CHEST_OPEN = `<svg viewBox="0 0 100 100" width="1em" height="1em" styl
   <rect x="42" y="20" width="16" height="8" fill="#ffd700"/>
 </svg>`;
 
-// Populate the adventurer/chest icons once the DOM exists.
-document.addEventListener("DOMContentLoaded", () => {
-    const advEl = document.getElementById('adventurer');
-    const chestEl = document.getElementById('chest');
-    if(advEl) advEl.innerHTML = SVG_ADVENTURER;
-    if(chestEl) chestEl.innerHTML = SVG_CHEST_CLOSED;
-});
-
 /* =========================================================
    GAME STATE
    ========================================================= */
@@ -394,8 +491,7 @@ const state = {
   showScore: false,
   forceWinnable: false,
   backStyle: 'back_10.webp',
-  stock: [],
-  waste: [],
+  stock: [], waste: [],
   pyramid: [],
   cardsRemaining: 28,
   score: 0,
@@ -408,357 +504,332 @@ const pendingSettings = { showTimer:false, showScore:false, forceWinnable:false,
 const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 
 /* =========================================================
-   CARD DOM ELEMENTS
+   ADVENTURER TRACK SETUP
+   Checkpoint markers are generated (not hardcoded in the HTML) so
+   their positions always match ROW_CLEAR_THRESHOLDS exactly — same
+   formula used to move the adventurer.
    ========================================================= */
-function createTutsCardEl(card, source) {
-    const el = E.makeCardEl(card, source, source, 0, false, state.backStyle, null);
+function trackLeftPct(cleared){ return 2 + ((cleared / 28) * 90); }
 
-    el.addEventListener('click', (e) => {
-        if(el.classList.contains('covered')) return;
-        handleCardClick(card, source);
-    });
+function buildCheckpoints(){
+  const track = document.getElementById('adventure-track');
+  ROW_CLEAR_THRESHOLDS.forEach(cleared=>{
+    const el = document.createElement('div');
+    el.className = 'adv-checkpoint';
+    el.dataset.cleared = cleared;
+    el.style.left = trackLeftPct(cleared) + '%';
+    track.appendChild(el);
+  });
+}
+function updateCheckpoints(){
+  document.querySelectorAll('.adv-checkpoint').forEach(el=>{
+    el.classList.toggle('lit', (28 - state.cardsRemaining) >= Number(el.dataset.cleared));
+  });
+}
 
-    return el;
+document.addEventListener('DOMContentLoaded', ()=>{
+  const advEl = document.getElementById('adventurer-inner');
+  const chestEl = document.getElementById('chest');
+  if(advEl) advEl.innerHTML = SVG_ADVENTURER;
+  if(chestEl) chestEl.innerHTML = SVG_CHEST_CLOSED;
+  buildCheckpoints();
+});
+
+function spawnDust(leftPct){
+  const track = document.getElementById('adventure-track');
+  const dust = document.createElement('div');
+  dust.className = 'dust-puff';
+  dust.style.left = leftPct + '%';
+  track.appendChild(dust);
+  setTimeout(()=> dust.remove(), 650);
+}
+function spawnObstacle(obstacle, targetLeft){
+  const track = document.getElementById('adventure-track');
+  const el = document.createElement('div');
+  el.className = 'obstacle';
+  el.textContent = obstacle.icon;
+  el.style.left = (targetLeft + 22) + '%';
+  el.style.transition = 'left 1.1s linear, opacity 0.3s ease-in 0.9s';
+  track.appendChild(el);
+  requestAnimationFrame(()=> requestAnimationFrame(()=>{
+    el.style.left = (targetLeft - 4) + '%';
+    el.style.opacity = '0';
+  }));
+  setTimeout(()=> el.remove(), 1300);
+
+  const inner = document.getElementById('adventurer-inner');
+  setTimeout(()=>{
+    inner.classList.remove('running','jump','duck','stepback');
+    void inner.offsetWidth;
+    inner.classList.add(obstacle.reaction);
+    setTimeout(()=> inner.classList.remove(obstacle.reaction), 900);
+  }, 650);
+
+  E.showToast(document.getElementById('hint-toast'), obstacle.msg);
+}
+
+function triggerAdventurerProgress(cleared){
+  const adventurer = document.getElementById('adventurer');
+  const inner = document.getElementById('adventurer-inner');
+  const chest = document.getElementById('chest');
+  const targetLeft = trackLeftPct(cleared);
+  const priorLeft = trackLeftPct(cleared - 1);
+
+  spawnDust(priorLeft);
+  adventurer.style.left = targetLeft + '%';
+  chest.classList.toggle('near', targetLeft > 75);
+  updateCheckpoints();
+
+  if(ROW_CLEAR_THRESHOLDS.includes(cleared)){
+    spawnObstacle(OBSTACLES[Math.floor(Math.random()*OBSTACLES.length)], targetLeft);
+  } else {
+    inner.classList.remove('running');
+    void inner.offsetWidth;
+    inner.classList.add('running');
+    setTimeout(()=> inner.classList.remove('running'), 600);
+  }
 }
 
 /* =========================================================
-   RULES & LOGIC
+   RULES
    ========================================================= */
-function isCovered(r, c) {
-    return state.pyramid.some(p => !p.removed && p.row === r + 1 && (p.col === c || p.col === c + 1));
+function isCovered(r, c){
+  return state.pyramid.some(p => !p.removed && p.row===r+1 && (p.col===c || p.col===c+1));
 }
-
-function updateCoveredStatus() {
-    state.pyramid.forEach(p => {
-        if (p.removed) return;
-        if (isCovered(p.row, p.col)) {
-            p.el.classList.add('covered');
-        } else {
-            p.el.classList.remove('covered');
-        }
-    });
+function updateCoveredStatus(){
+  state.pyramid.forEach(p=>{
+    if(p.removed) return;
+    p.el.classList.toggle('covered', isCovered(p.row, p.col));
+  });
 }
-
-function drawFromStock() {
-    if (state.stock.length === 0) {
-        if (state.waste.length === 0) return;
-        undo.push();
-        state.stock = state.waste.reverse().map(c => ({...c, faceUp: false}));
-        state.waste = [];
-        E.clearSelection();
-        state.selected = null;
-        renderAll();
-        return;
-    }
+function drawFromStock(){
+  if(state.stock.length===0){
+    if(state.waste.length===0) return;
     undo.push();
-    const c = state.stock.pop();
-    c.faceUp = true;
-    state.waste.push(c);
-
+    state.stock = state.waste.reverse().map(c=>({...c, faceUp:false}));
+    state.waste = [];
     E.clearSelection();
     state.selected = null;
     renderAll();
+    return;
+  }
+  undo.push();
+  const c = state.stock.pop();
+  c.faceUp = true;
+  state.waste.push(c);
+  E.clearSelection();
+  state.selected = null;
+  renderAll();
 }
-
-function removeCards(card1, source1, card2, source2) {
-    undo.push();
-
-    let isPyramidCardRemoved = false;
-
-    const removeCard = (card, source) => {
-        if (source === 'pyramid') {
-            const pCard = state.pyramid.find(p => p.card.id === card.id);
-            pCard.removed = true;
-            state.cardsRemaining--;
-            addScore(15);
-            isPyramidCardRemoved = true;
-        } else if (source === 'waste') {
-            state.waste.pop();
-            addScore(5);
-        }
-    };
-
-    removeCard(card1, source1);
-    if (card2) removeCard(card2, source2);
-
-    if (isPyramidCardRemoved) {
-        let cleared = 28 - state.cardsRemaining;
-        let isTrap = [7, 13, 18, 22, 25, 27].includes(cleared);
-        triggerAdventurerProgress(isTrap);
+function removeCards(card1, source1, card2, source2){
+  undo.push();
+  let pyramidCardRemoved = false;
+  const removeOne = (card, source)=>{
+    if(source==='pyramid'){
+      const pCard = state.pyramid.find(p=>p.card.id===card.id);
+      pCard.removed = true;
+      state.cardsRemaining--;
+      addScore(15);
+      pyramidCardRemoved = true;
+    } else if(source==='waste'){
+      state.waste.pop();
+      addScore(5);
     }
+  };
+  removeOne(card1, source1);
+  if(card2) removeOne(card2, source2);
 
+  if(pyramidCardRemoved) triggerAdventurerProgress(28 - state.cardsRemaining);
+
+  state.selected = null;
+  E.clearSelection();
+  renderAll();
+}
+function handleCardClick(card, source){
+  const val = E.rankValue(card.rank);
+  if(val===13){ removeCards(card, source); return; }
+
+  if(!state.selected){
+    state.selected = { card, source };
+    const el = document.querySelector('.card[data-id="'+card.id+'"]');
+    if(el) el.classList.add('selected');
+    return;
+  }
+  if(state.selected.card.id===card.id){
     state.selected = null;
     E.clearSelection();
-    renderAll();
-}
-
-function handleCardClick(card, source) {
-    const val = E.rankValue(card.rank);
-
-    if (val === 13) {
-        removeCards(card, source);
-        return;
-    }
-
-    if (!state.selected) {
-        state.selected = { card, source };
-        const domEl = document.querySelector(`.card[data-id="${card.id}"]`);
-        if (domEl) domEl.classList.add('selected');
-    } else {
-        if (state.selected.card.id === card.id) {
-            state.selected = null;
-            E.clearSelection();
-            return;
-        }
-
-        const selectedVal = E.rankValue(state.selected.card.rank);
-        if (selectedVal + val === 13) {
-            removeCards(state.selected.card, state.selected.source, card, source);
-        } else {
-            E.clearSelection();
-            state.selected = { card, source };
-            const domEl = document.querySelector(`.card[data-id="${card.id}"]`);
-            if (domEl) domEl.classList.add('selected');
-        }
-    }
+    return;
+  }
+  const selectedVal = E.rankValue(state.selected.card.rank);
+  if(selectedVal + val === 13){
+    removeCards(state.selected.card, state.selected.source, card, source);
+  } else {
+    E.clearSelection();
+    state.selected = { card, source };
+    const el = document.querySelector('.card[data-id="'+card.id+'"]');
+    if(el) el.classList.add('selected');
+  }
 }
 
 /* =========================================================
-   ADVENTURER ANIMATIONS
-   Each cleared pyramid ROW (28→7→13→18→22→25→27→28 cumulative)
-   advances the adventurer one leg; the six row-clears before the
-   final peak card spawn a trap he jumps or dodges past.
+   RENDER
    ========================================================= */
-function spawnTrap(targetLeft) {
-    const track = document.getElementById('adventure-track');
-    const trap = document.createElement('div');
-    const traps = ['🪨', '🏹', '🐍', '🦂'];
-    trap.innerHTML = traps[Math.floor(Math.random() * traps.length)];
-    trap.style.position = 'absolute';
-    trap.style.fontSize = '24px';
-    trap.style.zIndex = '1';
-    trap.style.bottom = '5px';
-    trap.style.left = `${targetLeft + 25}%`;
-    trap.style.transition = 'left 2.2s linear, opacity 2.2s ease-in';
-
-    track.appendChild(trap);
-
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            trap.style.left = `${targetLeft - 15}%`;
-            trap.style.opacity = '0';
-        });
-    });
-
-    const adventurer = document.getElementById('adventurer');
-    setTimeout(() => {
-        const anim = ['jump', 'dodge'][Math.floor(Math.random() * 2)];
-        adventurer.classList.add(anim);
-        setTimeout(() => adventurer.classList.remove(anim), 1000);
-    }, 800);
-
-    setTimeout(() => trap.remove(), 2200);
+function makeCardEl(card, pileType, pileKey, index){
+  const el = E.makeCardEl(card, pileType, pileKey, index, false, state.backStyle, null);
+  el.addEventListener('click', ()=>{
+    if(el.classList.contains('covered')) return;
+    handleCardClick(card, pileType);
+  });
+  return el;
 }
+function renderAll(){
+  E.purgeStrayCards();
+  E.fitBoard({ columns: 7, getMaxStackDepth: ()=>1, minStackForFit: 7 });
 
-function triggerAdventurerProgress(isTrap) {
-    const adventurer = document.getElementById('adventurer');
-    const progressPercentage = ((28 - state.cardsRemaining) / 28);
-    const targetLeft = 2 + (progressPercentage * 90);
-    adventurer.style.left = `${targetLeft}%`;
+  renderHUD();
+  renderPyramid();
+  renderStock();
+  renderWaste();
+  updateCoveredStatus();
 
-    if (isTrap) {
-        spawnTrap(targetLeft);
-    } else {
-        adventurer.classList.add('jump');
-        setTimeout(() => adventurer.classList.remove('jump'), 600);
-    }
+  if(state.selected){
+    const el = document.querySelector('.card[data-id="'+state.selected.card.id+'"]');
+    if(el) el.classList.add('selected');
+  }
+  if(state.cardsRemaining===0) handleWin();
 }
-
-/* =========================================================
-   RENDERING
-   ========================================================= */
-function renderAll() {
-    E.purgeStrayCards();
-
-    E.fitBoard({
-        columns: 7,
-        getMaxStackDepth: () => 1,
-        minStackForFit: 7
-    });
-
-    renderHUD();
-    renderPyramid();
-    renderStock();
-    renderWaste();
-
-    updateCoveredStatus();
-
-    if (state.selected) {
-        const domEl = document.querySelector(`.card[data-id="${state.selected.card.id}"]`);
-        if (domEl) domEl.classList.add('selected');
-    }
-
-    if (state.cardsRemaining === 0) {
-        handleWin();
-    }
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
 }
+function renderPyramid(){
+  const container = document.getElementById('pyramid-area');
+  container.innerHTML = '';
+  const metrics = E.cardMetrics(0);
+  const gap = 10;
+  container.style.width = (metrics.w*7 + gap*6) + 'px';
+  container.style.height = (metrics.h + metrics.h*0.5*6) + 'px';
 
-function renderPyramid() {
-    const container = document.getElementById('pyramid-area');
-    container.innerHTML = '';
-
-    const metrics = E.cardMetrics(0);
-    const gap = 10;
-
-    container.style.width = `${(metrics.w * 7) + (gap * 6)}px`;
-    container.style.height = `${metrics.h + (metrics.h * 0.5 * 6)}px`;
-
-    state.pyramid.forEach(p => {
-        if (p.removed) return;
-
-        const el = createTutsCardEl(p.card, 'pyramid');
-        el.style.position = 'absolute';
-
-        const rowWidth = (p.row + 1) * metrics.w + (p.row * gap);
-        const startX = (container.offsetWidth - rowWidth) / 2;
-
-        el.style.left = `${startX + (p.col * (metrics.w + gap))}px`;
-        el.style.top = `${p.row * (metrics.h * 0.55)}px`;
-
-        p.el = el;
-        container.appendChild(el);
-    });
+  state.pyramid.forEach(p=>{
+    if(p.removed) return;
+    const el = makeCardEl(p.card, 'pyramid', p.row+'-'+p.col, 0);
+    el.style.position = 'absolute';
+    const rowWidth = (p.row+1)*metrics.w + p.row*gap;
+    const startX = (container.offsetWidth - rowWidth) / 2;
+    el.style.left = (startX + p.col*(metrics.w+gap)) + 'px';
+    el.style.top = (p.row * (metrics.h*0.55)) + 'px';
+    p.el = el;
+    container.appendChild(el);
+  });
 }
-
-function renderStock() {
-    const p = document.getElementById('pile-stock');
-    p.querySelectorAll('.card').forEach(e => e.remove());
-    if (state.stock.length) {
-        const top = state.stock[state.stock.length - 1];
-        const fake = { id: 'stocktop', rank: top.rank, suit: top.suit, faceUp: false };
-        p.appendChild(createTutsCardEl(fake, 'stock'));
-    }
+function renderStock(){
+  const p = document.getElementById('pile-stock');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  if(state.stock.length){
+    const top = state.stock[state.stock.length-1];
+    const fake = { id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false };
+    p.appendChild(makeCardEl(fake, 'stock', 'stock', 0));
+  }
 }
-
-function renderWaste() {
-    const p = document.getElementById('pile-waste');
-    p.querySelectorAll('.card').forEach(e => e.remove());
-    if (state.waste.length) {
-        const top = state.waste[state.waste.length - 1];
-        p.appendChild(createTutsCardEl(top, 'waste'));
-    }
-}
-
-function renderHUD() {
-    document.getElementById('score-val').textContent = state.score;
-    const m = Math.floor(state.seconds/60), s = state.seconds%60;
-    document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+function renderWaste(){
+  const p = document.getElementById('pile-waste');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  if(state.waste.length){
+    const top = state.waste[state.waste.length-1];
+    p.appendChild(makeCardEl(top, 'waste', 'waste', 0));
+  }
 }
 
 /* =========================================================
-   WIN SEQUENCE (CHEST OPEN & TREASURE REVEAL)
+   WIN — CHEST OPEN & TREASURE REVEAL
    Replaces engine.js's normal card cascade: the adventurer has
-   already walked to the chest one leg at a time, so the win screen
+   already walked to the chest one row at a time, so the win screen
    just plays the chest opening and a random treasure reveal.
    ========================================================= */
-function handleWin() {
-    clearInterval(state.timerHandle);
-    if (state.cascadePlayed) return;
-    state.cascadePlayed = true;
+function handleWin(){
+  clearInterval(state.timerHandle);
+  if(state.cascadePlayed) return;
+  state.cascadePlayed = true;
 
-    const overlay = document.getElementById('cinematic-overlay');
-    const hero = document.getElementById('cinematic-hero');
-    const treasure = document.getElementById('treasure-reveal');
+  const overlay = document.getElementById('cinematic-overlay');
+  const hero = document.getElementById('cinematic-hero');
+  const treasure = document.getElementById('treasure-reveal');
 
-    overlay.classList.add('active');
-    setTimeout(() => overlay.classList.add('fade-in'), 50);
+  overlay.classList.add('active');
+  setTimeout(()=> overlay.classList.add('fade-in'), 50);
 
-    setTimeout(() => {
-        hero.innerHTML = `${SVG_ADVENTURER} ${SVG_CHEST_OPEN}`;
-        treasure.innerHTML = TREASURES[Math.floor(Math.random() * TREASURES.length)];
-        overlay.classList.add('show-treasure');
+  setTimeout(()=>{
+    hero.innerHTML = SVG_ADVENTURER + ' ' + SVG_CHEST_OPEN;
+    treasure.innerHTML = TREASURES[Math.floor(Math.random()*TREASURES.length)];
+    overlay.classList.add('show-treasure');
 
-        setTimeout(() => {
-            overlay.classList.remove('fade-in');
-            setTimeout(() => {
-                overlay.classList.remove('active', 'show-treasure');
-
-                const m = Math.floor(state.seconds/60), s = state.seconds%60;
-                document.getElementById('win-sub').textContent = state.showTimer
-                  ? ('Escaped in '+m+':'+String(s).padStart(2,'0'))
-                  : 'Tomb pillaged successfully.';
-                document.getElementById('winmask').classList.add('show');
-            }, 1000);
-        }, 4000);
-
-    }, 1500);
+    setTimeout(()=>{
+      overlay.classList.remove('fade-in');
+      setTimeout(()=>{
+        overlay.classList.remove('active','show-treasure');
+        const m = Math.floor(state.seconds/60), s = state.seconds%60;
+        document.getElementById('win-sub').textContent = state.showTimer
+          ? ('Escaped in '+m+':'+String(s).padStart(2,'0'))
+          : 'Tomb pillaged successfully.';
+        document.getElementById('winmask').classList.add('show');
+      }, 1000);
+    }, 4000);
+  }, 1500);
 }
 
 /* =========================================================
-   UNDO, HINT & SETUP WIRING
+   UNDO, HINT
    ========================================================= */
 const undo = E.createUndoStack(
   ()=>({
-      stock: state.stock.map(c=>({...c})),
-      waste: state.waste.map(c=>({...c})),
-      pyramid: state.pyramid.map(p=>({ card: {...p.card}, row: p.row, col: p.col, removed: p.removed })),
-      score: state.score,
-      cardsRem: state.cardsRemaining
+    stock: state.stock.map(c=>({...c})),
+    waste: state.waste.map(c=>({...c})),
+    pyramid: state.pyramid.map(p=>({ card:{...p.card}, row:p.row, col:p.col, removed:p.removed })),
+    score: state.score,
+    cardsRem: state.cardsRemaining
   }),
   (snap)=>{
-      state.stock = snap.stock;
-      state.waste = snap.waste;
-      state.pyramid = snap.pyramid;
-      state.score = snap.score;
-      state.cardsRemaining = snap.cardsRem;
-      state.selected = null;
-      E.clearSelection();
-
-      const adventurer = document.getElementById('adventurer');
-      const progressPercentage = ((28 - state.cardsRemaining) / 28);
-      adventurer.style.left = `${2 + (progressPercentage * 90)}%`;
-
-      renderAll();
+    state.stock = snap.stock;
+    state.waste = snap.waste;
+    state.pyramid = snap.pyramid;
+    state.score = snap.score;
+    state.cardsRemaining = snap.cardsRem;
+    state.selected = null;
+    E.clearSelection();
+    document.getElementById('adventurer').style.left = trackLeftPct(28 - state.cardsRemaining) + '%';
+    updateCheckpoints();
+    renderAll();
   },
   document.getElementById('btn-undo')
 );
+function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
 
-function addScore(n) { state.score = Math.max(0, state.score+n); renderHUD(); }
-
-function showHint() {
-    const toastEl = document.getElementById('hint-toast');
-
-    let k = state.pyramid.find(p => !p.removed && !isCovered(p.row, p.col) && E.rankValue(p.card.rank) === 13);
-    if(k) {
-        E.showToast(toastEl, 'Tap the King to clear it.');
-        E.pulse(k.el);
+function showHint(){
+  const toastEl = document.getElementById('hint-toast');
+  const king = state.pyramid.find(p=>!p.removed && !isCovered(p.row,p.col) && E.rankValue(p.card.rank)===13);
+  if(king){ E.showToast(toastEl, 'Tap the King to clear it.'); E.pulse(king.el); return; }
+  if(state.waste.length && E.rankValue(state.waste[state.waste.length-1].rank)===13){
+    E.showToast(toastEl, 'Tap the King in the waste pile.');
+    E.pulse(document.getElementById('pile-waste'));
+    return;
+  }
+  const available = state.pyramid.filter(p=>!p.removed && !isCovered(p.row,p.col)).map(p=>({val:E.rankValue(p.card.rank), el:p.el}));
+  if(state.waste.length){
+    available.push({ val:E.rankValue(state.waste[state.waste.length-1].rank), el:document.querySelector('#pile-waste .card') });
+  }
+  for(let i=0;i<available.length;i++){
+    for(let j=i+1;j<available.length;j++){
+      if(available[i].val + available[j].val === 13){
+        E.showToast(toastEl, 'Match these two cards.');
+        E.pulseAll([available[i].el, available[j].el]);
         return;
+      }
     }
-    if (state.waste.length && E.rankValue(state.waste[state.waste.length-1].rank) === 13) {
-        E.showToast(toastEl, 'Tap the King in the waste pile.');
-        E.pulse(document.getElementById('pile-waste'));
-        return;
-    }
-
-    const available = state.pyramid.filter(p => !p.removed && !isCovered(p.row, p.col)).map(p => ({val: E.rankValue(p.card.rank), el: p.el}));
-    if (state.waste.length) {
-        available.push({ val: E.rankValue(state.waste[state.waste.length-1].rank), el: document.querySelector('#pile-waste .card') });
-    }
-
-    for (let i = 0; i < available.length; i++) {
-        for (let j = i + 1; j < available.length; j++) {
-            if (available[i].val + available[j].val === 13) {
-                E.showToast(toastEl, 'Match these two cards.');
-                E.pulseAll([available[i].el, available[j].el]);
-                return;
-            }
-        }
-    }
-
-    E.showToast(toastEl, 'No matches found. Draw a card.');
-    E.pulse(document.getElementById('pile-stock'));
+  }
+  E.showToast(toastEl, 'No matches found. Draw a card.');
+  E.pulse(document.getElementById('pile-stock'));
 }
-
 function syncTimerInterval(){
   clearInterval(state.timerHandle);
   if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
@@ -767,129 +838,123 @@ function syncTimerInterval(){
 /* =========================================================
    WINNABLE DECK GENERATOR (DFS SOLVER + MEMOIZATION)
    ========================================================= */
-function generateWinnableDeck() {
-    for (let attempt = 0; attempt < 500; attempt++) {
-        let deck = E.shuffle(E.buildDeck());
-        if (isDeckWinnable(deck)) return deck;
-    }
-    console.warn("Could not find guaranteed winnable deal in 500 tries. Falling back to random.");
-    return E.shuffle(E.buildDeck());
+function generateWinnableDeck(){
+  for(let attempt=0; attempt<500; attempt++){
+    let deck = E.shuffle(E.buildDeck());
+    if(isDeckWinnable(deck)) return deck;
+  }
+  console.warn('Could not find guaranteed winnable deal in 500 tries. Falling back to random.');
+  return E.shuffle(E.buildDeck());
 }
+function isDeckWinnable(deck){
+  let pVals = deck.slice(0,28).map(c=>E.rankValue(c.rank));
+  let initialStock = new Int8Array(14);
+  for(let i=28;i<52;i++) initialStock[E.rankValue(deck[i].rank)]++;
 
-function isDeckWinnable(deck) {
-    let pVals = deck.slice(0, 28).map(c => E.rankValue(c.rank));
-    let initialStock = new Int8Array(14);
-    for (let i = 28; i < 52; i++) initialStock[E.rankValue(deck[i].rank)]++;
+  let memo = new Set();
+  let iterations = 0;
 
-    let memo = new Set();
-    let iterations = 0;
+  function solve(mask, stock){
+    iterations++;
+    if(iterations > 80000) return false;
+    if(mask === 0) return true;
 
-    function solve(mask, stock) {
-        iterations++;
-        if (iterations > 80000) return false;
-        if (mask === 0) return true;
+    let sig = mask + '-' + stock.join('');
+    if(memo.has(sig)) return false;
 
-        let sig = mask + "-" + stock.join('');
-        if (memo.has(sig)) return false;
-
-        let avail = [];
-        for (let r = 0; r < 7; r++) {
-            for (let c = 0; c <= r; c++) {
-                let idx = (r * (r + 1)) / 2 + c;
-                if ((mask & (1 << idx)) !== 0) {
-                    if (r < 6) {
-                        let left = ((r + 1) * (r + 2)) / 2 + c;
-                        let right = left + 1;
-                        if ((mask & (1 << left)) !== 0 || (mask & (1 << right)) !== 0) continue;
-                    }
-                    avail.push(idx);
-                }
-            }
+    let avail = [];
+    for(let r=0;r<7;r++){
+      for(let c=0;c<=r;c++){
+        let idx = (r*(r+1))/2 + c;
+        if((mask & (1<<idx)) !== 0){
+          if(r<6){
+            let left = ((r+1)*(r+2))/2 + c;
+            let right = left+1;
+            if((mask & (1<<left)) !== 0 || (mask & (1<<right)) !== 0) continue;
+          }
+          avail.push(idx);
         }
-
-        for (let i = 0; i < avail.length; i++) {
-            let idx = avail[i];
-            if (pVals[idx] === 13) {
-                if (solve(mask ^ (1 << idx), stock)) return true;
-                memo.add(sig);
-                return false;
-            }
-        }
-
-        for (let i = 0; i < avail.length; i++) {
-            let idx1 = avail[i];
-            let v1 = pVals[idx1];
-            let needed = 13 - v1;
-
-            for (let j = i + 1; j < avail.length; j++) {
-                let idx2 = avail[j];
-                if (pVals[idx2] === needed) {
-                    if (solve(mask ^ (1 << idx1) ^ (1 << idx2), stock)) return true;
-                }
-            }
-
-            if (stock[needed] > 0) {
-                stock[needed]--;
-                if (solve(mask ^ (1 << idx1), stock)) return true;
-                stock[needed]++;
-            }
-        }
-
+      }
+    }
+    for(let i=0;i<avail.length;i++){
+      let idx = avail[i];
+      if(pVals[idx]===13){
+        if(solve(mask ^ (1<<idx), stock)) return true;
         memo.add(sig);
         return false;
+      }
     }
-
-    return solve((1 << 28) - 1, initialStock);
+    for(let i=0;i<avail.length;i++){
+      let idx1 = avail[i];
+      let v1 = pVals[idx1];
+      let needed = 13 - v1;
+      for(let j=i+1;j<avail.length;j++){
+        let idx2 = avail[j];
+        if(pVals[idx2]===needed){
+          if(solve(mask ^ (1<<idx1) ^ (1<<idx2), stock)) return true;
+        }
+      }
+      if(stock[needed] > 0){
+        stock[needed]--;
+        if(solve(mask ^ (1<<idx1), stock)) return true;
+        stock[needed]++;
+      }
+    }
+    memo.add(sig);
+    return false;
+  }
+  return solve((1<<28)-1, initialStock);
 }
 
-function newGame() {
-    clearInterval(state.timerHandle);
-    state.showTimer = pendingSettings.showTimer;
-    state.showScore = pendingSettings.showScore;
-    state.forceWinnable = pendingSettings.forceWinnable;
-    state.backStyle = pendingSettings.backStyle;
+function newGame(){
+  clearInterval(state.timerHandle);
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.forceWinnable = pendingSettings.forceWinnable;
+  state.backStyle = pendingSettings.backStyle;
 
-    let deck = state.forceWinnable ? generateWinnableDeck() : E.shuffle(E.buildDeck());
+  let deck = state.forceWinnable ? generateWinnableDeck() : E.shuffle(E.buildDeck());
 
-    state.pyramid = [];
-    state.cardsRemaining = 28;
-    for (let row = 0; row < 7; row++) {
-        for (let col = 0; col <= row; col++) {
-            const card = deck.pop();
-            card.faceUp = true;
-            state.pyramid.push({ card, row, col, removed: false, el: null });
-        }
+  state.pyramid = [];
+  state.cardsRemaining = 28;
+  for(let row=0; row<7; row++){
+    for(let col=0; col<=row; col++){
+      const card = deck.pop();
+      card.faceUp = true;
+      state.pyramid.push({ card, row, col, removed:false, el:null });
     }
+  }
+  state.stock = deck.map(c=>({...c, faceUp:false}));
+  state.waste = [];
+  state.score = 0;
+  state.seconds = 0;
+  state.cascadePlayed = false;
+  state.selected = null;
 
-    state.stock = deck.map(c => ({...c, faceUp: false}));
-    state.waste = [];
-    state.score = 0;
-    state.seconds = 0;
-    state.cascadePlayed = false;
-    state.selected = null;
+  undo.reset();
+  E.clearSelection();
 
-    undo.reset();
-    E.clearSelection();
+  const adventurer = document.getElementById('adventurer');
+  if(adventurer){
+    adventurer.style.transition = 'none';
+    adventurer.style.left = '2%';
+    setTimeout(()=>{ adventurer.style.transition = 'left 0.55s cubic-bezier(0.3,0.1,0.2,1)'; }, 50);
+  }
+  document.getElementById('chest').classList.remove('near');
+  updateCheckpoints();
 
-    const adventurer = document.getElementById('adventurer');
-    if(adventurer) {
-        adventurer.style.transition = 'none';
-        adventurer.style.left = '2%';
-        setTimeout(() => { adventurer.style.transition = 'left 0.5s ease-out'; }, 50);
-    }
-
-    document.getElementById('winmask').classList.remove('show');
-    E.applyHudVisibility(state);
-    syncTimerInterval();
-    renderAll();
+  document.getElementById('winmask').classList.remove('show');
+  E.applyHudVisibility(state);
+  syncTimerInterval();
+  renderAll();
 }
 
 /* =========================================================
    EVENT LISTENERS & SETTINGS
    ========================================================= */
 document.getElementById('pile-stock').addEventListener('click', drawFromStock);
-document.getElementById('btn-undo').addEventListener('click', () => undo.undo());
-document.getElementById('btn-hint').addEventListener('click', () => { E.clearSelection(); state.selected = null; showHint(); });
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); state.selected = null; showHint(); });
 
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
@@ -924,25 +989,22 @@ const settingsShell = E.wireSettingsShell({
   onRenderNeeded: renderAll,
   extraSnapshot: () => ({ forceWinnable: pendingSettings.forceWinnable }),
   extraRestore: (snap) => {
-      pendingSettings.forceWinnable = snap.forceWinnable;
-      state.forceWinnable = snap.forceWinnable;
-      document.getElementById('tog-winnable').checked = snap.forceWinnable;
+    pendingSettings.forceWinnable = snap.forceWinnable;
+    state.forceWinnable = snap.forceWinnable;
+    document.getElementById('tog-winnable').checked = snap.forceWinnable;
   },
   extraOnOpen: () => {
-      pendingSettings.forceWinnable = state.forceWinnable;
-      document.getElementById('tog-winnable').checked = state.forceWinnable;
-
-      const stylesVersion = E.getStylesheetVersion() || 'unknown';
-      document.getElementById('version-info').textContent =
-        "Tut'sTomb.html v" + PAGE_VERSION + ' · engine.js v' + E.ENGINE_VERSION + ' · styles.css v' + stylesVersion;
+    pendingSettings.forceWinnable = state.forceWinnable;
+    document.getElementById('tog-winnable').checked = state.forceWinnable;
+    const stylesVersion = E.getStylesheetVersion() || 'unknown';
+    document.getElementById('version-info').textContent =
+      "Tut'sTomb.html v" + PAGE_VERSION + ' · engine.js v' + E.ENGINE_VERSION + ' · styles.css v' + stylesVersion;
   }
 });
-
-document.getElementById('tog-winnable').addEventListener('change', (e) => {
-    pendingSettings.forceWinnable = e.target.checked;
-    state.forceWinnable = e.target.checked;
+document.getElementById('tog-winnable').addEventListener('change', (e)=>{
+  pendingSettings.forceWinnable = e.target.checked;
+  state.forceWinnable = e.target.checked;
 });
-
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
   settingsShell.revert();
