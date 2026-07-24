@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.3
+    Last Updated v1.5
 
-   SCORE/TIME chips moved to a new secondary row under the header
-   (see #hud-secondary), out of .hud — with this title's length, .hud
-   had no room left for them and was wrapping them onto a second line
-   that broke out of the header's height. applyHudVisibility now also
-   collapses that row entirely when both chips are off.
+   Title's " - Classic Solitaire" wrapped in <span class="title-
+   suffix"> so it drops on phones (was pushing Help/Settings off the
+   header on narrow screens). SCORE/TIME chips moved into .bottombar,
+   flanking Undo/Hint/Auto Move at the far left/right edges.
 -->
 <html lang="en">
 <head>
@@ -36,7 +35,7 @@
   <div class="brand">
     <div class="crest" aria-hidden="true"></div>
     <div class="brand-text">
-      <h1>Klondike - Classic Solitaire</h1>
+      <h1>Klondike<span class="title-suffix"> - Classic Solitaire</span></h1>
       <div class="brand-actions">
         <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
@@ -48,10 +47,6 @@
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
-<div class="hud-secondary" id="hud-secondary" style="display:none">
-  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
-  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
-</div>
 
 <div class="stage">
   <div class="table-frame">
@@ -76,9 +71,13 @@
 <div class="hint-toast" id="hint-toast"></div>
 
 <div class="bottombar">
-  <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
-  <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
-  <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
 
 <div class="winmask" id="winmask">
@@ -564,11 +563,7 @@ function syncTimerInterval(){
   clearInterval(state.timerHandle);
   if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
 }
-function applyHudVisibility(){
-  document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
-  document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
-  document.getElementById('hud-secondary').style.display = (state.showScore || state.showTimer) ? 'flex':'none';
-}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
 function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
 
 /* =========================================================

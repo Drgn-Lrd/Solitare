@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.2
+    Last Updated v1.4
 
-   SCORE/TIME chips moved to a new secondary row under the header
-   (see #hud-secondary), out of .hud — GAME# stays in the main hud
-   row alongside Help/Settings as before. applyHudVisibility now also
-   collapses the secondary row entirely when both chips are off.
+   SCORE/TIME chips moved into .bottombar, flanking Undo/Hint/Auto
+   Move at the far left/right edges (was a separate row under the
+   header, which added its own layout — simpler to reuse the bottom
+   bar's existing separator and edges instead).
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -134,10 +134,6 @@
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
-<div class="hud-secondary" id="hud-secondary" style="display:none">
-  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
-  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
-</div>
 
 <!-- Free cells (left) + foundations (right) up top, 8 tableau columns
      below — all 52 cards dealt face-up immediately, no stock/waste. -->
@@ -157,9 +153,13 @@
 <div class="hint-toast" id="hint-toast"></div>
 
 <div class="bottombar">
-  <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
-  <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
-  <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
 
 <div class="winmask" id="winmask">
@@ -1157,11 +1157,7 @@ function syncTimerInterval(){
   clearInterval(state.timerHandle);
   if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
 }
-function applyHudVisibility(){
-  document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
-  document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
-  document.getElementById('hud-secondary').style.display = (state.showScore || state.showTimer) ? 'flex':'none';
-}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
 
 /* =========================================================
    DEAL / NEW GAME

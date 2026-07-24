@@ -1,12 +1,10 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.2
+    Last Updated v1.4
 
-   syncSquareButtons (v1.1) is now self-initializing instead of
-   something each game file has to call — renamed to
-   syncHomeButtonSize, runs itself on load and resize. No game file
-   needs to call anything for this anymore; it's genuinely shared the
-   way styles.css is, not wired up per-page.
+   applyHudVisibility no longer references #hud-secondary — that
+   element is gone (SCORE/TIME moved into .bottombar, see
+   styles.css), so this just toggles the two chips now.
  */
 /*
      Written by: Johnathon Largent
@@ -734,6 +732,17 @@ function wireSettingsShell(cfg){
 // self-initializing — runs itself on load and on resize, so no game
 // file needs to call anything for this; it's genuinely shared, the
 // way styles.css is, not something each page has to wire up.
+// The score/time chip visibility logic — identical in every game, so
+// it lives here instead of being copy-pasted into each one. Each game
+// still needs its own tiny wrapper (state is a per-file variable), but
+// the actual behavior is defined exactly once.
+function applyHudVisibility(state){
+  const scoreEl = document.getElementById('chip-score');
+  const timeEl = document.getElementById('chip-time');
+  if(scoreEl) scoreEl.style.display = state.showScore ? 'flex' : 'none';
+  if(timeEl) timeEl.style.display = state.showTimer ? 'flex' : 'none';
+}
+
 function syncHomeButtonSize(){
   const ref = document.getElementById('btn-newgame');
   if(!ref) return;
@@ -769,7 +778,8 @@ return {
   createUndoStack,
   showToast, pulse,
   startWinCascade,
-  wireSettingsShell
+  wireSettingsShell,
+  applyHudVisibility
 };
 
 })();
