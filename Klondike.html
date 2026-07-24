@@ -1,15 +1,12 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.8
+    Last Updated v2.2
 
-   Fixed the real bug behind the preview cascade's card order: it
-   shuffled the deck BEFORE grouping by suit, scrambling rank order
-   within each suit even though buildDeck() already produces Ace-to-
-   King order — no shuffle needed. Show Next redesigned: finds each
-   foundation's next-needed card wherever it sits (buried included),
-   counting a Thoughtful-revealed tableau card but never the stock
-   pile. Also gated behind a new settings toggle, default off.
+   Win cascade now also uses sequential:true — the next card doesn't
+   bounce out until the previous one actually hits the floor for the
+   first time, not a fixed timer. Matches the classic Solitaire
+   cascade's real timing instead of approximating it.
 -->
 <html lang="en">
 <head>
@@ -563,7 +560,8 @@ function launchCascade(){
       if(state.foundations[s][i]) cards.push({ card: state.foundations[s][i], sourceEl: document.getElementById('f-'+s) });
     }
   }
-  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
+  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 130, gravity: 0.28, bounceDamp: 0.65, trail: true, sequential: true });
 }
 let previewingWin = false;
 let previewCascadeLayer = null;
@@ -582,7 +580,8 @@ function previewWinScreen(){
       if(bySuit[s][i]) cards.push({ card: bySuit[s][i], sourceEl: document.getElementById('f-'+s) });
     }
   }
-  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 130, gravity: 0.28, bounceDamp: 0.65, trail: true, sequential: true });
   document.getElementById('win-sub').textContent = 'Preview — not a real win';
   document.getElementById('win-newgame').textContent = 'Close Preview';
   setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
@@ -784,9 +783,7 @@ document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
 document.getElementById('btn-automove').addEventListener('click', ()=>{ E.clearSelection(); autoMoveAll(); });
 document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
 document.getElementById('btn-shownext').addEventListener('click', ()=>{
-  const cards = findNextNeededCards();
-  const els = cards.map(c=>document.querySelector('.card[data-id="'+c.id+'"]')).filter(Boolean);
-  E.pulseAll(els, 1000);
+  E.pulseAll(findNextNeededHighlightTargets(), 1000);
 });
 // Every card currently one legal move away from a foundation — the
 // top of the waste pile and the top (face-up) card of each tableau
@@ -796,21 +793,43 @@ document.getElementById('btn-shownext').addEventListener('click', ()=>{
 // pile entirely (Thoughtful doesn't cover it either) and only counts
 // a tableau card if it's actually visible to the player right now
 // (face-up, or revealed via Thoughtful) — never a genuinely hidden one.
-function findNextNeededCards(){
-  const cards = [];
+// Returns DOM elements to highlight, not card objects — the stock
+// pile only ever renders a single generic top-card element (data-id
+// "stocktop", not the real card's id), so a needed card buried in
+// there can't be pointed at individually the way a waste/tableau card
+// can. In that case this highlights the stock pile itself instead:
+// "it's in here, cycle through to find it" — reasonable since running
+// through the whole stock is trivial anyway.
+function findNextNeededHighlightTargets(){
+  const els = [];
   for(const s of SUITS){
     const nextRankIdx = state.foundations[s].length;
     if(nextRankIdx >= RANKS.length) continue;
     const neededRank = RANKS[nextRankIdx];
-    const inWaste = state.waste.find(c=>c.suit===s && c.rank===neededRank);
-    if(inWaste){ cards.push(inWaste); continue; }
+
+    if(state.waste.some(c=>c.suit===s && c.rank===neededRank)){
+      const el = document.querySelector('#pile-waste .card');
+      if(el) els.push(el);
+      continue;
+    }
+    let foundInTableau = false;
     outer: for(let col=0; col<7; col++){
       for(const c of state.tableau[col]){
-        if(c.suit===s && c.rank===neededRank && (c.faceUp || state.thoughtful)){ cards.push(c); break outer; }
+        if(c.suit===s && c.rank===neededRank && (c.faceUp || state.thoughtful)){
+          const el = document.querySelector('.card[data-id="'+c.id+'"]');
+          if(el) els.push(el);
+          foundInTableau = true;
+          break outer;
+        }
       }
     }
+    if(foundInTableau) continue;
+    if(state.stock.some(c=>c.suit===s && c.rank===neededRank)){
+      const el = document.querySelector('#pile-stock .card');
+      if(el) els.push(el);
+    }
   }
-  return cards;
+  return els;
 }
 
 const confirmOverlay = document.getElementById('confirm-overlay');
