@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.1
+    Last Updated v1.2
 
-   Home button now gets its size (width/height) measured directly from
-   New Game's real rendered height — handled entirely inside
-   engine.js now (self-initializing, no call needed here) rather than
-   the CSS-only align-items:stretch + aspect-ratio:1 approach, which
-   wasn't reliably producing a true circle.
+   SCORE/TIME chips moved to a new secondary row under the header
+   (see #hud-secondary), out of .hud — GAME# stays in the main hud
+   row alongside Help/Settings as before. applyHudVisibility now also
+   collapses the secondary row entirely when both chips are off.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -131,12 +130,14 @@
   </div>
   <div class="hud">
     <div class="chip" id="game-number-chip" style="display:none"><span id="game-number-display"></span></div>
-    <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
-    <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
+<div class="hud-secondary" id="hud-secondary" style="display:none">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
 
 <!-- Free cells (left) + foundations (right) up top, 8 tableau columns
      below — all 52 cards dealt face-up immediately, no stock/waste. -->
@@ -1159,6 +1160,7 @@ function syncTimerInterval(){
 function applyHudVisibility(){
   document.getElementById('chip-score').style.display = state.showScore ? 'flex':'none';
   document.getElementById('chip-time').style.display = state.showTimer ? 'flex':'none';
+  document.getElementById('hud-secondary').style.display = (state.showScore || state.showTimer) ? 'flex':'none';
 }
 
 /* =========================================================
