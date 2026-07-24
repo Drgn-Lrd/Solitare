@@ -1,15 +1,14 @@
 /*
     engine.js
     Written by: Johnathon Largent
-    Version 2.5
+    Version 2.6
 
-   Found the real bug behind cards vanishing before they ever settled
-   into a trail: a card drifting past the left/right edge of the
-   viewport was just deleted outright, often before it had even
-   reached the floor once — especially likely with slower gravity,
-   which gives more time to drift sideways first. It now bounces off
-   the edges (same reflection idea already used for the floor) instead
-   of vanishing.
+   The missing "trail" wasn't just about settled cards staying put —
+   the classic cascade actually leaves copies of each card behind
+   along its ENTIRE bounce path, not just its final resting spot.
+   trail mode now periodically clones the card at its current position
+   every ~70ms while it's still falling/bouncing (.cascade-ghost),
+   which is what actually produces those dense arch shapes.
  */
 /* =========================================================================
    SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
@@ -51,7 +50,7 @@ window.SEngine = (function(){
 // what lets a settings modal show all three (page/engine/styles) at
 // once. getStylesheetVersion() reads a --stylesheet-version custom
 // property off :root; returns null if styles.css hasn't declared one.
-const ENGINE_VERSION = '2.5';
+const ENGINE_VERSION = '2.6';
 function getStylesheetVersion(){
   const v = getComputedStyle(document.documentElement).getPropertyValue('--stylesheet-version');
   return v ? v.trim().replace(/^['"]|['"]$/g, '') : null;
@@ -668,7 +667,10 @@ function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, 
   let bounces = 0;
   let firstBounceFired = false;
 
-  function frame(){
+  let lastGhostTime = 0;
+  const GHOST_INTERVAL = 70; // ms between trail copies left behind along the bounce path
+
+  function frame(now){
     vy += gravity;
     x += vx;
     y += vy;
@@ -699,6 +701,15 @@ function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, 
     else if(x > window.innerWidth - metrics.w){ x = window.innerWidth - metrics.w; vx = -vx*bounceDamp; }
     el.style.left = x+'px';
     el.style.top = y+'px';
+    if(trail && (now-lastGhostTime >= GHOST_INTERVAL)){
+      lastGhostTime = now;
+      const ghost = el.cloneNode(true);
+      ghost.classList.remove('cascade-card');
+      ghost.classList.add('cascade-ghost');
+      ghost.style.left = x+'px';
+      ghost.style.top = y+'px';
+      layer.appendChild(ghost);
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

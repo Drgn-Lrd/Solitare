@@ -2,12 +2,10 @@
 <!--
     Klondike.html
     Written by: Johnathon Largent
-    Version 2.4
+    Version 2.5
 
-   Added a version-info line to the settings pane (About section) —
-   shows this page's version, engine.js's, and styles.css's together,
-   reading engine.js's ENGINE_VERSION/getStylesheetVersion() plus a
-   local PAGE_VERSION constant.
+   Win dialog now wrapped in .winmask-modal (a small bounded box) —
+   see styles.css's changelog for why.
 -->
 <html lang="en">
 <head>
@@ -83,9 +81,11 @@
 </div>
 
 <div class="winmask" id="winmask">
-  <h2>You Win!</h2>
-  <p id="win-sub">Cleared in — </p>
-  <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  <div class="winmask-modal">
+    <h2>You Win!</h2>
+    <p id="win-sub">Cleared in — </p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  </div>
 </div>
 
 <div class="winmask" id="nomovesmask">
@@ -200,7 +200,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '2.4';
+const PAGE_VERSION = '2.5';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================

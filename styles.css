@@ -1,12 +1,13 @@
 /*
     styles.css
     Written by: Johnathon Largent
-    Version 2.1
+    Version 2.2
 
-   Declared --stylesheet-version on :root, readable from JS via
-   engine.js's getStylesheetVersion() — part of showing all three
-   file versions (page/engine/styles) together in each game's
-   settings modal.
+   #winmask (the "You Win!" dialog specifically) no longer dims the
+   whole screen — it was covering the cascade animation happening
+   behind it. New .winmask-modal is a small bounded box instead of a
+   full-screen takeover; #nomovesmask keeps the shared full dim since
+   there's no animation behind it to preserve a view of.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -23,7 +24,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.1';
+  --stylesheet-version: '2.2';
   --felt-1:#0e4432;
   --felt-2:#082c21;
   --wood-1:#7a5230;
@@ -428,10 +429,25 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
   opacity:0; pointer-events:none; transition: opacity .4s ease;
 }
 .winmask.show{ opacity:1; pointer-events:all; }
-.winmask h2{ font-size: clamp(28px,6vw,52px); color: var(--brass-light); letter-spacing:4px; font-variant:small-caps; margin:0; text-shadow:0 0 30px rgba(232,200,115,.5);}
-.winmask p{ color:#cfe6d8; letter-spacing:2px;}
+/* Win dialog specifically: no full-screen dim, so the cascade
+   animation stays fully visible behind it — just a small floating
+   box instead of a takeover. #nomovesmask (same .winmask base class)
+   keeps the shared dim above, since there's no animation behind it to
+   preserve a view of. */
+#winmask{ background: transparent; }
+.winmask-modal{
+  display:flex; flex-direction:column; align-items:center; gap:14px;
+  background: rgba(4,20,14,0.92);
+  border: 1px solid var(--panel-line);
+  border-radius: 18px;
+  padding: 24px 32px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.6);
+  max-width: min(90vw, 380px);
+}
+.winmask h2{ font-size: clamp(22px,5vw,34px); color: var(--brass-light); letter-spacing:4px; font-variant:small-caps; margin:0; text-shadow:0 0 30px rgba(232,200,115,.5);}
+.winmask p{ color:#cfe6d8; letter-spacing:2px; text-align:center;}
 #cascade-layer{ position:fixed; inset:0; z-index:150; overflow:hidden; pointer-events:none; }
-.cascade-card{ position:fixed; cursor:default; will-change: left, top; }
+.cascade-card, .cascade-ghost{ position:fixed; cursor:default; will-change: left, top; }
 
 /* =========================================================
    SETTINGS / DIALOGS
