@@ -25,7 +25,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '3.0';
+  --stylesheet-version: '2.10';
   /* Stored as bare "r,g,b" triplets (not full color values) so they can
      be dropped into rgba(var(--x), alpha) for the felt's transparency
      — rgba() with a var() alpha channel is old, well-supported syntax,
