@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 24 July 2026 @ 0100 EDT
+    Last Updated 24 July 2026 @ 0115 EDT
 
-   Removed the redundant "Solitaire" subtitle. Crest crop widened and
-   re-centered on the body (280x280px region at 180,130) rather than
-   just head/hands, and enlarged to 56px to span the full title+
-   button-row stack height. Home button is now an emoji contained in
-   its circle instead of an oversized SVG.
+   Crest crop shifted up (280x280px region now at 180,85) so his torso
+   sits centered vertically instead of toward the top of the circle.
+   The Home-above-New-Game stacking and Klondike's broken spade were
+   both shared-CSS bugs, fixed in styles.css this round — no other
+   changes needed here.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -43,15 +43,15 @@
   /* Crest: a circular crop of the same background photo (the prisoner
      gripping the bars), replacing the plain brass-circle + suit glyph.
      Measured directly against the actual images/FreeCell.webp
-     (900x491): crops the 280x280px region at (180,130) — a bit wider
-     than the first pass and centered on the body rather than just the
-     head/hands — via background-size/-position math, so it scales
-     correctly if the crest's own size ever changes rather than
-     needing a separate cropped image file. */
+     (900x491): crops the 280x280px region at (180,85), shifted up from
+     the first pass so his torso sits centered vertically in the circle
+     instead of toward the top — via background-size/-position math, so
+     it scales correctly if the crest's own size ever changes rather
+     than needing a separate cropped image file. */
   .brand .crest{
     background-image: url('images/FreeCell.webp');
     background-size: 321.43% 175.36%;
-    background-position: 29.03% 61.61%;
+    background-position: 29.03% 40.28%;
     box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008, inset 0 0 0 2px var(--brass);
   }
 
