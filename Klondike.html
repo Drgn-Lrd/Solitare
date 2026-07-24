@@ -1,31 +1,45 @@
 <!DOCTYPE html>
 <!--
-  LAST EDIT: Migrated Klondike onto the shared engine.js/styles.css
-  (same architecture as FreeCell) instead of its own standalone copies
-  of the rendering/drag-drop/undo/settings-shell code. Rules, hint
-  logic, scoring, and the win cascade are ported over unchanged from
-  the previous standalone build — only the plumbing changed. Also added
-  a Home link (under the title, next to New Game) to the new index.html
-  picker page.
+     Written by: Johnathon Largent
+    Last Updated 24 July 2026 @ 0130 EDT
+
+   Header brought in line with the shared pattern now used across the
+   suite: removed the redundant "Solitaire" subtitle, Home is now a
+   circular emoji button before New Game instead of a text link, and
+   the crest now layers the ornate ace-of-spades artwork over the
+   brass gradient instead of a plain "♠" text glyph.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Klondike</title>
+<link rel="preload" as="image" href="images/ace-of-spades-crest.webp">
 <link rel="stylesheet" href="styles.css">
+<style>
+  /* Klondike-only crest: layers the ornate ace-of-spades artwork over
+     the shared brass-gradient circle (see .brand .crest in styles.css)
+     instead of the plain "♠" text glyph it used to hold. The image is
+     pre-cropped/alpha-transparent, sized to 68% so the brass shows
+     through around the edges like a medallion. */
+  .brand .crest{
+    background-image: url('images/ace-of-spades-crest.webp'), radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
+    background-size: 68%, cover;
+    background-position: center 46%, center;
+    background-repeat: no-repeat, no-repeat;
+  }
+</style>
 </head>
 <body>
 
 <header>
   <div class="brand">
-    <div class="crest">♠</div>
+    <div class="crest" aria-hidden="true"></div>
     <div class="brand-text">
       <h1>Klondike</h1>
-      <small>Solitaire</small>
       <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
-        <a class="textbtn newgame-btn" href="index.html">Home</a>
       </div>
     </div>
   </div>
