@@ -2,17 +2,34 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.1
+    Version 1.2
 
-   Reworked the adventurer track: three distinct obstacle reactions
-   (duck under a falling boulder, step back from an arrow, jump a
-   snake/scorpion) instead of one generic dodge, plus lit checkpoint
-   markers at each row-clear point, a filling progress trail, and a
-   dust-puff run cycle. File itself is now built from Klondike.html's
-   structure/conventions (header, modals, settings shell, undo, hint,
-   changelog format) rather than the earlier Pyramid.html reference
-   draft — that file was a rules sketch only, never meant as the
-   architectural baseline.
+   Round of playtest fixes: (1) fitBoard was using engine.js's default
+   0.183 tableau-overlap fraction to size cards, but the pyramid rows
+   actually overlap at 0.55 — that mismatch under-estimated the real
+   board height and oversized cards on wide/desktop screens, spilling
+   past the bottom bar (mobile "worked" only because width, not
+   height, was the binding constraint there). Now passes the real
+   0.55 overlap so height is estimated correctly on any screen. (2)
+   Crest now shows the whole badge image (scaled down, not cropped)
+   with a solid fill matching its own teal so it reads as one clean
+   medallion instead of corner-cropped art. (3) Adventurer sprite
+   redrawn with real gradients/shading (fedora, jacket, satchel, whip
+   coil) instead of flat blocks. (4) The gold "path" glow is now an
+   actual ground-level strip (not the old full-height bar, which also
+   was never being resized — its width was never updated after being
+   built, so it silently sat frozen at 2% the whole game). (5) The
+   arrow obstacle is replaced with a swinging blade that arcs in front
+   of him rather than traveling the path; added a ground-pit obstacle
+   (jump, or a bonus whip-swing across it). (6) All track animations
+   slowed down. (7) Fixed the real selection bug: E.clearSelection()
+   only clears DOM highlight state when engine.js's OWN internal
+   click-to-move selection is active, which this game never uses —
+   so it was always a no-op here, leaving mismatched pairs stuck
+   highlighted. Selection now clears via this file's own
+   clearCardSelection(). (8) Chest win cinematic rebuilt as a real
+   hinged lid (3D rotate) with a light burst and sparkle particles
+   around the treasure instead of a flat two-frame icon swap.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -24,21 +41,23 @@
        row 6 = 7 cards at the base), the remaining 24 face-down in the
        stock.
     2. RULES — tap two exposed (uncovered) cards that sum to 13 to
-       clear them, or a lone King (worth 13) by itself. A pyramid card
-       is exposed once both cards directly below it (row+1, same/+1
-       col) are already cleared. No drag/drop — this is click-to-pair,
-       not pile-to-pile movement, so engine.js's initInteractions
-       pipeline isn't used here; card clicks are wired directly.
-    3. STOCK — "relaxed" rules: the waste can be recycled back into the
-       stock and redrawn indefinitely, never truly running out.
-    4. ADVENTURER TRACK — replaces Klondike's plain HUD chips with a
-       header-adjacent progress bar. Every cleared pyramid card nudges
-       the adventurer forward proportionally (28 cards = the full
-       track); clearing an entire pyramid ROW (28→21→15→10→6→3→1 cards
-       left, i.e. 7/13/18/22/25/27 cleared) also spawns one of three
-       obstacles, each with its own reaction animation. Reaching 0
-       cards left plays a chest-opening/treasure-reveal cinematic
-       (see handleWin) instead of engine.js's normal win cascade.
+       clear them, or a lone King (worth 13) by itself. No drag/drop —
+       this is click-to-pair, not pile-to-pile movement, so engine.js's
+       initInteractions pipeline isn't used; card clicks are wired
+       directly, and this file owns its OWN selection-highlight
+       clearing (clearCardSelection) rather than engine.js's, since
+       that one only operates on engine.js's unused click-to-move state.
+    3. STOCK — "relaxed" rules: the waste recycles back into the stock
+       and can be redrawn indefinitely.
+    4. ADVENTURER TRACK — a header-adjacent progress bar. Every cleared
+       pyramid card nudges the adventurer forward proportionally (28
+       cards = the full track) with a run-bob and dust puff. Clearing a
+       full pyramid ROW (7/13/18/22/25/27 cleared) spawns one of five
+       obstacles, each with its own reaction: duck a falling boulder,
+       step back from a swinging blade, jump a snake/scorpion, or jump
+       (occasionally whip-swing) a ground pit. Reaching 0 cards left
+       plays the chest cinematic (see handleWin) instead of engine.js's
+       normal win cascade.
     5. FORCE WINNABLE — a DFS solver (isDeckWinnable) with memoization,
        tried against up to 500 shuffles, guarantees a clearable deal
        when the Settings toggle is on.
@@ -53,9 +72,6 @@
 <style>
   /* =========================================================
      THEME OVERRIDES — Egyptian Tomb / Indiana Jones vibe.
-     Only the shared color variables change here; the crest/chip/
-     button positions and sizes stay whatever styles.css already
-     defines, same as every other game.
      ========================================================= */
   :root {
     --felt-1-rgb: 74,55,34;      /* #4a3722 sandstone */
@@ -77,26 +93,20 @@
     background: radial-gradient(ellipse at 50% -10%, #2c2013, #0a0704 65%);
   }
 
-  /* Crest: the attached Tut's Tomb artwork (already teal-backed, so
-     it reads as a turquoise-and-gold medallion — an authentic Egyptian
-     pairing) dropped into the shared brass crest circle, same
-     treatment as Klondike's ace-of-spades crest. */
+  /* Crest: the whole badge image, scaled DOWN (not cropped) so nothing
+     is lost off the edges — the surrounding ring is filled with the
+     same teal the artwork already uses, so the seam is invisible
+     rather than looking like a cut-out. */
   .brand .crest {
-    background-image: url("images/Tut'sTomb.webp"), radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
-    background-size: cover, cover;
-    background-position: center, center;
-    background-repeat: no-repeat, no-repeat;
+    background-color: #008081;
+    background-image: url("images/Tut'sTomb.webp");
+    background-size: 72%;
+    background-position: center;
+    background-repeat: no-repeat;
   }
 
   /* =========================================================
      ADVENTURER TRACK
-     Sits under the header, above the table. A sand-toned strip with:
-       - a gold "sand trail" fill showing overall progress
-       - six lit/unlit checkpoint torches, one per pyramid row cleared
-       - the adventurer runner (outer div = position, inner div = the
-         run-bob / duck / step-back / jump reaction, kept separate so
-         the two transitions never fight each other)
-       - a chest at the far end that glows brighter as he nears it
      ========================================================= */
   #adventure-track {
     height: 56px;
@@ -111,12 +121,17 @@
     box-shadow: 0 4px 15px rgba(0,0,0,0.8), inset 0 -10px 20px -10px rgba(0,0,0,0.6);
   }
 
+  /* Ground-level "polished floor" glow instead of a full-height bar —
+     a slim strip right at foot level that grows as he advances. */
   #adventure-fill {
     position: absolute;
-    left: 0; top: 0; bottom: 0;
+    left: 0; bottom: 3px;
+    height: 9px;
     width: 2%;
-    background: linear-gradient(90deg, rgba(212,175,55,0) 0%, rgba(212,175,55,0.28) 70%, rgba(248,229,160,0.4) 100%);
-    transition: width 0.5s ease-out;
+    border-radius: 2px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(248,229,160,0.85) 35%, rgba(170,134,33,0.55) 100%);
+    box-shadow: 0 0 14px 3px rgba(248,229,160,0.55), inset 0 1px 0 rgba(255,255,255,0.6);
+    transition: width 0.85s ease-out;
     z-index: 0;
     pointer-events: none;
   }
@@ -148,11 +163,11 @@
 
   #adventurer {
     position: absolute;
-    bottom: 4px;
+    bottom: 6px;
     left: 2%;
-    font-size: 30px;
+    font-size: 34px;
     line-height: 1;
-    transition: left 0.55s cubic-bezier(0.3,0.1,0.2,1);
+    transition: left 0.85s cubic-bezier(0.3,0.1,0.2,1);
     z-index: 3;
     transform: translateX(-50%);
   }
@@ -163,7 +178,7 @@
 
   #chest {
     position: absolute;
-    bottom: 6px;
+    bottom: 8px;
     right: 3%;
     font-size: 30px;
     line-height: 1;
@@ -181,15 +196,14 @@
     background: rgba(212,175,55,0.4);
     z-index: 1;
     pointer-events: none;
-    animation: dustFade 0.6s ease-out forwards;
+    animation: dustFade 0.8s ease-out forwards;
   }
-
   @keyframes dustFade {
     0%   { opacity: 0.55; transform: translateX(-50%) scale(0.6) translateY(0); }
     100% { opacity: 0;    transform: translateX(-50%) scale(1.5) translateY(6px); }
   }
-  /* Idle run-cycle bob — plays whenever the adventurer advances
-     without hitting an obstacle threshold. */
+
+  /* Idle run-cycle bob — plays when he advances without an obstacle. */
   @keyframes runBob {
     0%, 100% { transform: translateY(0) rotate(0deg); }
     25%      { transform: translateY(-4px) rotate(-4deg); }
@@ -200,24 +214,37 @@
   @keyframes jumpAnim {
     0%, 100% { transform: translateY(0) rotate(0deg); }
     45%      { transform: translateY(-20px) rotate(-6deg); }
-    100%     { transform: translateY(0) rotate(0deg); }
   }
-  /* Duck — something falling from above (a loosed boulder). */
+  /* Duck — a falling boulder. */
   @keyframes duckAnim {
     0%, 100% { transform: scaleY(1) translateY(0); }
     35%      { transform: scaleY(0.55) translateY(11px); }
     65%      { transform: scaleY(0.55) translateY(11px); }
   }
-  /* Step back — a frontal threat (a loosed arrow). */
+  /* Step back — a blade swinging past in front of him. */
   @keyframes stepbackAnim {
     0%, 100% { transform: translateX(0) rotate(0deg); }
     35%      { transform: translateX(-15px) rotate(-9deg); }
     65%      { transform: translateX(-15px) rotate(-9deg); }
   }
-  #adventurer-inner.running  { animation: runBob 0.55s ease-in-out; }
-  #adventurer-inner.jump     { animation: jumpAnim 0.6s ease; }
-  #adventurer-inner.duck     { animation: duckAnim 0.65s ease; }
-  #adventurer-inner.stepback { animation: stepbackAnim 0.6s ease; }
+  /* Big jump — clearing a ground pit on foot. */
+  @keyframes bigJumpAnim {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50%      { transform: translateY(-34px) rotate(-8deg); }
+  }
+  /* Whip-swing — the bonus: grabs a high point and arcs across the pit. */
+  @keyframes whipSwingAnim {
+    0%   { transform: translate(0,0) rotate(0deg); }
+    35%  { transform: translate(14px,-26px) rotate(18deg); }
+    65%  { transform: translate(30px,-8px) rotate(-8deg); }
+    100% { transform: translate(0,0) rotate(0deg); }
+  }
+  #adventurer-inner.running   { animation: runBob 0.8s ease-in-out; }
+  #adventurer-inner.jump      { animation: jumpAnim 0.9s ease; }
+  #adventurer-inner.duck      { animation: duckAnim 1s ease; }
+  #adventurer-inner.stepback  { animation: stepbackAnim 1s ease; }
+  #adventurer-inner.bigjump   { animation: bigJumpAnim 1.3s ease; }
+  #adventurer-inner.whipswing { animation: whipSwingAnim 1.3s ease-in-out; }
 
   .obstacle {
     position: absolute;
@@ -226,6 +253,65 @@
     z-index: 2;
     filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));
     transform: translateX(-50%);
+  }
+
+  /* Swinging blade trap — hangs and arcs in place rather than
+     traveling down the path. */
+  .blade-rig {
+    position: absolute;
+    top: 2px; width: 2px; height: 50px;
+    transform: translateX(-50%);
+    transform-origin: top center;
+    animation: bladeSwing 1.6s ease-in-out;
+    z-index: 2;
+  }
+  .blade-rig .rod {
+    position: absolute; top: 0; left: -1px;
+    width: 2px; height: 32px;
+    background: linear-gradient(180deg, #3a2a16, #111);
+  }
+  .blade-rig .blade {
+    position: absolute; top: 28px; left: -9px;
+    width: 18px; height: 28px;
+    background: linear-gradient(135deg, #f2f2f2, #9a9a9a 55%, #555);
+    clip-path: polygon(50% 0%, 100% 32%, 62% 100%, 38% 100%, 0% 32%);
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));
+  }
+  @keyframes bladeSwing {
+    0%   { transform: translateX(-50%) rotate(-55deg); }
+    50%  { transform: translateX(-50%) rotate(55deg); }
+    100% { transform: translateX(-50%) rotate(-55deg); }
+  }
+
+  /* Ground pit — a static hazard he has to clear rather than something
+     flying at him. */
+  .pit-trap {
+    position: absolute;
+    bottom: 2px;
+    width: 36px; height: 14px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, #000 0%, #1a0f05 55%, transparent 75%);
+    box-shadow: inset 0 5px 6px rgba(0,0,0,0.85);
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    z-index: 1;
+  }
+  .pit-trap.show { opacity: 1; }
+
+  .whip-rope {
+    position: absolute;
+    top: 0; height: 40px; width: 2px;
+    background: linear-gradient(180deg, #5c430a, #2a1a0a);
+    transform-origin: top center;
+    animation: ropeSwing 1.3s ease-in-out;
+    z-index: 2;
+  }
+  @keyframes ropeSwing {
+    0%   { transform: rotate(-10deg); }
+    40%  { transform: rotate(35deg); }
+    70%  { transform: rotate(10deg); }
+    100% { transform: rotate(0deg); }
   }
 
   /* =========================================================
@@ -256,8 +342,9 @@
   }
 
   /* =========================================================
-     CINEMATIC WIN OVERLAY — chest opens, treasure reveal, then
-     the normal winmask. Replaces engine.js's card cascade.
+     CINEMATIC WIN OVERLAY — hinged chest lid + light burst +
+     sparkle treasure reveal, then the normal winmask. Replaces
+     engine.js's card cascade.
      ========================================================= */
   #cinematic-overlay {
     position: fixed; inset: 0;
@@ -271,7 +358,33 @@
   }
   #cinematic-overlay.active { display: flex; }
   #cinematic-overlay.fade-in { opacity: 1; }
-  #cinematic-hero { font-size: 6rem; margin-bottom: 20px; display: flex; gap: 30px; align-items: center; }
+  #cinematic-hero { margin-bottom: 20px; display: flex; gap: 30px; align-items: flex-end; font-size: 6rem; }
+  #cinematic-hero svg { display: block; }
+
+  #chest-rig { position: relative; width: 200px; height: 150px; perspective: 480px; }
+  #chest-body-wrap { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 190px; z-index: 1; }
+  #chest-lid-wrap {
+    position: absolute; left: 50%; bottom: 66px; width: 190px;
+    transform: translateX(-50%) rotateX(0deg);
+    transform-origin: 50% 100%;
+    transform-style: preserve-3d;
+    transition: transform 1.1s cubic-bezier(.3,1.5,.4,1);
+    z-index: 2;
+  }
+  #chest-rig.open #chest-lid-wrap { transform: translateX(-50%) rotateX(-120deg); }
+  #chest-glow {
+    position: absolute; left: 50%; bottom: 70px;
+    width: 10px; height: 10px;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,241,181,0.95), rgba(248,229,160,0.45) 45%, transparent 72%);
+    opacity: 0;
+    transition: opacity 0.5s ease, width 1.1s ease, height 1.1s ease;
+    z-index: 0; pointer-events: none;
+  }
+  #chest-rig.open #chest-glow { opacity: 1; width: 240px; height: 200px; }
+
+  #treasure-wrap { position: relative; }
   #treasure-reveal {
     font-size: 0;
     opacity: 0;
@@ -283,6 +396,20 @@
     opacity: 1;
     filter: drop-shadow(0 0 60px var(--brass-light));
     transform: scale(1.2) rotate(360deg);
+  }
+  .sparkle {
+    position: absolute; left: 50%; top: 50%;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--brass-light);
+    box-shadow: 0 0 10px 3px rgba(248,229,160,0.9);
+    opacity: 0;
+    transform: translate(-50%,-50%);
+    animation: sparkleFly 1.5s ease-out forwards;
+  }
+  @keyframes sparkleFly {
+    0%   { opacity: 0; transform: translate(-50%,-50%) rotate(var(--ang)) translateX(0) scale(0.4); }
+    25%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%,-50%) rotate(var(--ang)) translateX(var(--dist)) scale(1); }
   }
 </style>
 </head>
@@ -338,7 +465,7 @@
 
 <div id="cinematic-overlay">
   <div id="cinematic-hero"></div>
-  <div id="treasure-reveal"></div>
+  <div id="treasure-wrap"><div id="treasure-reveal"></div></div>
 </div>
 
 <div class="winmask" id="winmask">
@@ -368,6 +495,7 @@
       <li>Select two exposed cards that add up to <b>13</b> to remove them.</li>
       <li>Valid pairs: 10+3, J+2, Q+A, etc.</li>
       <li><b>Kings</b> are worth 13 and can be removed by themselves with a single tap.</li>
+      <li>Tap a selected card again to deselect it.</li>
       <li>Tap the draw pile to cycle through cards. <b>Relaxed Rules:</b> you can cycle the deck indefinitely.</li>
       <li>Clear a full pyramid row to send the adventurer past an obstacle; clear the whole pyramid to reach the chest and claim the treasure!</li>
     </ul>
@@ -431,57 +559,113 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.1';
+const PAGE_VERSION = '1.2';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
-// cards respectively) finishes — these double as the adventurer's
-// checkpoint positions and the moments an obstacle appears. The 28th
-// (final, single peak) card isn't in this list — clearing it is the win,
-// handled separately by handleWin().
+// cards respectively) finishes — these double as checkpoint positions
+// and the moments an obstacle appears. The 28th (final peak) card isn't
+// here — clearing it is the win, handled separately by handleWin().
 const ROW_CLEAR_THRESHOLDS = [7, 13, 18, 22, 25, 27];
 
-// Each obstacle has its own reaction, so "dodging" actually reads as
-// three different things happening rather than one generic hop.
+// Each obstacle has its own reaction so "dodging" reads as several
+// different things happening, not one generic hop. 'pit' has a chance
+// to upgrade to the bonus whip-swing (see pickObstacle).
 const OBSTACLES = [
-  { icon: '🪨', reaction: 'duck',     msg: 'Ducked a falling boulder!' },
-  { icon: '🏹', reaction: 'stepback', msg: 'Stepped back from a loosed arrow!' },
-  { icon: '🐍', reaction: 'jump',     msg: 'Leapt over a coiled cobra!' },
-  { icon: '🦂', reaction: 'jump',     msg: 'Hopped clear of a scorpion!' }
+  { type: 'boulder',  icon: '🪨', reaction: 'duck',     msg: 'Ducked a falling boulder!' },
+  { type: 'blade',    icon: null, reaction: 'stepback', msg: 'Dodged a swinging blade trap!' },
+  { type: 'snake',    icon: '🐍', reaction: 'jump',     msg: 'Leapt over a coiled cobra!' },
+  { type: 'scorpion', icon: '🦂', reaction: 'jump',     msg: 'Hopped clear of a scorpion!' },
+  { type: 'pit',      icon: null, reaction: 'bigjump',  msg: 'Jumped a crumbling pit!' }
 ];
+function pickObstacle(){
+  const base = OBSTACLES[Math.floor(Math.random()*OBSTACLES.length)];
+  if(base.type === 'pit' && Math.random() < 0.4){
+    return { type:'pit', reaction:'whipswing', msg:'Swung across the pit on his whip!' };
+  }
+  return base;
+}
 
 /* =========================================================
-   SVG ASSETS
+   SVG ASSETS — adventurer (with gradients/shading) + a two-piece
+   chest (body + lid) so the lid can hinge open via CSS 3D transform.
    ========================================================= */
-const SVG_ADVENTURER = `<svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;">
-  <rect x="35" y="40" width="30" height="35" fill="#8b5a2b" rx="5"/>
-  <rect x="38" y="70" width="10" height="25" fill="#4a3b2c" rx="4"/>
-  <rect x="52" y="70" width="10" height="25" fill="#4a3b2c" rx="4"/>
-  <circle cx="50" cy="28" r="14" fill="#f4c29f"/>
-  <ellipse cx="50" cy="18" rx="22" ry="5" fill="#654321"/>
-  <path d="M 38 18 C 38 2, 62 2, 62 18 Z" fill="#654321"/>
-  <rect x="38" y="15" width="24" height="3" fill="#332211"/>
-  <path d="M 30 50 Q 15 50, 15 65 Q 15 75, 25 75" fill="none" stroke="#4a2e15" stroke-width="3"/>
+const SVG_ADVENTURER = `<svg viewBox="0 0 100 120" width="1em" height="1.2em" style="vertical-align:middle;">
+  <defs>
+    <linearGradient id="jacketGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c9a24b"/>
+      <stop offset="100%" stop-color="#8b6b2e"/>
+    </linearGradient>
+    <linearGradient id="hatGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7a5230"/>
+      <stop offset="100%" stop-color="#4a2f18"/>
+    </linearGradient>
+  </defs>
+  <path d="M 68 78 a 9 9 0 1 1 0.1 0" fill="none" stroke="#5c430a" stroke-width="3"/>
+  <rect x="38" y="80" width="10" height="28" rx="4" fill="#4a3b2c"/>
+  <rect x="52" y="80" width="10" height="28" rx="4" fill="#3a2e21"/>
+  <rect x="36" y="104" width="14" height="8" rx="2" fill="#2a1e12"/>
+  <rect x="50" y="104" width="14" height="8" rx="2" fill="#241a0d"/>
+  <path d="M 32 46 Q 50 36 68 46 L 66 84 Q 50 92 34 84 Z" fill="url(#jacketGrad)" stroke="#5c430a" stroke-width="1.5"/>
+  <path d="M 42 48 L 46 84" stroke="#5c430a" stroke-width="1.5" fill="none"/>
+  <path d="M 58 48 L 54 84" stroke="#5c430a" stroke-width="1.5" fill="none"/>
+  <rect x="34" y="68" width="34" height="6" fill="#3a2a16"/>
+  <circle cx="50" cy="71" r="2.4" fill="#d4af37"/>
+  <path d="M 30 58 L 42 66 L 36 78 L 24 68 Z" fill="#5c430a" stroke="#2a1e12" stroke-width="1"/>
+  <path d="M 32 50 Q 20 56 18 70" stroke="url(#jacketGrad)" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <path d="M 68 50 Q 80 54 78 66" stroke="url(#jacketGrad)" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <circle cx="50" cy="30" r="15" fill="#f0c19a"/>
+  <path d="M 36 22 Q 50 4 64 22 Q 68 26 64 28 L 36 28 Q 32 26 36 22 Z" fill="url(#hatGrad)"/>
+  <ellipse cx="50" cy="27" rx="26" ry="5.5" fill="url(#hatGrad)"/>
+  <rect x="32" y="24" width="36" height="4" fill="#241a0d"/>
+  <circle cx="45" cy="32" r="1.6" fill="#3a2a16"/>
+  <circle cx="55" cy="32" r="1.6" fill="#3a2a16"/>
+  <path d="M 45 38 Q 50 40 55 38" stroke="#a05a2c" stroke-width="1.4" fill="none" stroke-linecap="round"/>
 </svg>`;
-const SVG_CHEST_CLOSED = `<svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;">
-  <rect x="15" y="40" width="70" height="45" fill="#8b5a2b" rx="5"/>
-  <path d="M 15 45 C 15 15, 85 15, 85 45 Z" fill="#7a4a20"/>
-  <rect x="15" y="42" width="70" height="6" fill="#d4af37"/>
-  <rect x="25" y="25" width="8" height="60" fill="#d4af37"/>
-  <rect x="67" y="25" width="8" height="60" fill="#d4af37"/>
-  <circle cx="50" cy="45" r="8" fill="#ffd700"/>
-  <circle cx="50" cy="45" r="3" fill="#333"/>
+
+function buildChestGrainLines(){
+  let out = '';
+  for(let i=0;i<8;i++){
+    const x = 16 + i*15;
+    out += '<line x1="'+x+'" y1="32" x2="'+x+'" y2="82" stroke="#3a2510" stroke-width="1.5" opacity="0.5"/>';
+  }
+  return out;
+}
+const SVG_CHEST_BODY = `<svg viewBox="0 0 140 90" width="100%" style="display:block;">
+  <defs>
+    <linearGradient id="woodBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#9c6b34"/>
+      <stop offset="100%" stop-color="#5c3d1c"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="30" width="128" height="54" rx="8" fill="url(#woodBody)" stroke="#2a1a0a" stroke-width="2"/>
+  ${buildChestGrainLines()}
+  <rect x="6" y="30" width="128" height="6" fill="#d4af37"/>
+  <rect x="6" y="78" width="128" height="6" fill="#d4af37"/>
+  <rect x="14" y="20" width="10" height="64" fill="#d4af37"/>
+  <rect x="116" y="20" width="10" height="64" fill="#d4af37"/>
+  <circle cx="70" cy="46" r="10" fill="#ffd700" stroke="#8a6a26" stroke-width="2"/>
+  <circle cx="70" cy="46" r="4" fill="#3a2a08"/>
 </svg>`;
-const SVG_CHEST_OPEN = `<svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;">
-  <rect x="15" y="55" width="70" height="35" fill="#8b5a2b" rx="5"/>
-  <path d="M 15 55 L 25 20 L 75 20 L 85 55 Z" fill="#7a4a20"/>
-  <rect x="15" y="55" width="70" height="6" fill="#d4af37"/>
-  <rect x="25" y="55" width="8" height="35" fill="#d4af37"/>
-  <rect x="67" y="55" width="8" height="35" fill="#d4af37"/>
-  <polygon points="25,20 33,20 33,55 25,55" fill="#d4af37"/>
-  <polygon points="67,20 75,20 75,55 67,55" fill="#d4af37"/>
-  <rect x="42" y="20" width="16" height="8" fill="#ffd700"/>
+const SVG_CHEST_LID = `<svg viewBox="0 0 140 66" width="100%" style="display:block;">
+  <defs>
+    <linearGradient id="woodLid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b8823f"/>
+      <stop offset="100%" stop-color="#6b4720"/>
+    </linearGradient>
+  </defs>
+  <path d="M6,60 C6,20 134,20 134,60 L134,66 L6,66 Z" fill="url(#woodLid)" stroke="#2a1a0a" stroke-width="2"/>
+  <path d="M6,60 C6,20 134,20 134,60" fill="none" stroke="#d4af37" stroke-width="4"/>
+  <rect x="14" y="46" width="10" height="18" fill="#d4af37"/>
+  <rect x="116" y="46" width="10" height="18" fill="#d4af37"/>
 </svg>`;
+function buildChestRig(){
+  return '<div id="chest-rig">'
+    + '<div id="chest-glow"></div>'
+    + '<div id="chest-body-wrap">'+SVG_CHEST_BODY+'</div>'
+    + '<div id="chest-lid-wrap">'+SVG_CHEST_LID+'</div>'
+    + '</div>';
+}
 
 /* =========================================================
    GAME STATE
@@ -504,10 +688,10 @@ const pendingSettings = { showTimer:false, showScore:false, forceWinnable:false,
 const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 
 /* =========================================================
-   ADVENTURER TRACK SETUP
+   ADVENTURER TRACK
    Checkpoint markers are generated (not hardcoded in the HTML) so
    their positions always match ROW_CLEAR_THRESHOLDS exactly — same
-   formula used to move the adventurer.
+   formula used to move the adventurer and fill the ground glow.
    ========================================================= */
 function trackLeftPct(cleared){ return 2 + ((cleared / 28) * 90); }
 
@@ -529,9 +713,7 @@ function updateCheckpoints(){
 
 document.addEventListener('DOMContentLoaded', ()=>{
   const advEl = document.getElementById('adventurer-inner');
-  const chestEl = document.getElementById('chest');
   if(advEl) advEl.innerHTML = SVG_ADVENTURER;
-  if(chestEl) chestEl.innerHTML = SVG_CHEST_CLOSED;
   buildCheckpoints();
 });
 
@@ -541,58 +723,98 @@ function spawnDust(leftPct){
   dust.className = 'dust-puff';
   dust.style.left = leftPct + '%';
   track.appendChild(dust);
-  setTimeout(()=> dust.remove(), 650);
+  setTimeout(()=> dust.remove(), 850);
 }
+
+function resetAdventurerAnim(inner){
+  inner.classList.remove('running','jump','duck','stepback','bigjump','whipswing');
+  void inner.offsetWidth;
+}
+function playReaction(reaction, holdMs){
+  const inner = document.getElementById('adventurer-inner');
+  resetAdventurerAnim(inner);
+  inner.classList.add(reaction);
+  setTimeout(()=> inner.classList.remove(reaction), holdMs);
+}
+
 function spawnObstacle(obstacle, targetLeft){
   const track = document.getElementById('adventure-track');
+  const toastEl = document.getElementById('hint-toast');
+
+  if(obstacle.type === 'blade'){
+    const rig = document.createElement('div');
+    rig.className = 'blade-rig';
+    rig.style.left = targetLeft + '%';
+    rig.innerHTML = '<div class="rod"></div><div class="blade"></div>';
+    track.appendChild(rig);
+    setTimeout(()=> rig.remove(), 1700);
+    setTimeout(()=> playReaction(obstacle.reaction, 1050), 620);
+    E.showToast(toastEl, obstacle.msg);
+    return;
+  }
+
+  if(obstacle.type === 'pit'){
+    const pit = document.createElement('div');
+    pit.className = 'pit-trap';
+    pit.style.left = targetLeft + '%';
+    track.appendChild(pit);
+    requestAnimationFrame(()=> requestAnimationFrame(()=> pit.classList.add('show')));
+
+    if(obstacle.reaction === 'whipswing'){
+      const rope = document.createElement('div');
+      rope.className = 'whip-rope';
+      rope.style.left = (targetLeft - 6) + '%';
+      track.appendChild(rope);
+      setTimeout(()=> rope.remove(), 1500);
+    }
+
+    setTimeout(()=> playReaction(obstacle.reaction, 1350), 300);
+    setTimeout(()=>{ pit.classList.remove('show'); setTimeout(()=> pit.remove(), 500); }, 1700);
+    E.showToast(toastEl, obstacle.msg);
+    return;
+  }
+
+  // boulder / snake / scorpion — travels toward him along the path
   const el = document.createElement('div');
   el.className = 'obstacle';
   el.textContent = obstacle.icon;
   el.style.left = (targetLeft + 22) + '%';
-  el.style.transition = 'left 1.1s linear, opacity 0.3s ease-in 0.9s';
+  el.style.transition = 'left 1.7s linear, opacity 0.3s ease-in 1.3s';
   track.appendChild(el);
   requestAnimationFrame(()=> requestAnimationFrame(()=>{
     el.style.left = (targetLeft - 4) + '%';
     el.style.opacity = '0';
   }));
-  setTimeout(()=> el.remove(), 1300);
-
-  const inner = document.getElementById('adventurer-inner');
-  setTimeout(()=>{
-    inner.classList.remove('running','jump','duck','stepback');
-    void inner.offsetWidth;
-    inner.classList.add(obstacle.reaction);
-    setTimeout(()=> inner.classList.remove(obstacle.reaction), 900);
-  }, 650);
-
-  E.showToast(document.getElementById('hint-toast'), obstacle.msg);
+  setTimeout(()=> el.remove(), 2000);
+  setTimeout(()=> playReaction(obstacle.reaction, 950), 1000);
+  E.showToast(toastEl, obstacle.msg);
 }
 
 function triggerAdventurerProgress(cleared){
   const adventurer = document.getElementById('adventurer');
-  const inner = document.getElementById('adventurer-inner');
   const chest = document.getElementById('chest');
   const targetLeft = trackLeftPct(cleared);
   const priorLeft = trackLeftPct(cleared - 1);
 
   spawnDust(priorLeft);
   adventurer.style.left = targetLeft + '%';
+  document.getElementById('adventure-fill').style.width = targetLeft + '%';
   chest.classList.toggle('near', targetLeft > 75);
   updateCheckpoints();
 
   if(ROW_CLEAR_THRESHOLDS.includes(cleared)){
-    spawnObstacle(OBSTACLES[Math.floor(Math.random()*OBSTACLES.length)], targetLeft);
+    spawnObstacle(pickObstacle(), targetLeft);
   } else {
-    inner.classList.remove('running');
-    void inner.offsetWidth;
-    inner.classList.add('running');
-    setTimeout(()=> inner.classList.remove('running'), 600);
+    playReaction('running', 600);
   }
 }
 
 /* =========================================================
    RULES
    ========================================================= */
+function clearCardSelection(){
+  document.querySelectorAll('.card.selected').forEach(el=> el.classList.remove('selected'));
+}
 function isCovered(r, c){
   return state.pyramid.some(p => !p.removed && p.row===r+1 && (p.col===c || p.col===c+1));
 }
@@ -608,7 +830,7 @@ function drawFromStock(){
     undo.push();
     state.stock = state.waste.reverse().map(c=>({...c, faceUp:false}));
     state.waste = [];
-    E.clearSelection();
+    clearCardSelection();
     state.selected = null;
     renderAll();
     return;
@@ -617,7 +839,7 @@ function drawFromStock(){
   const c = state.stock.pop();
   c.faceUp = true;
   state.waste.push(c);
-  E.clearSelection();
+  clearCardSelection();
   state.selected = null;
   renderAll();
 }
@@ -642,7 +864,7 @@ function removeCards(card1, source1, card2, source2){
   if(pyramidCardRemoved) triggerAdventurerProgress(28 - state.cardsRemaining);
 
   state.selected = null;
-  E.clearSelection();
+  clearCardSelection();
   renderAll();
 }
 function handleCardClick(card, source){
@@ -657,14 +879,14 @@ function handleCardClick(card, source){
   }
   if(state.selected.card.id===card.id){
     state.selected = null;
-    E.clearSelection();
+    clearCardSelection();
     return;
   }
   const selectedVal = E.rankValue(state.selected.card.rank);
   if(selectedVal + val === 13){
     removeCards(state.selected.card, state.selected.source, card, source);
   } else {
-    E.clearSelection();
+    clearCardSelection();
     state.selected = { card, source };
     const el = document.querySelector('.card[data-id="'+card.id+'"]');
     if(el) el.classList.add('selected');
@@ -684,7 +906,13 @@ function makeCardEl(card, pileType, pileKey, index){
 }
 function renderAll(){
   E.purgeStrayCards();
-  E.fitBoard({ columns: 7, getMaxStackDepth: ()=>1, minStackForFit: 7 });
+  E.fitBoard({
+    columns: 7,
+    getMaxStackDepth: ()=> 7,
+    minStackForFit: 7,
+    overlapFrac: 0.55,
+    maxCardW: 92
+  });
 
   renderHUD();
   renderPyramid();
@@ -742,11 +970,23 @@ function renderWaste(){
 }
 
 /* =========================================================
-   WIN — CHEST OPEN & TREASURE REVEAL
+   WIN — hinged chest, light burst, sparkle treasure reveal.
    Replaces engine.js's normal card cascade: the adventurer has
-   already walked to the chest one row at a time, so the win screen
-   just plays the chest opening and a random treasure reveal.
+   already walked to the chest one row at a time.
    ========================================================= */
+function spawnSparkles(container, count){
+  for(let i=0;i<count;i++){
+    const s = document.createElement('div');
+    s.className = 'sparkle';
+    const angle = (360/count)*i + (Math.random()*18 - 9);
+    const dist = 60 + Math.random()*40;
+    s.style.setProperty('--ang', angle+'deg');
+    s.style.setProperty('--dist', dist+'px');
+    s.style.animationDelay = (Math.random()*0.25)+'s';
+    container.appendChild(s);
+    setTimeout(()=> s.remove(), 2000);
+  }
+}
 function handleWin(){
   clearInterval(state.timerHandle);
   if(state.cascadePlayed) return;
@@ -755,14 +995,22 @@ function handleWin(){
   const overlay = document.getElementById('cinematic-overlay');
   const hero = document.getElementById('cinematic-hero');
   const treasure = document.getElementById('treasure-reveal');
+  const treasureWrap = document.getElementById('treasure-wrap');
 
   overlay.classList.add('active');
   setTimeout(()=> overlay.classList.add('fade-in'), 50);
 
   setTimeout(()=>{
-    hero.innerHTML = SVG_ADVENTURER + ' ' + SVG_CHEST_OPEN;
-    treasure.innerHTML = TREASURES[Math.floor(Math.random()*TREASURES.length)];
-    overlay.classList.add('show-treasure');
+    hero.innerHTML = SVG_ADVENTURER + buildChestRig();
+    requestAnimationFrame(()=> requestAnimationFrame(()=>{
+      document.getElementById('chest-rig').classList.add('open');
+    }));
+
+    setTimeout(()=>{
+      treasure.innerHTML = TREASURES[Math.floor(Math.random()*TREASURES.length)];
+      overlay.classList.add('show-treasure');
+      spawnSparkles(treasureWrap, 10);
+    }, 1000);
 
     setTimeout(()=>{
       overlay.classList.remove('fade-in');
@@ -773,9 +1021,9 @@ function handleWin(){
           ? ('Escaped in '+m+':'+String(s).padStart(2,'0'))
           : 'Tomb pillaged successfully.';
         document.getElementById('winmask').classList.add('show');
-      }, 1000);
-    }, 4000);
-  }, 1500);
+      }, 1200);
+    }, 4600);
+  }, 1700);
 }
 
 /* =========================================================
@@ -796,8 +1044,10 @@ const undo = E.createUndoStack(
     state.score = snap.score;
     state.cardsRemaining = snap.cardsRem;
     state.selected = null;
-    E.clearSelection();
-    document.getElementById('adventurer').style.left = trackLeftPct(28 - state.cardsRemaining) + '%';
+    clearCardSelection();
+    const pct = trackLeftPct(28 - state.cardsRemaining);
+    document.getElementById('adventurer').style.left = pct + '%';
+    document.getElementById('adventure-fill').style.width = pct + '%';
     updateCheckpoints();
     renderAll();
   },
@@ -932,13 +1182,19 @@ function newGame(){
   state.selected = null;
 
   undo.reset();
-  E.clearSelection();
+  clearCardSelection();
 
   const adventurer = document.getElementById('adventurer');
+  const fill = document.getElementById('adventure-fill');
   if(adventurer){
     adventurer.style.transition = 'none';
+    fill.style.transition = 'none';
     adventurer.style.left = '2%';
-    setTimeout(()=>{ adventurer.style.transition = 'left 0.55s cubic-bezier(0.3,0.1,0.2,1)'; }, 50);
+    fill.style.width = '2%';
+    setTimeout(()=>{
+      adventurer.style.transition = 'left 0.85s cubic-bezier(0.3,0.1,0.2,1)';
+      fill.style.transition = 'width 0.85s ease-out';
+    }, 50);
   }
   document.getElementById('chest').classList.remove('near');
   updateCheckpoints();
@@ -954,7 +1210,7 @@ function newGame(){
    ========================================================= */
 document.getElementById('pile-stock').addEventListener('click', drawFromStock);
 document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
-document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); state.selected = null; showHint(); });
+document.getElementById('btn-hint').addEventListener('click', ()=>{ clearCardSelection(); state.selected = null; showHint(); });
 
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
