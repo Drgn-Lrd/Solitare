@@ -1,17 +1,12 @@
 <!DOCTYPE html>
 <!--
+    index.html
     Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1634 EDT
+    Version 1.0
 
-   Resized Klondike's stock/foundation row to match the 1-card-width-
-   wider convention and added a waste pile beside the stock
--->
-<!--
-    Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1604 EDT
-
-   Converted Golf/Yukon/TriPeaks/Pyramid/FreeCell tile art to preloaded
-   webp, and added the FreeCell mini-board king's-head slot
+   Enabled the Yukon tile (now links to Yukon.html, status changed from
+   In Dev to Testing) and fixed Tut's Tomb's tile, which opened with
+   <a> but incorrectly closed with a stray </div> instead of </a>.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -31,10 +26,10 @@
   regardless of the photo. Klondike stays plain felt on purpose ("keep
   it as is").
 
-  Tiles for Klondike/FreeCell link out to their real files (Klondike is
-  approved and live; FreeCell is playable but still marked Testing
-  until it's signed off). The other four are marked IN DEV and are
-  inert (no navigation) until built.
+  Tiles for Klondike/FreeCell/Yukon/Tut's Tomb link out to their real
+  files (Klondike is approved and live; FreeCell, Yukon, and Tut's Tomb
+  are playable but still marked Testing until signed off). TriPeaks and
+  Golf are marked IN DEV and stay inert (no navigation) until built.
 -->
 <html lang="en">
 <head>
@@ -399,12 +394,12 @@
       <p class="tile-desc">Fast-paced card matching. Clear 35 tableau cards onto the waste pile in sequential order.</p>
     </div>
 
-    <!-- YUKON — in dev -->
-    <div class="tile-link disabled">
+    <!-- YUKON — playable -->
+    <a class="tile-link" href="Yukon.html">
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-yukon"></div>
-          <div class="tile-head"><h2>Yukon</h2><span class="status-pill dev">In Dev</span></div>
+          <div class="tile-head"><h2>Yukon</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
             <div class="mc-row" style="align-items:flex-start; gap:8px;">
               <div class="mc-cols" style="flex:1;">
@@ -424,9 +419,9 @@
         </div>
       </div>
       <p class="tile-desc">7 tableau stacks with ascending face-down cards topped with face-up runs. Build foundations up by suit.</p>
-    </div>
+    </a>
 
-    <!-- TUT'S TOMB (Pyramid) — in dev -->
+    <!-- TUT'S TOMB (Pyramid) — playable -->
     <a class="tile-link" href="Pyramid.html">
       <div class="tile-frame">
         <div class="tile-felt">
@@ -470,7 +465,7 @@
         </div>
       </div>
       <p class="tile-desc">Pair exposed cards that sum to 13 to clear the pyramid — Egyptian-themed, unlimited waste-pile cycling.</p>
-    </div>
+    </a>
 
   </div>
 </div>
