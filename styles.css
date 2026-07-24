@@ -1,15 +1,14 @@
 /*
     styles.css
     Written by: Johnathon Largent
-    Version 2.9
+    Version 2.10
 
-   .tcol.drop-ok::after was computing its bottom edge indirectly —
-   height:calc(100% + 8px) paired with top:-4px, requiring two
-   separate values to combine into a symmetric result. Replaced with
-   top:-4px + bottom:-4px directly (no height/calc at all): the
-   browser now sizes the box to fill exactly the gap between those
-   two anchors, which is symmetric by construction, not by two numbers
-   happening to add up right.
+   .tcol.drop-ok::after's right edge had the same indirect-math problem
+   the bottom edge did (fixed last version): width:calc(var(--card-w) +
+   8px) combined with left:-4px instead of anchoring directly.
+   Replaced with right:calc(100% - var(--card-w) - 4px), which ties
+   the right edge straight to --card-w the same way left already was,
+   instead of deriving it through a separate width calculation.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -26,7 +25,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.9';
+  --stylesheet-version: '3.0';
   /* Stored as bare "r,g,b" triplets (not full color values) so they can
      be dropped into rgba(var(--x), alpha) for the felt's transparency
      — rgba() with a var() alpha channel is old, well-supported syntax,
@@ -389,7 +388,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 .tcol.drop-ok::after{
   content:""; position:absolute;
   top:-4px; bottom:-4px; left:-4px;
-  width: calc(var(--card-w) + 8px);
+  right: calc(100% - var(--card-w) - 4px);
   border-radius: calc(var(--card-radius) + 3px);
   border:2px solid #7ee6a8; box-shadow:0 0 14px rgba(126,230,168,0.6);
   pointer-events:none; z-index:500;
