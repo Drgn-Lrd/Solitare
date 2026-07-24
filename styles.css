@@ -1,14 +1,14 @@
 /*
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1745 EDT
+    Last Updated 24 July 2026 @ 0100 EDT
 
-   Corrected the tableau inset: .tcol is back to flex:1 (so the 8
-   columns evenly share whatever width they're given, instead of
-   leaving uneven trailing space), and .tableau-row is now pinned to
-   an explicit width (100% minus half a card-width) instead of sizing
-   to its own natural content — that's what makes the inset a fixed
-   1/4 card-width on each side rather than a variable amount driven by
-   the king slot's own proportions.
+   .home-btn now holds a contained emoji instead of an SVG (overflow:
+   hidden keeps it inside the circle rather than spilling past it, which
+   is what was happening before). .crest enlarged to 56px so it spans
+   the full height of the title+button-row stack, and generic base
+   .crest styling no longer bakes in a background-image — that's
+   FreeCell-specific and belongs in FreeCell.html's own override, not
+   the shared stylesheet other games also use.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -81,13 +81,12 @@ header{
   border-bottom: 1px solid #3a2812;
   position: sticky; top:0; z-index: 50;
 }
-.brand{ display:flex; align-items:center; gap:10px; }
-.brand-text{ display:flex; flex-direction:column; gap:2px; align-items:flex-start; }
+.brand{ display:flex; align-items:center; gap:12px; }
+.brand-text{ display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
 .brand .crest{
-  width:34px; height:34px; border-radius:50%;
+  width:56px; height:56px; border-radius:50%; flex-shrink:0;
   background: radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
-  display:flex; align-items:center; justify-content:center;
-  font-size:18px; color:#3a2a08; font-weight:bold; box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008;
+  box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008;
 }
 .brand h1{
   margin:0; font-size: clamp(18px,3vw,26px); letter-spacing:2px; font-weight:400;
@@ -96,7 +95,25 @@ header{
   text-shadow: 0 1px 0 #000, 0 0 18px rgba(232,200,115,0.25);
 }
 .brand small{ display:block; letter-spacing:3px; font-size:9px; color:#c9b89a; opacity:.8; margin-top:-2px;}
-.newgame-btn{ margin-top:3px; padding:4px 12px; font-size:11px; }
+.newgame-btn{ padding:4px 12px; font-size:11px; }
+
+/* Circular icon-only Home button — sized to match .newgame-btn's
+   height exactly (24px) rather than the larger 36px .iconbtn used for
+   Help/Settings, since it sits directly beside New Game in the same
+   row. Holds an emoji rather than an SVG glyph — overflow:hidden plus
+   a font-size sized to the box keeps it contained inside the circle
+   instead of spilling past it. */
+.home-btn{
+  width:24px; height:24px; padding:0; flex-shrink:0;
+  border-radius:50%; border:1px solid var(--panel-line);
+  background: var(--panel); color: var(--brass-light);
+  display:flex; align-items:center; justify-content:center;
+  overflow:hidden; cursor:pointer; text-decoration:none;
+  font-size:13px; line-height:1;
+  transition: background .15s ease, transform .15s ease;
+}
+.home-btn:hover{ background:#123a2c; transform: translateY(-1px); }
+.home-btn:active{ transform: scale(.92); }
 
 .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
 
