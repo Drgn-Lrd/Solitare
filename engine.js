@@ -1,11 +1,13 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.7
+    Last Updated v2.2
 
-   startWinCascade now returns its layer element, so a caller (e.g.
-   dismissing a win preview) can force-remove any still-animating
-   card artifacts immediately instead of waiting for the internal
-   auto-cleanup timeout.
+   Added opts.sequential — instead of a fixed time-based stagger
+   between cards, each next card only launches once the previous one
+   has actually bounced off the floor for the first time (an
+   onFirstBounce callback fired from inside spawnCascadeCard's own
+   frame loop), matching the classic Solitaire cascade exactly rather
+   than approximating its timing with a guessed delay.
  */
 /*
      Written by: Johnathon Largent
@@ -603,21 +605,36 @@ function pulseAll(els, duration){
    `buildFaceElFn` should be the game's own face-builder (so art/back
    settings match); `getCardMetrics` should return {w,h}.
    ========================================================= */
-function startWinCascade(cards, buildFaceElFn, getCardMetrics){
+function startWinCascade(cards, buildFaceElFn, getCardMetrics, opts){
+  opts = opts || {};
   const layer = document.createElement('div');
   layer.id = 'cascade-layer';
   document.body.appendChild(layer);
 
-  const STAGGER = 90, GRAVITY = 0.35, BOUNCE_DAMP = 0.62;
+  const STAGGER = opts.stagger!=null ? opts.stagger : 90;
+  const GRAVITY = opts.gravity!=null ? opts.gravity : 0.35;
+  const BOUNCE_DAMP = opts.bounceDamp!=null ? opts.bounceDamp : 0.62;
+  const TRAIL = !!opts.trail; // classic dense-pile look: settled cards stay put instead of fading
+  const SEQUENTIAL = !!opts.sequential; // next card waits for the previous one's first bounce, not a fixed timer
 
-  cards.forEach((entry, i)=>{
-    setTimeout(()=> spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP), i*STAGGER);
-  });
+  if(SEQUENTIAL){
+    let i = 0;
+    function launchNext(){
+      if(i >= cards.length) return;
+      const entry = cards[i++];
+      spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL, launchNext);
+    }
+    launchNext();
+  } else {
+    cards.forEach((entry, i)=>{
+      setTimeout(()=> spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL), i*STAGGER);
+    });
+  }
   setTimeout(()=>{ layer.remove(); }, cards.length*STAGGER + 6000);
   return layer;
 }
-function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, bounceDamp){
-  if(!entry.sourceEl) return;
+function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, bounceDamp, trail, onFirstBounce){
+  if(!entry.sourceEl){ if(onFirstBounce) onFirstBounce(); return; }
   const startRect = entry.sourceEl.getBoundingClientRect();
   const metrics = getCardMetrics();
 
@@ -635,6 +652,7 @@ function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, 
   let vy = -7 - Math.random()*3;
   const floorY = window.innerHeight - metrics.h - 8;
   let bounces = 0;
+  let firstBounceFired = false;
 
   function frame(){
     vy += gravity;
@@ -644,14 +662,24 @@ function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, 
       y = floorY;
       vy = -vy*bounceDamp;
       bounces++;
+      if(!firstBounceFired){
+        firstBounceFired = true;
+        if(onFirstBounce) onFirstBounce();
+      }
       if(Math.abs(vy) < 2.2 || bounces > 6){
+        el.style.left = x+'px';
+        el.style.top = y+'px';
+        if(trail) return; // stays put, visible, building up the pile — cleared only when the whole layer removes itself
         el.style.transition = 'opacity .6s ease';
         el.style.opacity = '0';
         setTimeout(()=> el.remove(), 650);
         return;
       }
     }
-    if(x < -metrics.w-60 || x > window.innerWidth+60){ el.remove(); return; }
+    if(x < -metrics.w-60 || x > window.innerWidth+60){
+      if(!firstBounceFired && onFirstBounce){ firstBounceFired = true; onFirstBounce(); }
+      el.remove(); return;
+    }
     el.style.left = x+'px';
     el.style.top = y+'px';
     requestAnimationFrame(frame);
