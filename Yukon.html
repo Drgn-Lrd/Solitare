@@ -2,20 +2,25 @@
 <!--
     Yukon.html
     Written by: Johnathon Largent
-    Version 1.1
+    Version 1.2
 
-   Switched card back art (KNOWN_BACK_FILES, default backStyle, the
-   back-picker swatches) from png to webp to match the new webp card
-   set — same filenames, extension only. Face-card art comes from
-   engine.js's cardImgSrc(), updated there.
+   Three fixes: (1) Hint now only ever suggests a move that actually
+   makes progress (flips a card, empties a column, or sends something
+   to a foundation) instead of pointless run-shuffling between two
+   columns that goes nowhere — see findUsefulMove() vs. the exhaustive
+   findAnyMove() still used for the no-moves check. (2) Foundations
+   are now a vertical stack pinned to the right of the tableau, sharing
+   one row with it, instead of a horizontal row above — matches the
+   hub page's Yukon tile art. (3) Added the custom Yukon.webp table
+   background (preloaded ahead of the per-card images), same treatment
+   as FreeCell's.
 
    New file: Yukon Solitaire. Built on the shared engine.js + styles.css
    exactly like Klondike/FreeCell — this file only contains what's
-   actually specific to Yukon: board layout (foundations only, no
-   stock/waste, 7 tableau columns), the deal, and the rules. Everything
-   else (drag/drop, click-to-move, undo, settings shell, hint pulse/
-   toast, win cascade, screen-fit sizing, card asset loading/fallback)
-   comes from engine.js untouched.
+   actually specific to Yukon: board layout, the deal, and the rules.
+   Everything else (drag/drop, click-to-move, undo, settings shell,
+   hint pulse/toast, win cascade, screen-fit sizing, card asset
+   loading/fallback) comes from engine.js untouched.
 
    Three things actually define Yukon vs. Klondike:
      1. DEAL — all 52 cards go straight into the 7 tableau columns, no
@@ -44,7 +49,36 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Yukon</title>
+<link rel="preload" as="image" href="images/Yukon.webp">
 <link rel="stylesheet" href="styles.css">
+<style>
+  /* Yukon-only background: same treatment as FreeCell's — a preloaded
+     photo behind the wood frame/felt, with a dark scrim between the
+     photo and the content so the header/bottombar/felt stay legible
+     regardless of how bright the photo is. Preloaded via <link
+     rel="preload"> above so it starts fetching before engine.js even
+     runs, well ahead of the per-card image preloading that happens at
+     the bottom of this file's script. */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Yukon.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
+  /* Yukon's board differs from Klondike/FreeCell: there's no stock/
+     waste, so there's no separate top-row — the foundations sit as a
+     single vertical stack pinned to the right of the tableau instead
+     of a horizontal row above it (matches the hub page's Yukon tile
+     preview, which shows the same 4-slot column on the right). The
+     two share one flex row: tableau-row grows to fill the remaining
+     width (overriding its usual fixed calc()-width/auto-margin
+     centering, which assumed it had the felt to itself), foundations
+     stays a fixed one-card-wide column pinned to the end. */
+  .yukon-board-row{ align-items:flex-start; }
+  .yukon-board-row .tableau-row{ flex:1; width:auto; margin:0; }
+  .yukon-board-row .foundations{ flex-direction:column; flex-shrink:0; }
+</style>
 </head>
 <body>
 
@@ -65,12 +99,14 @@
   </div>
 </header>
 
-<!-- Foundations only up top (no stock/waste) — all 52 cards dealt
-     straight into the 7 tableau columns below. -->
+<!-- No stock/waste — all 52 cards dealt straight into the 7 tableau
+     columns, with the foundations pinned as a vertical stack to the
+     right (see .yukon-board-row in <style> above). -->
 <div class="stage">
   <div class="table-frame">
     <div class="table-felt">
-      <div class="row top-row" style="justify-content:flex-end;">
+      <div class="row yukon-board-row">
+        <div class="row tableau-row" id="tableau"></div>
         <div class="foundations">
           <div class="pile slot" data-type="foundation" data-suit="S" id="f-S"><div class="slot-mark">♠</div></div>
           <div class="pile slot" data-type="foundation" data-suit="H" id="f-H"><div class="slot-mark">♥</div></div>
@@ -78,7 +114,6 @@
           <div class="pile slot" data-type="foundation" data-suit="C" id="f-C"><div class="slot-mark">♣</div></div>
         </div>
       </div>
-      <div class="row tableau-row" id="tableau"></div>
     </div>
   </div>
 </div>
@@ -192,7 +227,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.1';
+const PAGE_VERSION = '1.2';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -327,10 +362,22 @@ function autoMoveAll(){
 
 /* =========================================================
    HINT / NO-MOVES SCANNER
-   Unlike Klondike, EVERY face-up card in a column (not just the one
-   sitting right after a face-down boundary) is a legal move source, so
-   this walks every face-up index in every column rather than just the
-   first exposed run.
+   Two different questions need two different answers here:
+     - checkNoMoves() needs to know if the game is truly stuck — ANY
+       legal move at all, even a pointless one, means it isn't. That's
+       findAnyMove(): since any face-up card (not just the one right
+       after a face-down boundary) is a legal drag source in Yukon, it
+       has to walk every face-up index in every column, not just the
+       first exposed run the way Klondike's scanner does.
+     - showHint() should only ever suggest a move that actually makes
+       progress. A tableau-tableau move that doesn't flip a new card
+       or empty its source column just relocates a run — you could
+       shuffle a 7-6-5 back and forth between two 8s all day and never
+       get anywhere, and a hint that suggests that isn't a hint. So
+       findUsefulMove() below applies the SAME boundary check Klondike
+       uses (only the card sitting right after a face-down card, or at
+       the very top of a now-empty-able column, counts), even though
+       Yukon's actual DRAG rule is more permissive than that.
    ========================================================= */
 function findAnyMove(){
   for(let c=0;c<7;c++){
@@ -351,6 +398,37 @@ function findAnyMove(){
   }
   return null;
 }
+function findUsefulMove(){
+  for(let c=0;c<7;c++){
+    const pile = state.tableau[c];
+    if(pile.length){
+      const i = pile.length-1;
+      const card = pile[i];
+      if(card.faceUp){
+        for(const s of SUITS){
+          if(canPlaceOnFoundation(card, state.foundations[s], s)) return {type:'tableau-foundation', fromKey:c, index:i, to:s};
+        }
+      }
+    }
+  }
+  for(let c=0;c<7;c++){
+    const pile = state.tableau[c];
+    for(let i=0;i<pile.length;i++){
+      if(!pile[i].faceUp) continue;
+      // Only a card sitting right after a face-down card (or one that
+      // would empty the column entirely) makes moving it worthwhile —
+      // moving anything else just relocates cards that were already
+      // fully exposed and accomplishes nothing on its own.
+      if(i>0 && pile[i-1].faceUp) continue;
+      const card = pile[i];
+      for(let t=0;t<7;t++){
+        if(t===c) continue;
+        if(canPlaceOnTableau(card, state.tableau[t])) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
+      }
+    }
+  }
+  return null;
+}
 function checkNoMoves(){
   const mask = document.getElementById('nomovesmask');
   const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
@@ -361,9 +439,9 @@ function findCardEl(pileType, pileKey, index){
   return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
 }
 function showHint(){
-  const move = findAnyMove();
+  const move = findUsefulMove();
   const toastEl = document.getElementById('hint-toast');
-  if(!move){ E.showToast(toastEl, "No moves left — try Undo or New Game."); return; }
+  if(!move){ E.showToast(toastEl, "No moves that make progress right now — try Undo or New Game."); return; }
   switch(move.type){
     case 'tableau-foundation':
       E.showToast(toastEl, 'Send the top card of column '+(move.fromKey+1)+' to its foundation.');
@@ -400,9 +478,13 @@ function renderAll(){
   // Yukon's deepest starting column is 11 cards (vs Klondike's 7), so
   // both the live-depth probe and the floor passed to fitBoard need to
   // reflect that or early-game columns would render oversized then jump
-  // smaller the moment a card gets flipped/moved.
+  // smaller the moment a card gets flipped/moved. columns is 8, not 7 —
+  // the foundations sidebar now shares the tableau's row instead of
+  // sitting in a separate row above it, so it has to be counted as an
+  // extra column-width of space or cards would be sized as if the
+  // sidebar wasn't eating into the available width, and it'd overflow.
   E.fitBoard({
-    columns: 7,
+    columns: 8,
     getMaxStackDepth: ()=> Math.max(11, ...state.tableau.map(c=>c.length)),
     minStackForFit: 11
   });
@@ -693,7 +775,7 @@ let resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(()=>{
-    E.fitBoard({ columns:7, getMaxStackDepth:()=>Math.max(11,...state.tableau.map(c=>c.length)), minStackForFit:11 });
+    E.fitBoard({ columns:8, getMaxStackDepth:()=>Math.max(11,...state.tableau.map(c=>c.length)), minStackForFit:11 });
   }, 100);
 });
 
