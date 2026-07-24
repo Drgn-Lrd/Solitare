@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <!--
      Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 2030 EDT
+    Last Updated 24 July 2026 @ 0100 EDT
 
-   Crest crop is now precisely measured against the actual
-   images/FreeCell.webp (900x491) rather than guessed — crops the
-   180x180px region at (235,140), his head/shoulders/hands on the
-   bars, via background-size/-position math.
+   Removed the redundant "Solitaire" subtitle. Crest crop widened and
+   re-centered on the body (280x280px region at 180,130) rather than
+   just head/hands, and enlarged to 56px to span the full title+
+   button-row stack height. Home button is now an emoji contained in
+   its circle instead of an oversized SVG.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -42,14 +43,15 @@
   /* Crest: a circular crop of the same background photo (the prisoner
      gripping the bars), replacing the plain brass-circle + suit glyph.
      Measured directly against the actual images/FreeCell.webp
-     (900x491): crops the 180x180px region at (235,140) — his head,
-     shoulders, and both hands on the bars — via background-size/
-     -position math, so it scales correctly if the crest's own size
-     ever changes rather than needing a separate cropped image file. */
+     (900x491): crops the 280x280px region at (180,130) — a bit wider
+     than the first pass and centered on the body rather than just the
+     head/hands — via background-size/-position math, so it scales
+     correctly if the crest's own size ever changes rather than
+     needing a separate cropped image file. */
   .brand .crest{
     background-image: url('images/FreeCell.webp');
-    background-size: 500% 272.78%;
-    background-position: 32.64% 45.02%;
+    background-size: 321.43% 175.36%;
+    background-position: 29.03% 61.61%;
     box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008, inset 0 0 0 2px var(--brass);
   }
 
@@ -121,11 +123,8 @@
     <div class="crest" aria-hidden="true"></div>
     <div class="brand-text">
       <h1>FreeCell</h1>
-      <small>Solitaire</small>
       <div class="brand-actions">
-        <a class="home-btn" href="index.html" title="Home" aria-label="Home">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6.5 10v9a1 1 0 0 0 1 1h3v-6h3v6h3a1 1 0 0 0 1-1v-9"/></svg>
-        </a>
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
       </div>
     </div>
