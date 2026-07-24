@@ -1,607 +1,886 @@
 /*
-    styles.css
+    engine.js
     Written by: Johnathon Largent
     Version 2.8
 
-   The "highlight is thicker on the bottom/right" issue (see 2.7's
-   entry below) wasn't actually the shadow offset — it was
-   --card-w/--card-h resolving to fractional pixel values, which gave
-   every box sized off them (cards, the selection ring, the drop-ok
-   glow) an anti-aliased edge that browsers only draw on the
-   bottom/right of a fractional-width box. --card-h is now wrapped in
-   round(...,1px); the matching fix for --card-w itself is in
-   engine.js's fitBoard (JS overwrites --card-w at runtime, so this
-   file's own clamp() value was never the one actually in effect).
+   fitBoard now rounds cardW to a whole pixel before writing it to
+   --card-w. A fractional --card-w (e.g. 73.4px) was giving the
+   .selected ring and the .drop-ok glow — both sized directly off
+   --card-w/--card-h — a soft anti-aliased edge that browsers render
+   only on the bottom/right of a fractional box, never the top/left.
+   That read as the highlight being lopsided/thicker on two sides,
+   even though the box-shadow/border values themselves were already
+   symmetric. See styles.css's matching change to --card-h.
 
     Version 2.7
 
-   .card.selected's highlight (the "move highlighting" ring shown when
-   a card is picked for click-to-move) looked lopsided — thicker on
-   the bottom and right than the top and left. The green ring itself
-   (box-shadow "0 0 0 3px", spread only, no offset) was always
-   symmetric; the culprit was the second shadow in that same
-   declaration, "0 4px 10px rgba(0,0,0,.5)" — a drop-shadow with a 4px
-   DOWNWARD offset. Shifted down, its blur mostly hides under the card
-   on top but bleeds out visibly below/beside it, reading as extra
-   bulk on the bottom/right while the top stayed thin. Zeroed the
-   offset (now "0 0 10px") so that shadow blurs evenly in every
-   direction like the ring it's paired with.
-
-    Version 2.6
-
-   .table-frame (the wood frame, previously fully opaque) now gets the
-   same rgba()+var() transparency treatment .table-felt already had,
-   sharing one combined control, --table-opacity (66% to start) —
-   renamed from --felt-opacity since it now covers both layers. With
-   the wood no longer opaque, the page's own background (each game's
-   html,body rule — see FreeCell.html's background photo) shows
-   through the whole table, not just wood-on-wood as before. Cards
-   remain fully solid throughout; nothing about how a .card paints
-   changed here.
-
-   Felt playing surface (.table-felt) transparency now uses
-   rgba(var(--rgb-triplet), var(--felt-opacity)) instead of
-   color-mix(). Functionally the two should produce the same math, but
-   color-mix() showed no visible change even at low values in testing
-   — rgba()+var() is older, more universally-supported syntax and is
-   the safer bet. One important caveat either way: .table-felt's
-   immediate backdrop is .table-frame's OPAQUE wood background, not
-   the page behind it — so "transparent felt" reveals wood-brown
-   showing through, not whatever is behind the whole table. If the
-   goal is to see the actual page background through the felt,
-   .table-frame needs its own opacity treatment too.
-
-   #winmask (the "You Win!" dialog specifically) no longer dims the
-   whole screen — it was covering the cascade animation happening
-   behind it. New .winmask-modal is a small bounded box instead of a
-   full-screen takeover; #nomovesmask keeps the shared full dim since
-   there's no animation behind it to preserve a view of.
-
-   Card corner rounding was a flat 9px, which is a huge proportion of
-   a card at the small end of --card-w's clamp (down to ~18% of the
-   width) — enough to clip rank/suit corner pips and read as a
-   rounded-rect badge instead of a real card. New --card-radius scales
-   with --card-w (real cards round at roughly 4-5% of their width) so
-   the rounding stays subtle and consistent at every size. Applied to
-   .pile, .card, .face/.back-img-wrap, .img-fallback, and the
-   drop-glow outline; .backswatch (a fixed-size thumbnail, not tied to
-   --card-w) got a matching fixed reduction instead.
+   Face card art now loads from webp instead of svg — cardImgSrc() is
+   the single spot every game shares, so this one line covers all of
+   Klondike/FreeCell/Yukon. Card BACKS were already extension-agnostic
+   here (backImgSrc() just echoes whatever full filename `style`
+   already carries), so their webp switch happens entirely in each
+   game's own KNOWN_BACK_FILES/backStyle/back-picker — see those
+   files' own changelogs.
  */
 /* =========================================================================
-   SHARED SOLITAIRE SUITE STYLESHEET
-   Used by every game (Klondike, FreeCell, ...). Game-specific HTML files
-   should only need their own <style> block for things that are truly
-   unique to that game's board shape (e.g. FreeCell's free-cell row) —
-   everything about the overall look (felt, wood frame, cards, buttons,
-   modals, hint pulse, win cascade) lives here so every game matches and
-   a single fix/reskin applies everywhere at once.
+   SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
+   =========================================================================
+   This file owns everything that ISN'T specific to one game's rules:
+     - card assets (filenames, loading, the corner-index fallback)
+     - building a card's DOM element
+     - preloading every image up front
+     - solving card size to fit the screen without scrolling
+     - the whole drag-and-drop + click-to-move interaction pipeline,
+       including the misclick-into-a-run forgiveness and the
+       hover/drag highlight system
+     - a generic undo stack
+     - toast messages + the hint "pulse" glow
+     - the Settings modal shell (card back picker + timer/score toggles)
+     - the win cascade animation
+
+   A game file (klondike.html, freecell.html, ...) is expected to:
+     1. Load this file: <script src="engine.js"></script>
+     2. Own its OWN game state (piles, rules, scoring) — this file never
+        touches a game's state directly, only through the callback
+        functions the game hands it in a config object.
+     3. Call SEngine.initInteractions(config) once, passing functions
+        like findPileArray/resolveDropTarget/canMoveWithWiden/tryMoveAuto
+        that know the specific rules of that game.
+     4. Call the other SEngine.* helpers (preload, fitBoard, undo,
+        settings, cascade) as needed from its own renderAll()/newGame().
+
+   Every function below is written so a bug fixed here (e.g. the drag
+   "always snaps back" issue, or the tableau highlight sizing bug) is
+   fixed for every game that uses this file, permanently — that's the
+   whole point of pulling it out of Klondike's file in the first place.
    ========================================================================= */
+window.SEngine = (function(){
+"use strict";
+
+// This file's own version, plus a way to read styles.css's — together
+// with a PAGE_VERSION constant a game file defines for itself, this is
+// what lets a settings modal show all three (page/engine/styles) at
+// once. getStylesheetVersion() reads a --stylesheet-version custom
+// property off :root; returns null if styles.css hasn't declared one.
+const ENGINE_VERSION = '2.8';
+function getStylesheetVersion(){
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--stylesheet-version');
+  return v ? v.trim().replace(/^['"]|['"]$/g, '') : null;
+}
 
 /* =========================================================
-   THEME VARIABLES — see the comment blocks below for what each
-   controls and concrete "change this to do X" pointers.
+   CARD IDENTITY + ASSET PATHS
+   Every game shares the same 52-card model and the same cards/
+   folder convention: cards/<rank>_of_<suit>.webp and cards/back_<id>.webp
    ========================================================= */
-:root{
-  --stylesheet-version: '2.8';
-  /* Stored as bare "r,g,b" triplets (not full color values) so they can
-     be dropped into rgba(var(--x), alpha) for the felt's transparency
-     — rgba() with a var() alpha channel is old, well-supported syntax,
-     unlike color-mix() which turned out to be unreliable in testing.
-     --felt-highlight-rgb is the #1a7a54 top highlight from the felt
-     gradient below. */
-  --felt-1-rgb: 14,68,50;      /* #0e4432 */
-  --felt-2-rgb: 8,44,33;       /* #082c21 */
-  --felt-highlight-rgb: 26,122,84; /* #1a7a54 */
-  --wood-1-rgb: 122,82,48;     /* #7a5230 */
-  --wood-2-rgb: 74,47,24;      /* #4a2f18 */
-  --wood-3-rgb: 44,28,14;      /* #2c1c0e */
-  /* Single control for how see-through the ENTIRE table (wood frame +
-     felt together) is: 1 = fully solid, 0 = fully invisible. Shared by
-     both .table-frame and .table-felt below so every game's table
-     fades as one unit with no per-game CSS needed — games with a
-     background photo (see FreeCell.html's html,body override) show
-     it through both layers; Klondike's plain dark vignette just shows
-     a bit of texture, which is harmless. */
-  --table-opacity: 0.66;
-  --wood-1:#7a5230;
-  --wood-2:#4a2f18;
-  --wood-3:#2c1c0e;
-  --brass:#c9a24b;
-  --brass-light:#e8c873;
-  --ivory:#faf6ec;
-  --navy:#16233f;
-  --burgundy:#8c1f3b;
-  --panel:#0e2f24;
-  --panel-line:#1c5340;
+const SUITS = ['S','H','D','C'];
+const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+function rankValue(r){ return RANKS.indexOf(r)+1; }
+function isRed(suit){ return suit==='H'||suit==='D'; }
+function suitGlyph(suit){ return {S:'♠',H:'♥',D:'♦',C:'♣'}[suit]; }
 
-  /* --card-w is the single source of truth for card size — JS
-     (SEngine.fitBoard) overwrites this at runtime to fit the screen.
-     --card-h is derived from the real card-art aspect ratio (must match
-     SEngine.CARD_RATIO in engine.js if you ever change it). */
-  --card-w: clamp(50px, 8.6vw, 100px);
-  /* Wrapped in round(...,1px): --card-w itself is now always a whole
-     pixel (see engine.js fitBoard), but multiplying by 1.4523
-     reintroduces a fraction — rounding here keeps --card-h whole too,
-     so nothing sized off it (the card, its selection ring, the
-     drop-ok glow) gets an anti-aliased edge on just the bottom/right. */
-  --card-h: round(calc(var(--card-w) * 1.4523), 1px);
-  --gap: clamp(6px, 1.2vw, 14px);
+const RANK_FILE = {A:'ace', J:'jack', Q:'queen', K:'king'};
+function rankFile(rank){ return RANK_FILE[rank] || rank; }
+const SUIT_FILE = {S:'spades', H:'hearts', D:'diamonds', C:'clubs'};
+function suitFile(suit){ return SUIT_FILE[suit]; }
+function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.webp'; }
+function backImgSrc(style){ return 'cards/'+style; } // style is a full filename, e.g. "back_10.webp"
 
-  /* Real playing cards round their corners at roughly 4-5% of the
-     card's width — this keeps that same subtle look at every size
-     instead of a flat pixel radius that gets disproportionately
-     rounded as --card-w shrinks. */
-  --card-radius: calc(var(--card-w) * 0.045);
+// Point an <img> at a local file; if it 404s, call onFinalFail instead.
+// No external fallback — keeps every game working fully offline.
+function loadCardImage(img, localPath, onFinalFail){
+  img.src = localPath;
+  img.addEventListener('error', function onErr(){
+    img.removeEventListener('error', onErr);
+    if(onFinalFail) onFinalFail();
+  });
+}
 
-  /* Extra zoom on top of object-fit:cover, for art with baked-in
-     padding. 1.0 = no extra zoom. See the CSS comment on
-     .card-face-img/.card-back-img below. */
-  --face-scale: 1.0;
-  --back-scale: 1.0;
-
-  font-size: 16px;
-}
-*{box-sizing:border-box;}
-
-/* Full-height flex column: header, then .stage (grows to fill), then
-   .bottombar — this is what lets the felt table resize itself to any
-   screen without the page ever needing to scroll. */
-html,body{
-  margin:0; padding:0; height:100%;
-  background: radial-gradient(ellipse at 50% -10%, #241708, #120b04 65%);
-  color: var(--ivory);
-  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
-  user-select:none;
-  -webkit-user-select:none;
-  display:flex; flex-direction:column;
-}
-html{ overflow:hidden; }
-body{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; }
-
-/* =========================================================
-   HEADER
-   ========================================================= */
-header{
-  display:flex; align-items:flex-end; justify-content:space-between;
-  padding: 10px clamp(10px,3vw,28px);
-  background: linear-gradient(180deg, #150d05, #150d0500 92%);
-  border-bottom: 1px solid #3a2812;
-  position: sticky; top:0; z-index: 50;
-}
-.brand{ display:flex; align-items:flex-end; gap:12px; }
-.brand-text{ display:flex; flex-direction:column; gap:0; align-items:flex-start; }
-.brand .crest{
-  width:64px; height:64px; border-radius:50%; flex-shrink:0;
-  background: radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
-  display:flex; align-items:center; justify-content:center;
-  font-size:34px; color:#3a2a08; font-weight:bold; line-height:1;
-  box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008;
-}
-/* Title: same text scale as the buttons now, sized (with padding) to
-   exactly half the crest's height — the button row below it is the
-   other half, so the two stack to the crest's full height overall. */
-.brand h1{
-  margin:0; height:32px; line-height:32px; font-size:26px; letter-spacing:1px; font-weight:400;
-  font-variant: small-caps; white-space:nowrap;
-  color: var(--brass-light);
-  text-shadow: 0 1px 0 #000;
-}
-.brand small{ display:block; letter-spacing:3px; font-size:9px; color:#c9b89a; opacity:.8; margin-top:-2px;}
-/* For a title with a subtitle-style suffix (e.g. "Klondike -
-   Classic Solitaire") that's too long to fit on a phone alongside
-   Home/New Game/Help/Settings without pushing them off-screen — wrap
-   the extra part in <span class="title-suffix"> and it drops on
-   narrow viewports, leaving just the game name. */
-@media (max-width:560px){
-  .title-suffix{ display:none; }
-}
-/* Hides a settings-pane row entirely on desktop — for options that
-   only make sense once a game has switched to its mobile layout,
-   like FreeCell's "Show Game #" toggle. */
-@media (min-width:561px){
-  .mobile-only-setting{ display:none; }
-}
-/* FreeCell-only: a second GAME# chip that lives in the bottom bar for
-   mobile layouts (see FreeCell.html) instead of the header. Hidden by
-   default always — shown only via JS (inline style, which wins
-   regardless of source order here) when both the viewport is under
-   560px AND the person has opted in via the mobile-only settings
-   toggle. Absent entirely on Klondike, so this rule just never
-   matches anything there. */
-#game-number-chip-mobile{ display:none; }
-/* button.newgame-btn (element+class), not just .newgame-btn — the
-   plain-class version was losing this override to .textbtn's own
-   font-size/padding, since .textbtn happens to be declared LATER in
-   this file and wins cascade ties at equal specificity. That's the
-   actual reason New Game rendered so much bigger than the title. The
-   extra element-type selector guarantees this wins regardless of
-   where either rule sits in the file. */
-button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; align-items:center; }
-
-/* Circular icon-only Home button — matches .newgame-btn's real
-   rendered height via engine.js (see syncHomeButtonSize), whatever
-   that is, so it automatically tracks .newgame-btn's height (32px)
-   without needing its own number here. Holds an emoji rather than an
-   SVG glyph — overflow:hidden plus a font-size sized to the box keeps
-   it contained inside the circle instead of spilling past it. */
-.home-btn{
-  aspect-ratio: 1; height: auto; padding:0; flex-shrink:0;
-  border-radius:50%; border:1px solid var(--panel-line);
-  background: var(--panel); color: var(--brass-light);
-  display:inline-flex; align-items:center; justify-content:center;
-  overflow:hidden; cursor:pointer; text-decoration:none;
-  font-size:16px; line-height:1;
-  transition: background .15s ease, transform .15s ease;
-}
-.home-btn:hover{ background:#123a2c; transform: translateY(-1px); }
-.home-btn:active{ transform: scale(.92); }
-.brand-actions{ display:flex; align-items:stretch; gap:8px; }
-
-.hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
-
-/* Bottom action bar (Undo / Hint / Auto Move) — deliberately at the
-   very bottom of the screen for thumb reach on a phone. SCORE/TIME
-   (when enabled) sit at the far left/right edges via the grid, with
-   .bottombar-actions staying genuinely centered regardless of
-   whether either chip is visible — a plain flex row with
-   justify-content:space-between would re-center on whichever chips
-   happen to be showing instead of staying put. */
-.bottombar{
-  display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;
-  grid-template-areas: "score actions time";
-  gap: clamp(10px,4vw,28px);
-  padding: 8px clamp(10px,4vw,28px) calc(8px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(0deg, #150d05, #150d0500 100%);
-  border-top: 1px solid #3a2812;
-  flex-shrink:0;
-}
-/* Fixed slots by id, not by visibility/order — SCORE is always the
-   left slot and TIME always the right slot even if one of them (or
-   the mobile game# chip) is hidden; a hidden sibling just leaves its
-   own slot empty instead of shifting anyone else. */
-#chip-score{ grid-area: score; justify-self:start; }
-#chip-time{ grid-area: time; justify-self:end; }
-/* FreeCell-only; always hidden on desktop regardless of the area
-   below, which only matters once the mobile override gives it one. */
-#game-number-chip-mobile{ display:none; }
-.bottombar-actions{ grid-area: actions; display:flex; justify-content:center; align-items:stretch; flex-wrap:wrap; gap: clamp(8px,3vw,24px); }
-/* Same breakpoint as .title-suffix (560px). Below that, .bottombar
-   becomes two grid rows: the action buttons span the full width on
-   their own row, and SCORE/game#/TIME get their own fixed row
-   underneath — game# gets an actual center slot here (it has none on
-   desktop, where it's simply never shown). This has to come AFTER
-   the base .bottombar rule above, not before it — see the note on
-   button.newgame-btn elsewhere in this file for why source order
-   matters here. */
-@media (max-width:560px){
-  .bottombar{
-    grid-template-columns: 1fr auto 1fr;
-    grid-template-rows: auto auto;
-    grid-template-areas:
-      "actions actions actions"
-      "score   gamenum time";
-    row-gap: 8px;
+// A fresh, unshuffled 52-card deck. `id` is stable and never changes as
+// the card moves between piles — every game should carry it through.
+function buildDeck(){
+  const deck = [];
+  let id = 0;
+  for(const s of SUITS){
+    for(const r of RANKS){
+      deck.push({ id:'c'+(id++), rank:r, suit:s, faceUp:false });
+    }
   }
-  #game-number-chip-mobile{ grid-area: gamenum; justify-self:center; }
+  return deck;
 }
-.bottombtn{
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-  background: var(--panel); border:1px solid var(--panel-line); border-radius:14px;
-  color: var(--brass-light); font-family:inherit; cursor:pointer;
-  padding: 8px 18px; min-width:76px;
-  transition: background .15s ease, transform .15s ease, opacity .15s ease;
-}
-.bottombtn:active{ transform: scale(.94); }
-.bottombtn .bicon{ font-size:19px; line-height:1; }
-.bottombtn .bicon img{ display:block; width:19px; height:19px; }
-/* The button row can hold up to 4 buttons now (Undo/Hint/Auto Move/
-   Show Next) — shrink padding and min-width once space gets tight,
-   and drop the text labels entirely on genuinely narrow phones,
-   leaving just the glyphs, rather than letting the row overflow. */
-@media (max-width:560px){
-  .bottombtn{ padding:6px 10px; min-width:0; }
-}
-@media (max-width:420px){
-  .bottombtn{ padding:8px; }
-  .bottombtn .blabel{ display:none; }
-}
-.bottombtn .blabel{ font-size:10px; letter-spacing:1px; color:#dce9df; }
-.bottombtn.disabled{ opacity:0.4; pointer-events:none; }
-
-/* Hint message bubble (see SEngine.showToast). */
-.hint-toast{
-  position:fixed; left:50%; bottom: 84px; transform: translateX(-50%) translateY(10px);
-  background: rgba(14,47,36,0.95); border:1px solid var(--panel-line); color:var(--ivory);
-  padding:9px 18px; border-radius:20px; font-size:13px; letter-spacing:.5px;
-  opacity:0; pointer-events:none; transition: opacity .25s ease, transform .25s ease;
-  z-index:150; max-width:88vw; text-align:center;
-}
-.hint-toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
-
-/* Pulsing green glow used by Hint to point at a card (SEngine.pulse). */
-@keyframes pulseGlow{
-  0%,100%{ box-shadow: 0 0 0 3px rgba(126,230,168,0); }
-  50%{ box-shadow: 0 0 0 4px rgba(126,230,168,0.9), 0 0 18px rgba(126,230,168,0.7); }
-}
-.hint-pulse{ animation: pulseGlow 0.7s ease-in-out 2; }
-
-.chip{
-  background: var(--panel); border: 1px solid var(--panel-line);
-  height:32px; padding: 0 16px; border-radius: 18px;
-  font-size: 13px; letter-spacing: 1px; color:#dce9df;
-  display:flex; gap:6px; align-items:center;
-  min-width: 64px; justify-content:center;
-}
-.chip b{ color: var(--brass-light); font-weight:600; }
-.iconbtn{
-  width:32px; height:32px; border-radius:50%;
-  border:1px solid var(--panel-line); background: var(--panel); color: var(--brass-light);
-  display:flex; align-items:center; justify-content:center;
-  cursor:pointer; font-size:14px;
-  transition: transform .15s ease, background .15s ease;
-}
-.iconbtn:hover{ background:#123a2c; transform: translateY(-1px); }
-.iconbtn:active{ transform: scale(.92); }
-.textbtn{
-  border:1px solid var(--panel-line); background:var(--panel); color:var(--ivory);
-  padding:7px 14px; border-radius:20px; cursor:pointer; font-family:inherit;
-  font-size:13px; letter-spacing:1px;
-}
-.textbtn:hover{ background:#123a2c; }
-
-/* =========================================================
-   TABLE
-   .stage > .table-frame > .table-felt are nested flex:1 containers so
-   the felt playing surface fills exactly the space left after the
-   header/bottom bar, on any screen size.
-   ========================================================= */
-.stage{
-  padding: clamp(8px,1.6vw,18px) clamp(8px,2.4vw,22px) clamp(8px,1.6vw,16px);
-  max-width: 1240px; margin: 0 auto;
-  display:flex; flex-direction:column;
-  flex:1; min-height:0; width:100%;
-}
-.table-frame{
-  border-radius: 22px;
-  padding: clamp(10px,1.6vw,18px);
-  background:
-    linear-gradient(155deg, rgba(var(--wood-1-rgb), var(--table-opacity)), rgba(var(--wood-2-rgb), var(--table-opacity)) 55%, rgba(var(--wood-3-rgb), var(--table-opacity))),
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 7px);
-  box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.06);
-  position:relative;
-  flex:1; min-height:0; display:flex;
-}
-.table-frame::before{
-  content:""; position:absolute; inset:6px; border-radius:16px;
-  border: 1.5px solid rgba(232,200,115,0.35); pointer-events:none;
-}
-.table-felt{
-  border-radius: 14px;
-  /* rgba() with a var() alpha channel, not color-mix() — see the
-     --table-opacity comment above root for why. Change --table-opacity
-     to retune both this and .table-frame's wood together. */
-  background-image:
-    radial-gradient(ellipse 140% 90% at 50% -10%,
-      rgba(var(--felt-highlight-rgb), var(--table-opacity)),
-      rgba(var(--felt-1-rgb), var(--table-opacity)) 45%,
-      rgba(var(--felt-2-rgb), var(--table-opacity)) 100%);
-  box-shadow: inset 0 0 90px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3);
-  padding: clamp(14px,2.2vw,26px) clamp(10px,2.4vw,22px) 18px;
-  flex:1; min-height:0; width:100%;
-}
-
-.row{ display:flex; gap: var(--gap); }
-.top-row{ justify-content:space-between; margin-bottom: clamp(10px,2vw,20px); }
-.foundations{ display:flex; gap: var(--gap); }
-.stockwaste{ display:flex; gap: var(--gap); } /* Klondike: stock+waste */
-.freecells{ display:flex; gap: var(--gap); }  /* FreeCell: the 4 free cells */
-/* .top-row (freecells/king-slot/foundations) uses justify-content:
-   space-between, so IT always spans the felt's full content width
-   edge-to-edge. .tableau-row is deliberately narrower than that by a
-   fixed amount — exactly one quarter of a card-width inset on each
-   side — and centered, rather than sized to its own natural content
-   width: a natural-width approach made the inset track the king
-   slot's proportions instead of a fixed, predictable amount. */
-.tableau-row{ display:flex; gap: var(--gap); width: calc(100% - var(--card-w) * 0.5); margin:0 auto; }
-
-/* One playing column. flex:1 shares the tableau-row's (deliberately
-   narrower-than-full-width) space equally, so any slack beyond the 8
-   cards + 7 gaps lands evenly across every column rather than only
-   after the last one. Height is set dynamically in JS to exactly fit
-   however many cards are stacked in it right now. */
-.tcol{ flex:1; min-width:0; position:relative; }
-.tcol{ min-height: var(--card-h); transition: height .2s ease; }
-
-/* .pile = the box a card sits in. .pile.slot is the faint placeholder
-   shown for an EMPTY pile — once a real card is placed there it's drawn
-   on top and the slot is simply hidden, not removed. */
-.pile{
-  width: var(--card-w); height: var(--card-h);
-  border-radius: var(--card-radius); position:relative; flex-shrink:0;
-  transition: width .2s ease, height .2s ease;
-}
-.pile.slot{
-  border: 2px solid rgba(232,200,115,0.3);
-  background: rgba(0,0,0,0.14);
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.4);
-}
-.pile.slot .slot-mark{
-  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-  font-size: calc(var(--card-w)*0.42); color: rgba(232,200,115,0.3);
-}
-.tcol .pile.slot{ position:absolute; top:0; left:0; }
-
-/* Green "you can drop here" glow, toggled via the single .drop-ok class
-   (see SEngine's clearDropHighlights/highlight code — it never needs to
-   know which specific selector variant applies, CSS handles that). Two
-   versions: .pile.slot.drop-ok for piles where cards live directly
-   inside the slot element (foundations, free cells). .tcol.drop-ok for
-   tableau columns instead, since column cards are separate sibling
-   elements — sized explicitly to --card-w rather than 100% because a
-   .tcol stretches wider than a card to fill its flex share of the row;
-   sizing off the parent box would make the glow visibly wider than the
-   actual card stack. */
-.pile.slot.drop-ok{ border-color:#7ee6a8; box-shadow: 0 0 14px #7ee6a888, inset 0 0 10px rgba(0,0,0,0.35);}
-.tcol.drop-ok::after{
-  content:""; position:absolute; left:-4px; top:-4px;
-  width: calc(var(--card-w) + 8px); height: calc(100% + 8px);
-  border-radius: calc(var(--card-radius) + 3px);
-  border:2px solid #7ee6a8; box-shadow:0 0 14px rgba(126,230,168,0.6);
-  pointer-events:none; z-index:500;
+// Fisher-Yates shuffle.
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
 }
 
 /* =========================================================
-   CARDS
-   Every card is a .card div containing either a .face (front) or a
-   .back-img-wrap (back). object-fit:cover always fills the card shape
-   completely regardless of the source image's own aspect ratio,
-   cropping any overflow rather than leaving empty gaps.
+   CARD DOM ELEMENTS
    ========================================================= */
-/* "Thoughtful" mode (see the Klondike settings toggle): shows a
-   face-down tableau card's real face instead of its back, but visibly
-   dimmed/desaturated so it still reads as "not actually in play" — the
-   point is to let someone plan ahead, not to make the card usable, so
-   it also blocks pointer events entirely rather than becoming
-   draggable. Deliberately scoped to the tableau only — the draw/stock
-   pile is excluded (see Klondike.html's renderStock). */
-.card.thoughtful{
-  opacity: 0.55;
-  filter: grayscale(0.6);
-  pointer-events: none;
+// Face-up card: real artwork with a text/corner-index fallback if the
+// image 404s. `covered` (true/false) controls whether the fallback's
+// corner badge lays out vertically (fully exposed card) or horizontally
+// (something's stacked on top of it, so only a thin strip stays visible
+// — see the matching CSS comment on .img-fallback .fc-corner).
+function buildFaceEl(card, covered){
+  const wrap = document.createElement('div');
+  wrap.className = 'face';
+  const img = document.createElement('img');
+  img.className = 'card-face-img';
+  img.alt = card.rank+' of '+suitFile(card.suit);
+  img.draggable = false;
+  loadCardImage(img, cardImgSrc(card), ()=>{
+    const cls = isRed(card.suit)?'suit-red':'suit-black';
+    const glyph = suitGlyph(card.suit);
+    const cornerCls = 'fc-corner'+(covered?' stacked':'');
+    wrap.innerHTML = '<div class="img-fallback '+cls+'">'+
+      '<div class="'+cornerCls+' tl"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
+      '<div class="fc-center"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
+      '<div class="'+cornerCls+' br"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
+    '</div>';
+  });
+  wrap.appendChild(img);
+  return wrap;
 }
-.card{
-  position:absolute; left:0; top:0;
-  width: var(--card-w); height: var(--card-h);
-  border-radius: var(--card-radius);
-  background: var(--ivory);
-  box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 3px 7px rgba(0,0,0,.4);
-  transition: box-shadow .15s ease, width .2s ease, height .2s ease;
-  cursor: grab;
-  touch-action: none;
-  overflow:hidden;
+// Face-down card: shows whichever back image `backStyle` names (a full
+// filename, e.g. "back_10.webp" — matches whatever the game's Settings
+// back-picker currently has selected).
+function buildBackEl(backStyle){
+  const wrap = document.createElement('div');
+  wrap.className = 'back-img-wrap';
+  const img = document.createElement('img');
+  img.className = 'card-back-img';
+  img.alt = 'card back';
+  img.draggable = false;
+  loadCardImage(img, backImgSrc(backStyle));
+  wrap.appendChild(img);
+  return wrap;
 }
-.card.dragging{ cursor:grabbing; z-index:999 !important; filter: drop-shadow(0 10px 14px rgba(0,0,0,.55)); transition:none; }
-.card.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 0 10px rgba(0,0,0,.5); }
-.face, .back-img-wrap{ position:absolute; inset:0; border-radius:var(--card-radius); overflow:hidden; background:transparent; }
-.back-img-wrap{ background:#0d3358; }
-.card-face-img, .card-back-img{
-  width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; user-select:none;
-}
-.card-face-img{ transform: scale(var(--face-scale)); transform-origin:center; }
-.card-back-img{ transform: scale(var(--back-scale)); transform-origin:center; }
 
-/* Shown INSTEAD of real artwork if a card's image 404s. Default corner
-   layout is vertical (rank above the suit glyph); .stacked switches to
-   horizontal for a card that's covered by another one on top of it, so
-   a thin visible strip still shows the suit and not just the rank. */
-.img-fallback{ position:absolute; inset:0; background:var(--ivory); border-radius:var(--card-radius); overflow:hidden; }
-.img-fallback .fc-center{
-  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-  gap:calc(var(--card-w)*0.05);
-  font-size:calc(var(--card-w)*0.26); font-weight:bold; opacity:0.85;
+// Builds one card's full DOM element (face or back), stashes its pile
+// location in data-* attributes (used everywhere by the interaction
+// system to figure out "what did the player just click/drag"), and
+// wires up its drag/click handlers via attachFn (typically
+// SEngine's own internal attachCardEvents, passed in by initInteractions
+// consumers indirectly — see makeCardEl usage in a game file).
+function makeCardEl(card, pileType, pileKey, index, covered, backStyle, attachFn){
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.dataset.id = card.id;
+  el.dataset.pile = pileType;
+  el.dataset.key = pileKey;
+  el.dataset.index = index;
+  el.appendChild(card.faceUp ? buildFaceEl(card, !!covered) : buildBackEl(backStyle));
+  if(attachFn) attachFn(el, card, pileType, pileKey, index);
+  return el;
 }
-.img-fallback .fc-corner{
-  position:absolute; left:6%; top:5%; font-size:calc(var(--card-w)*0.17);
-  font-weight:bold; line-height:1.1;
-  display:flex; flex-direction:column; align-items:center; gap:calc(var(--card-w)*0.02);
+
+// Sweeps away any stray .card element sitting directly in <body> — a
+// safety net for the scenario that used to cause floating duplicated
+// cards: a drag clone gets reparented to <body> mid-drag, and if some
+// OTHER render fires before the drag finishes, that render only clears
+// cards inside real pile containers, never touches the orphan. Call
+// this at the very top of every renderAll().
+function purgeStrayCards(){
+  document.querySelectorAll('body > .card').forEach(el=>el.remove());
 }
-.img-fallback .fc-corner.stacked{ flex-direction:row; gap:calc(var(--card-w)*0.035); }
-.img-fallback .fc-corner.br{ left:auto; right:6%; top:auto; bottom:5%; transform:rotate(180deg); }
-.suit-red{ color: var(--burgundy); }
-.suit-black{ color: var(--navy); }
+
+// Fires all 52 face images + every listed back file as background
+// Image() requests immediately, before any card is ever dealt or
+// flipped — without this, the FIRST time any given card appears
+// face-up mid-game there's real fetch+decode latency and it shows up
+// blank for a moment.
+function preloadAllCardImages(backFiles){
+  const urls = [];
+  for(const s of SUITS){
+    for(const r of RANKS){
+      urls.push(cardImgSrc({rank:r, suit:s}));
+    }
+  }
+  (backFiles||[]).forEach(f=> urls.push(backImgSrc(f)));
+  urls.forEach(url=>{
+    const img = new Image();
+    img.src = url;
+  });
+}
 
 /* =========================================================
-   WIN DIALOG + CASCADE
-   z-index 150 (cascade) sits above the board, below .winmask (200) —
-   the "You Win" dialog fades in on top of the cascade after a short
-   delay, so the cascade gets a beat to play solo first.
+   SCREEN-FIT SIZING
+   Solves for the biggest card width that fits the CURRENT window
+   without needing to scroll, exactly like Klondike's fitBoard did —
+   generalized here to accept how many tableau columns a game has and
+   a function to compute the deepest current stack, since that varies
+   per game (and, for FreeCell, per game STATE — an empty column vs a
+   column that grew past its starting depth).
    ========================================================= */
-.winmask{
-  position:fixed; inset:0; background: rgba(4,20,14,0.85); z-index:200;
-  display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px;
-  opacity:0; pointer-events:none; transition: opacity .4s ease;
+const CARD_RATIO = 1.4523; // must match the real card-art aspect ratio; keep in sync with --card-h in CSS
+function cardMetrics(overlapFrac){
+  const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w')) || 80;
+  const h = w * CARD_RATIO;
+  return { w, h, overlap: h*(overlapFrac==null?0.183:overlapFrac), fan: w*0.22 };
 }
-.winmask.show{ opacity:1; pointer-events:all; }
-/* Win dialog specifically: no full-screen dim, so the cascade
-   animation stays fully visible behind it — just a small floating
-   box instead of a takeover. #nomovesmask (same .winmask base class)
-   keeps the shared dim above, since there's no animation behind it to
-   preserve a view of. */
-#winmask{ background: transparent; }
-.winmask-modal{
-  display:flex; flex-direction:column; align-items:center; gap:14px;
-  background: rgba(4,20,14,0.92);
-  border: 1px solid var(--panel-line);
-  border-radius: 18px;
-  padding: 24px 32px;
-  box-shadow: 0 10px 40px rgba(0,0,0,.6);
-  max-width: min(90vw, 380px);
+
+// opts: {
+//   columns: how many tableau columns wide the board is,
+//   getMaxStackDepth: () => number (deepest current column/pile),
+//   overlapFrac: vertical overlap fraction (default 0.183),
+//   maxCardW: real upper cap on card width (default 104). minCardW is
+//     accepted for backward compatibility but no longer enforced as a
+//     floor — see the comment above cardW below for why.
+// }
+function fitBoard(opts){
+  const header = document.querySelector('header');
+  const stage = document.querySelector('.stage');
+  const frame = document.querySelector('.table-frame');
+  const felt = document.querySelector('.table-felt');
+  const bottombar = document.querySelector('.bottombar');
+  if(!header || !stage || !frame || !felt) return;
+
+  const overlapFrac = opts.overlapFrac==null ? 0.183 : opts.overlapFrac;
+  const columns = opts.columns;
+  const minCardW = opts.minCardW==null ? 44 : opts.minCardW;
+  const maxCardW = opts.maxCardW==null ? 104 : opts.maxCardW;
+
+  const headerH = header.getBoundingClientRect().height;
+  const bottombarH = bottombar ? bottombar.getBoundingClientRect().height : 0;
+  const stageCS = getComputedStyle(stage);
+  const frameCS = getComputedStyle(frame);
+  const feltCS = getComputedStyle(felt);
+
+  const vPad = parseFloat(stageCS.paddingTop)+parseFloat(stageCS.paddingBottom)
+             + parseFloat(frameCS.paddingTop)+parseFloat(frameCS.paddingBottom)
+             + parseFloat(feltCS.paddingTop)+parseFloat(feltCS.paddingBottom);
+  const hPad = parseFloat(stageCS.paddingLeft)+parseFloat(stageCS.paddingRight)
+             + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
+             + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
+
+  const availH = window.innerHeight - headerH - bottombarH - vPad - 10;
+  const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
+
+  // These used to be flat guesses (10px gap, 18px top-row margin) —
+  // but the real CSS values are viewport-relative (--gap is
+  // clamp(6px,1.2vw,14px); the top-row's margin-bottom is
+  // clamp(10px,2vw,20px)), and on a phone-width screen both resolve
+  // noticeably smaller than those guesses. That mismatch was reserving
+  // more space than the board actually needed, so cards rendered
+  // smaller than they had room to be — reading the browser's own
+  // resolved values instead fixes that at any viewport size or zoom
+  // level, rather than needing a size-specific fudge factor.
+  const topRowEl = document.querySelector('.top-row');
+  const tableauRowEl = document.querySelector('.tableau-row');
+  const topRowGap = topRowEl ? (parseFloat(getComputedStyle(topRowEl).marginBottom) || 18) : 18;
+  const maxStack = Math.max(opts.minStackForFit||7, opts.getMaxStackDepth ? opts.getMaxStackDepth() : 7);
+  const denom = 2 + (maxStack-1)*overlapFrac;
+  const cardHByHeight = (availH - topRowGap) / denom;
+  const cardWByHeight = cardHByHeight / CARD_RATIO;
+
+  // Width is bound by whichever row of the board needs the most space
+  // per card. Normally that's just the tableau (`columns` wide), but a
+  // game can pass opts.extraRows — e.g. [{units, gaps}, ...] — to
+  // describe any other row (free cells + a decorative slot + foundations,
+  // say) whose own card-count/gap math might actually be MORE demanding
+  // than the tableau's. Without this, a row like that can end up wider
+  // than the screen even though the tableau fits fine, which is exactly
+  // what was pushing FreeCell's rightmost foundation off-screen on
+  // narrow/mobile viewports.
+  const gapPx = tableauRowEl ? (parseFloat(getComputedStyle(tableauRowEl).columnGap) || 10) : 10;
+  const rows = [{units: columns, gaps: columns-1}].concat(opts.extraRows || []);
+  let cardWByWidth = Infinity;
+  rows.forEach(r=>{
+    const cw = (availW - gapPx*r.gaps) / r.units;
+    if(cw < cardWByWidth) cardWByWidth = cw;
+  });
+
+  // maxCardW is a real cap (cards shouldn't keep growing forever on a
+  // huge monitor). minCardW is NOT enforced the same way — forcing the
+  // card up to a minimum regardless of available space is exactly what
+  // was still causing the mobile overflow after the extraRows fix: on
+  // a narrow phone the true fit-safe width can genuinely be below 44px,
+  // and clamping it back up to 44 pushes the whole board past the edge
+  // of the screen again. minCardW only ever applies when honoring it
+  // still fits — it can shrink the ceiling, never force an overflow.
+  let cardW = Math.min(cardWByHeight, cardWByWidth, maxCardW);
+  // Rounded to a whole pixel: a fractional --card-w (e.g. 73.4px) gives
+  // every box sized off it a fractional edge, which browsers render by
+  // anti-aliasing the leftover fraction onto the bottom/right side only
+  // — never top/left. That's invisible on the plain card itself, but it
+  // makes anything outlining the card (the .selected ring, the drop-ok
+  // glow) look lopsided, thicker on the bottom and right than the top
+  // and left. Whole-pixel width removes the fraction entirely.
+  document.documentElement.style.setProperty('--card-w', Math.round(cardW)+'px');
 }
-.winmask h2{ font-size: clamp(22px,5vw,34px); color: var(--brass-light); letter-spacing:4px; font-variant:small-caps; margin:0; text-shadow:0 0 30px rgba(232,200,115,.5);}
-.winmask p{ color:#cfe6d8; letter-spacing:2px; text-align:center;}
-#cascade-layer{ position:fixed; inset:0; z-index:150; overflow:hidden; pointer-events:none; }
-.cascade-card, .cascade-ghost{ position:fixed; cursor:default; will-change: left, top; }
 
 /* =========================================================
-   SETTINGS / DIALOGS
-   .overlay is the dark backdrop shared by Settings, Help, and any
-   confirm/game-over dialog. .modal is the green card-shaped panel
-   inside it. .segmented is a small toggle-button row (e.g. Klondike's
-   Draw 1/3). .switch/.slider is the on/off toggle for Show Timer/Score.
+   DRAG-AND-DROP + CLICK-TO-MOVE
+   One shared interaction system for every game. Call
+   SEngine.initInteractions(config) ONCE after your DOM/piles exist.
+   config fields (all required unless noted):
+     findPileArray(pileType, pileKey) -> array
+        Same idea as Klondike's findPileArray — turns a pile
+        descriptor into the actual card array.
+     isCardMovable(card, pileType, pileKey, index) -> bool
+        Should this specific card even start a drag/click? (face-up,
+        and — depending on the game — only the top card of some pile
+        types.)
+     resolveDropTarget(x, y) -> {type, key, highlightEl} | null
+        Exact hit-test (elementFromPoint-based) used while dragging.
+     resolveHoverTargetPadded(x, y) -> {type, key, highlightEl} | null
+        Same shape, but with generous padding around each pile's box —
+        used for click-to-move's cursor-hover highlight (see
+        SEngine.makePaddedResolver below for a ready-made version).
+     canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey) -> index | -1
+        Game's rule check, INCLUDING misclick-widening if desired.
+        Return the index engine should actually use, or -1 if illegal.
+     tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey) -> bool
+        Actually performs the move (mutates the game's state and
+        re-renders) if legal. Called on drop / on destination click.
+     onRenderNeeded()
+        Called after a failed drop/drag-cancel so the game can redraw
+        everything back to its pre-drag position.
+     autoMoveToFoundation(pileType, pileKey, index) -> bool   [optional]
+        Used for double-tap-to-send-home. Omit to disable double-tap.
+     onSelectionChanged()   [optional]
+        Called whenever the click-to-move selection changes (engine
+        manages the actual "selected" bookkeeping internally and calls
+        this so the game can do any of its own bookkeeping if needed).
+   The game triggers card element listeners by passing SEngine's
+   attachCardEvents (exposed below) as the `attachFn` to makeCardEl.
    ========================================================= */
-.overlay{
-  position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100;
-  display:none; align-items:center; justify-content:center;
-}
-.overlay.show{ display:flex; }
-.modal{
-  width: min(440px, 92vw); max-height: 90vh; overflow-y:auto;
-  background: linear-gradient(180deg,#0f3527,#0a2a1f);
-  border:1px solid var(--panel-line); border-radius:14px;
-  padding: 22px 24px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.6);
-}
-.modal h3{ margin:0 0 4px; color:var(--brass-light); font-variant:small-caps; letter-spacing:2px; font-size:22px;}
-.modal .sub{ color:#9fc9b6; font-size:12px; letter-spacing:1px; margin-bottom:18px;}
-.field{ margin-bottom:16px; }
-.field > label{ display:block; font-size:13px; letter-spacing:1px; color:#dce9df; margin-bottom:8px;}
-.segmented{ display:flex; border:1px solid var(--panel-line); border-radius:10px; overflow:hidden; }
-.segmented button{
-  flex:1; padding:9px 6px; background:var(--panel); color:#cfe6d8; border:none; cursor:pointer;
-  font-family:inherit; font-size:13px; letter-spacing:1px; border-right:1px solid var(--panel-line);
-}
-.segmented button:last-child{ border-right:none; }
-.segmented button.active{ background: var(--brass); color:#2a1e05; font-weight:bold; }
-.toggrow{ display:flex; align-items:center; justify-content:space-between; padding:4px 0; }
-.toggrow span{ font-size:14px; color:#e7f2ea;}
-.switch{ position:relative; width:46px; height:26px; flex-shrink:0; }
-.switch input{ opacity:0; width:0; height:0; }
-.slider{
-  position:absolute; inset:0; background:#12402f; border-radius:20px; cursor:pointer;
-  transition:.2s; border:1px solid var(--panel-line);
-}
-.slider::before{
-  content:""; position:absolute; width:20px; height:20px; left:2px; top:2px;
-  background: var(--ivory); border-radius:50%; transition:.2s;
-}
-.switch input:checked + .slider{ background: #2f7a53; }
-.switch input:checked + .slider::before{ transform: translateX(20px); background: var(--brass-light); }
-.modal-actions{ display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
-.modal-actions .textbtn{ flex:1; min-width:100px; text-align:center; }
-.fieldnote{ font-size:11px; color:#e0b95c; margin-top:8px; letter-spacing:.3px; line-height:1.4; }
-.primary{ background: linear-gradient(180deg, var(--brass-light), var(--brass)); color:#2a1e05; border:none; font-weight:bold;}
+let dragCtx = null;
+let dragMoved = false;
+let lastTapTime = 0;
+let lastTapKey = '';
+let dragEls = [];
+let lastPointer = {x:0,y:0};
+let ixConfig = null;
+let selected = null; // {pileType, pileKey, index} while something is picked up via click-to-move
 
-/* Card-back picker: one .backswatch thumbnail per option. TO ADD A NEW
-   CARD BACK: drop the file in cards/, then add one line following the
-   same pattern to the #back-picker block in EVERY game's HTML —
-     <div class="backswatch" data-val="back_NAME.ext"><img src="cards/back_NAME.ext"></div>
-   data-val is stored as state.backStyle and passed straight to
-   SEngine.backImgSrc() — no other code changes needed. */
-.backpicker{ display:flex; gap:10px; flex-wrap:wrap; }
-.backswatch{
-  width:52px; height:74px; border-radius:3px; cursor:pointer;
-  border: 2px solid transparent; position:relative; overflow:hidden;
-  box-shadow: 0 2px 5px rgba(0,0,0,.4);
-  background:#0d3358;
+function clearDropHighlights(){
+  document.querySelectorAll('.drop-ok').forEach(el=>el.classList.remove('drop-ok'));
 }
-.backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
-.backswatch.active{ border-color: #7ee6a8; }
+
+function getSelected(){ return selected; }
+
+function clearSelection(){
+  if(selected){
+    document.querySelectorAll('.card.selected').forEach(e=>e.classList.remove('selected'));
+    selected = null;
+    if(ixConfig && ixConfig.onSelectionChanged) ixConfig.onSelectionChanged();
+  }
+  clearDropHighlights();
+}
+
+// A ready-made resolveHoverTargetPadded implementation: pass a function
+// that returns an array of {type, key, el} zones (every pile a card
+// could conceivably be dropped on), and this returns a resolver
+// checking each zone's bounding box plus `padding` extra pixels on
+// every side — more forgiving than exact pixel hit-testing, which is
+// what click-to-move's hover highlight wants (there's no dragged
+// element to test against, just a bare cursor position).
+function makePaddedResolver(getZones, padding){
+  padding = padding==null ? 26 : padding;
+  return function(x, y){
+    const zones = getZones();
+    for(const z of zones){
+      const r = z.el.getBoundingClientRect();
+      if(x>=r.left-padding && x<=r.right+padding && y>=r.top-padding && y<=r.bottom+padding){
+        return { type:z.type, key:z.key, highlightEl:z.el };
+      }
+    }
+    return null;
+  };
+}
+
+function attachCardEvents(el, card, pileType, pileKey, index){
+  if(!ixConfig.isCardMovable(card, pileType, pileKey, index)){
+    el.style.cursor = 'default';
+    return;
+  }
+  el.style.cursor = 'grab';
+  el.addEventListener('pointerdown', (e)=>{
+    if(e.button!==undefined && e.button!==0) return;
+    dragMoved = false;
+    dragCtx = { el, card, pileType, pileKey, index, startX:e.clientX, startY:e.clientY };
+    try{ el.setPointerCapture(e.pointerId); }catch(err){}
+  });
+}
+
+function beginVisualDrag(pileType, pileKey, index){
+  const pile = ixConfig.findPileArray(pileType, pileKey);
+  const cards = pile.slice(index); // works for both "just the top card" (index===length-1) and a multi-card run
+  dragEls = [];
+  cards.forEach((c)=>{
+    const el = document.querySelector('.card[data-id="'+c.id+'"]');
+    if(!el) return;
+    const rect = el.getBoundingClientRect();
+    el.classList.add('dragging');
+    el.style.position='fixed';
+    el.style.left = rect.left+'px';
+    el.style.top = rect.top+'px';
+    el.style.zIndex = 999;
+    // pointer-events:none is what makes drop-target hit-testing see
+    // THROUGH the dragged card to whatever's underneath it — without
+    // this, the dragged card (which follows the cursor) is always the
+    // topmost element at the drop point, and elementFromPoint would
+    // find it instead of the real target, so every drop would fail.
+    el.style.pointerEvents = 'none';
+    document.body.appendChild(el);
+    dragEls.push({el, baseLeft:rect.left, baseTop:rect.top});
+  });
+  clearDropHighlights();
+}
+function updateVisualDrag(dx, dy){
+  dragEls.forEach(d=>{
+    d.el.style.left = (d.baseLeft+dx)+'px';
+    d.el.style.top = (d.baseTop+dy)+'px';
+  });
+  clearDropHighlights();
+  const target = ixConfig.resolveDropTarget(lastPointer.x, lastPointer.y);
+  if(target && dragCtx){
+    const idx = ixConfig.canMoveWithWiden(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, target.type, target.key);
+    if(idx>=0) target.highlightEl.classList.add('drop-ok');
+  }
+}
+function cleanupDragEls(){
+  dragEls.forEach(d=>{
+    d.el.classList.remove('dragging');
+    d.el.style.position=''; d.el.style.left=''; d.el.style.top=''; d.el.style.zIndex=''; d.el.style.pointerEvents='';
+    if(d.el.parentNode === document.body) d.el.remove();
+  });
+  dragEls = [];
+}
+function endVisualDrag(x,y){
+  const target = ixConfig.resolveDropTarget(x,y);
+  clearDropHighlights();
+  let success = false;
+  if(target){
+    success = ixConfig.tryMoveAuto(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, target.type, target.key);
+  }
+  cleanupDragEls();
+  if(!success && ixConfig.onRenderNeeded) ixConfig.onRenderNeeded();
+}
+function cancelVisualDrag(){
+  cleanupDragEls();
+  if(ixConfig.onRenderNeeded) ixConfig.onRenderNeeded();
+}
+
+function updateSelectHoverHighlight(x, y){
+  clearDropHighlights();
+  if(!selected) return;
+  const target = ixConfig.resolveHoverTargetPadded(x, y);
+  if(!target) return;
+  if(selected.pileType==='tableau' && target.type==='tableau' && String(selected.pileKey)===String(target.key)) return;
+  if(ixConfig.canMoveWithWiden(selected.pileType, selected.pileKey, selected.index, target.type, target.key) >= 0){
+    target.highlightEl.classList.add('drop-ok');
+  }
+}
+
+// The click-to-move state machine: first click picks a card up, a
+// second click either completes the move (if it landed on a different,
+// valid destination), cancels the selection (clicked the same card
+// again), or re-selects a different card (if the move attempt failed —
+// lets you change your mind without an extra click to deselect first).
+function handleTapSelect(pileType, pileKey, index, card){
+  if(selected){
+    const sel = selected;
+    if(sel.pileType===pileType && String(sel.pileKey)===String(pileKey) && sel.index===index){
+      clearSelection(); return;
+    }
+    const moved = ixConfig.tryMoveAuto(sel.pileType, sel.pileKey, sel.index, pileType, pileKey);
+    clearSelection();
+    if(moved) return;
+  }
+  clearSelection();
+  selected = {pileType, pileKey, index};
+  if(ixConfig.onSelectionChanged) ixConfig.onSelectionChanged();
+  const pile = ixConfig.findPileArray(pileType, pileKey);
+  const cards = pile.slice(index);
+  cards.forEach(c=>{
+    const el = document.querySelector('.card[data-id="'+c.id+'"]');
+    if(el) el.classList.add('selected');
+  });
+}
+
+function initInteractions(config){
+  ixConfig = config;
+
+  document.addEventListener('pointermove', (e)=>{
+    lastPointer.x = e.clientX; lastPointer.y = e.clientY;
+    if(!dragCtx){
+      if(selected) updateSelectHoverHighlight(e.clientX, e.clientY);
+      return;
+    }
+    const dx = e.clientX-dragCtx.startX, dy = e.clientY-dragCtx.startY;
+    if(!dragMoved && Math.hypot(dx,dy) < 6) return;
+    if(!dragMoved){
+      dragMoved = true;
+      beginVisualDrag(dragCtx.pileType, dragCtx.pileKey, dragCtx.index);
+    }
+    updateVisualDrag(dx, dy);
+  });
+
+  document.addEventListener('pointerup', (e)=>{
+    if(!dragCtx) return;
+    const ctx = dragCtx;
+    if(dragMoved){
+      endVisualDrag(e.clientX, e.clientY);
+    } else {
+      const key = ctx.pileType+':'+ctx.pileKey+':'+ctx.index;
+      const now = Date.now();
+      if(key===lastTapKey && now-lastTapTime < 320 && ixConfig.autoMoveToFoundation){
+        ixConfig.autoMoveToFoundation(ctx.pileType, ctx.pileKey, ctx.index);
+        clearSelection();
+        lastTapKey = '';
+      } else {
+        handleTapSelect(ctx.pileType, ctx.pileKey, ctx.index, ctx.card);
+        lastTapKey = key; lastTapTime = now;
+      }
+    }
+    dragCtx = null; dragMoved = false;
+  });
+
+  document.addEventListener('pointercancel', ()=>{
+    if(!dragCtx) return;
+    cancelVisualDrag();
+    dragCtx = null; dragMoved = false;
+  });
+
+  window.addEventListener('blur', ()=>{
+    if(dragCtx){ cancelVisualDrag(); dragCtx = null; dragMoved = false; }
+  });
+}
+
+/* =========================================================
+   UNDO STACK
+   Generic JSON-snapshot push/pop. The game decides what "the state"
+   means by providing getSnapshot()/applySnapshot() — this file never
+   assumes anything about the shape of a game's piles.
+   ========================================================= */
+function createUndoStack(getSnapshot, applySnapshot, undoButtonEl, maxDepth){
+  const stack = [];
+  maxDepth = maxDepth || 200;
+  function updateButton(){
+    if(undoButtonEl) undoButtonEl.style.opacity = stack.length ? '1' : '0.4';
+  }
+  return {
+    push(){
+      stack.push(JSON.stringify(getSnapshot()));
+      if(stack.length>maxDepth) stack.shift();
+      updateButton();
+    },
+    undo(){
+      if(!stack.length) return false;
+      applySnapshot(JSON.parse(stack.pop()));
+      updateButton();
+      return true;
+    },
+    reset(){ stack.length = 0; updateButton(); },
+    canUndo(){ return stack.length>0; },
+    updateButton
+  };
+}
+
+/* =========================================================
+   TOAST + HINT PULSE
+   ========================================================= */
+let toastTimer = null;
+function showToast(toastEl, msg, ms){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> toastEl.classList.remove('show'), ms || 2200);
+}
+// Briefly glows an element (see @keyframes pulseGlow in the shared CSS).
+// The remove-then-reflow-then-add dance forces the animation to restart
+// even if this same element was just pulsed a moment ago.
+function pulse(el){
+  if(!el) return;
+  el.classList.remove('hint-pulse');
+  void el.offsetWidth;
+  el.classList.add('hint-pulse');
+  setTimeout(()=> el.classList.remove('hint-pulse'), 1500);
+}
+// Same idea as pulse() above, but for highlighting several cards at
+// once for a shorter, fixed duration — used by the "Show Next"
+// foundation-preview button so every currently-eligible card lights up
+// together instead of one at a time.
+function pulseAll(els, duration){
+  const ms = duration || 1000;
+  els.forEach(el=>{
+    if(!el) return;
+    el.classList.remove('hint-pulse');
+    void el.offsetWidth;
+    el.classList.add('hint-pulse');
+  });
+  setTimeout(()=>{ els.forEach(el=>{ if(el) el.classList.remove('hint-pulse'); }); }, ms);
+}
+
+/* =========================================================
+   WIN CASCADE ANIMATION
+   Launches one floating copy of each given card from its foundation
+   position, arcs it under gravity, bounces off the bottom a few times,
+   then fades out. `cards` is an ordered array of {card, sourceEl}.
+   `buildFaceElFn` should be the game's own face-builder (so art/back
+   settings match); `getCardMetrics` should return {w,h}.
+   ========================================================= */
+function startWinCascade(cards, buildFaceElFn, getCardMetrics, opts){
+  opts = opts || {};
+  const layer = document.createElement('div');
+  layer.id = 'cascade-layer';
+  document.body.appendChild(layer);
+
+  const STAGGER = opts.stagger!=null ? opts.stagger : 90;
+  const GRAVITY = opts.gravity!=null ? opts.gravity : 0.35;
+  const BOUNCE_DAMP = opts.bounceDamp!=null ? opts.bounceDamp : 0.62;
+  const TRAIL = !!opts.trail; // classic dense-pile look: settled cards stay put instead of fading
+  const SEQUENTIAL = !!opts.sequential; // next card waits for the previous one's first bounce, not a fixed timer
+  const SEQ_MAX_WAIT = opts.sequentialMaxWait!=null ? opts.sequentialMaxWait : null; // caps that wait so pacing can't drift slower than this
+
+  if(SEQUENTIAL){
+    let i = 0;
+    function launchNext(){
+      if(i >= cards.length) return;
+      const entry = cards[i++];
+      let fired = false;
+      const proceed = ()=>{ if(fired) return; fired = true; launchNext(); };
+      spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL, proceed);
+      if(SEQ_MAX_WAIT!=null) setTimeout(proceed, SEQ_MAX_WAIT);
+    }
+    launchNext();
+  } else {
+    cards.forEach((entry, i)=>{
+      setTimeout(()=> spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL), i*STAGGER);
+    });
+  }
+  // Cleanup timing: for sequential mode this must reflect its ACTUAL
+  // pacing, not the unrelated STAGGER constant — with slow gravity a
+  // real first-bounce can take much longer than STAGGER implies, and
+  // using STAGGER here was removing the whole layer well before the
+  // cascade had finished (or even fully launched), which is very
+  // likely why the trail pile never actually became visible.
+  const perCardEstimate = SEQUENTIAL ? (SEQ_MAX_WAIT!=null ? SEQ_MAX_WAIT : 700) : STAGGER;
+  setTimeout(()=>{ layer.remove(); }, cards.length*perCardEstimate + 8000);
+  return layer;
+}
+function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, bounceDamp, trail, onFirstBounce){
+  if(!entry.sourceEl){ if(onFirstBounce) onFirstBounce(); return; }
+  const startRect = entry.sourceEl.getBoundingClientRect();
+  const metrics = getCardMetrics();
+
+  const el = document.createElement('div');
+  el.className = 'card cascade-card';
+  el.style.width = metrics.w+'px';
+  el.style.height = metrics.h+'px';
+  el.style.left = startRect.left+'px';
+  el.style.top = startRect.top+'px';
+  el.appendChild(buildFaceElFn(entry.card, false));
+  layer.appendChild(el);
+
+  let x = startRect.left, y = startRect.top;
+  let vx = (Math.random()<0.5 ? -1 : 1) * (2.5 + Math.random()*1.8);
+  let vy = -7 - Math.random()*3;
+  const floorY = window.innerHeight - metrics.h - 8;
+  let bounces = 0;
+  let firstBounceFired = false;
+
+  let lastGhostTime = 0;
+  const GHOST_INTERVAL = 70; // ms between trail copies left behind along the bounce path
+
+  function frame(now){
+    vy += gravity;
+    x += vx;
+    y += vy;
+    if(y >= floorY){
+      y = floorY;
+      vy = -vy*bounceDamp;
+      bounces++;
+      if(!firstBounceFired){
+        firstBounceFired = true;
+        if(onFirstBounce) onFirstBounce();
+      }
+      if(Math.abs(vy) < 2.2 || bounces > 6){
+        el.style.left = x+'px';
+        el.style.top = y+'px';
+        if(trail) return; // stays put, visible, building up the pile — cleared only when the whole layer removes itself
+        el.style.transition = 'opacity .6s ease';
+        el.style.opacity = '0';
+        setTimeout(()=> el.remove(), 650);
+        return;
+      }
+    }
+    // Bounce off the left/right edges of the viewport instead of
+    // vanishing — a card drifting sideways used to just get deleted
+    // the instant it crossed the boundary, often before it had ever
+    // even reached the floor once. Same reflection idea as the floor
+    // bounce above, just on the horizontal axis.
+    if(x < 0){ x = 0; vx = -vx*bounceDamp; }
+    else if(x > window.innerWidth - metrics.w){ x = window.innerWidth - metrics.w; vx = -vx*bounceDamp; }
+    el.style.left = x+'px';
+    el.style.top = y+'px';
+    if(trail && (now-lastGhostTime >= GHOST_INTERVAL)){
+      lastGhostTime = now;
+      const ghost = el.cloneNode(true);
+      ghost.classList.remove('cascade-card');
+      ghost.classList.add('cascade-ghost');
+      ghost.style.left = x+'px';
+      ghost.style.top = y+'px';
+      layer.appendChild(ghost);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* =========================================================
+   SETTINGS MODAL SHELL
+   Wires up the parts of Settings that are the same in every game:
+   card-back picker (live preview, click to select) + timer/score
+   toggles + Cancel/Apply/Apply&NewGame semantics with a snapshot to
+   revert to. A game adds its OWN extra fields (like Klondike's Draw
+   1/3) alongside these by wiring its own extra controls and passing
+   extraSnapshot()/extraRestore()/extraOnOpen() callbacks so those
+   values ride along in the same snapshot/revert cycle.
+   config: {
+     state, pendingSettings,          // the game's own objects (read/write directly)
+     overlayEl, backPickerSwatchSelector,
+     togTimerEl, togScoreEl,
+     applyHudVisibility(), syncTimerInterval(), onRenderNeeded(),
+     extraSnapshot(), extraRestore(snap), extraOnOpen()   [all optional]
+   }
+   Returns {open, revert, refreshBackPicker} in case the game needs to
+   trigger them itself (e.g. a "New Game" flow that also resets Settings).
+   ========================================================= */
+function wireSettingsShell(cfg){
+  let snapshot = null;
+  function open(){
+    snapshot = Object.assign({
+      backStyle: cfg.state.backStyle, showTimer: cfg.state.showTimer, showScore: cfg.state.showScore
+    }, cfg.extraSnapshot ? cfg.extraSnapshot() : {});
+    cfg.pendingSettings.backStyle = cfg.state.backStyle;
+    cfg.pendingSettings.showTimer = cfg.state.showTimer;
+    cfg.pendingSettings.showScore = cfg.state.showScore;
+    cfg.togTimerEl.checked = cfg.state.showTimer;
+    cfg.togScoreEl.checked = cfg.state.showScore;
+    refreshBackPicker();
+    if(cfg.extraOnOpen) cfg.extraOnOpen();
+    cfg.overlayEl.classList.add('show');
+  }
+  function revert(){
+    if(!snapshot) return;
+    cfg.state.backStyle = snapshot.backStyle;
+    cfg.state.showTimer = snapshot.showTimer;
+    cfg.state.showScore = snapshot.showScore;
+    cfg.pendingSettings.backStyle = snapshot.backStyle;
+    cfg.pendingSettings.showTimer = snapshot.showTimer;
+    cfg.pendingSettings.showScore = snapshot.showScore;
+    if(cfg.extraRestore) cfg.extraRestore(snapshot);
+    cfg.syncTimerInterval();
+    cfg.applyHudVisibility();
+    cfg.onRenderNeeded();
+  }
+  function refreshBackPicker(){
+    document.querySelectorAll(cfg.backPickerSwatchSelector).forEach(sw=>{
+      sw.classList.toggle('active', sw.dataset.val===cfg.pendingSettings.backStyle);
+    });
+  }
+  document.querySelectorAll(cfg.backPickerSwatchSelector).forEach(sw=>{
+    sw.addEventListener('click', ()=>{
+      cfg.pendingSettings.backStyle = sw.dataset.val;
+      cfg.state.backStyle = sw.dataset.val;
+      refreshBackPicker();
+      cfg.onRenderNeeded();
+    });
+  });
+  cfg.togTimerEl.addEventListener('change', (e)=>{
+    cfg.pendingSettings.showTimer = e.target.checked;
+    cfg.state.showTimer = e.target.checked;
+    cfg.syncTimerInterval();
+    cfg.applyHudVisibility();
+  });
+  cfg.togScoreEl.addEventListener('change', (e)=>{
+    cfg.pendingSettings.showScore = e.target.checked;
+    cfg.state.showScore = e.target.checked;
+    cfg.applyHudVisibility();
+  });
+  cfg.overlayEl.addEventListener('click', (e)=>{ if(e.target===cfg.overlayEl){ revert(); cfg.overlayEl.classList.remove('show'); } });
+
+  return { open, revert, refreshBackPicker };
+}
+
+// Makes every element matching squareSelector exactly as tall AND
+// wide as referenceSelector's real rendered height — used to keep
+// .home-btn a true circle matching .newgame-btn's height. CSS alone
+// (flex align-items:stretch + aspect-ratio:1) turned out not to be
+// reliably honored for this combination, so this measures the actual
+// box directly instead of hoping the two stay in sync on their own.
+// Makes every .home-btn exactly as tall AND wide as #btn-newgame's
+// real rendered height, so it's a true circle matching New Game
+// regardless of font-metric quirks (CSS align-items:stretch +
+// aspect-ratio:1 wasn't reliably doing this on its own). Entirely
+// self-initializing — runs itself on load and on resize, so no game
+// file needs to call anything for this; it's genuinely shared, the
+// way styles.css is, not something each page has to wire up.
+// The score/time chip visibility logic — identical in every game, so
+// it lives here instead of being copy-pasted into each one. Each game
+// still needs its own tiny wrapper (state is a per-file variable), but
+// the actual behavior is defined exactly once.
+function applyHudVisibility(state){
+  const scoreEl = document.getElementById('chip-score');
+  const timeEl = document.getElementById('chip-time');
+  if(scoreEl) scoreEl.style.display = state.showScore ? 'flex' : 'none';
+  if(timeEl) timeEl.style.display = state.showTimer ? 'flex' : 'none';
+  // Optional — only FreeCell has this chip at all. Shown only when
+  // BOTH the mobile breakpoint is active and the person has opted in
+  // via the mobile-only settings toggle, so crossing the breakpoint
+  // (e.g. rotating a tablet) needs this re-run, not just the toggle.
+  const gameNumMobileEl = document.getElementById('game-number-chip-mobile');
+  if(gameNumMobileEl){
+    const isMobile = window.matchMedia('(max-width:560px)').matches;
+    gameNumMobileEl.style.display = (isMobile && state.showGameNumberMobile) ? 'flex' : 'none';
+  }
+}
+
+function syncHomeButtonSize(){
+  const ref = document.getElementById('btn-newgame');
+  if(!ref) return;
+  const h = ref.getBoundingClientRect().height;
+  if(!h) return;
+  document.querySelectorAll('.home-btn').forEach(el=>{
+    el.style.width = h+'px';
+    el.style.height = h+'px';
+  });
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', syncHomeButtonSize);
+} else {
+  syncHomeButtonSize();
+}
+let homeBtnResizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(homeBtnResizeTimer);
+  homeBtnResizeTimer = setTimeout(syncHomeButtonSize, 100);
+});
+
+/* =========================================================
+   PUBLIC API
+   ========================================================= */
+return {
+  SUITS, RANKS, rankValue, isRed, suitGlyph, rankFile, suitFile,
+  cardImgSrc, backImgSrc, loadCardImage,
+  buildDeck, shuffle,
+  buildFaceEl, buildBackEl, makeCardEl, purgeStrayCards,
+  preloadAllCardImages,
+  CARD_RATIO, cardMetrics, fitBoard,
+  attachCardEvents, initInteractions, clearSelection, getSelected, makePaddedResolver,
+  createUndoStack,
+  showToast, pulse, pulseAll,
+  startWinCascade,
+  wireSettingsShell,
+  applyHudVisibility,
+  ENGINE_VERSION, getStylesheetVersion
+};
+
+})();
