@@ -1,470 +1,777 @@
 <!DOCTYPE html>
+<!--
+    Tut's Tomb (Pyramid Solitaire)
+    Uses shared styles.css and engine.js
+-->
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tut's Tomb - Adventurer's Quest</title>
-    <style>
-        :root {
-            --bg-color: #1a1512;
-            --gold: #d4af37;
-            --stone: #8b7355;
-            --highlight: #f8e5a0;
-            --danger: #b22222;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Tut's Tomb</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* =========================================================
+     THEME OVERRIDES - Egyptian Tomb Vibe
+     ========================================================= */
+  :root {
+    --felt-1: #4a3722; /* Dusty tomb floor */
+    --felt-2: #24190f;
+    --wood-1: #d4af37; /* Gold/Sandstone framing */
+    --wood-2: #aa8621;
+    --wood-3: #5c430a;
+    --panel: #2a1e12;
+    --panel-line: #5c430a;
+    --brass-light: #f8e5a0;
+  }
 
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-color);
-            background-image: radial-gradient(circle at center, #2c241b 0%, #100c0a 100%);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: var(--gold);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
+  body {
+    background: radial-gradient(ellipse at 50% -10%, #2c2013, #0a0704 65%);
+  }
 
-        /* --- Title & Adventure Bar --- */
-        #top-ui {
-            width: 100%;
-            background: linear-gradient(to bottom, #111, #222);
-            border-bottom: 3px solid var(--gold);
-            z-index: 10;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
-        }
+  .table-felt {
+    background-image: radial-gradient(ellipse 140% 90% at 50% -10%, #6e5233, var(--felt-1) 45%, var(--felt-2) 100%);
+    box-shadow: inset 0 0 120px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(0,0,0,0.5);
+  }
 
-        h1 {
-            margin: 0;
-            padding: 10px;
-            text-align: center;
-            font-size: 1.5rem;
-            text-transform: uppercase;
-            letter-spacing: 5px;
-            text-shadow: 0 0 10px var(--gold);
-            border-bottom: 1px solid #333;
-        }
+  /* =========================================================
+     ADVENTURER TRACK
+     ========================================================= */
+  #adventure-track {
+    height: 48px;
+    background: linear-gradient(180deg, #111, #1a1512);
+    border-bottom: 2px solid var(--wood-3);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+    flex-shrink: 0;
+  }
 
-        #adventure-track {
-            height: 60px;
-            position: relative;
-            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><text x="10" y="25" fill="%23333">🧱</text></svg>') repeat-x;
-            overflow: hidden;
-        }
+  /* Brick background pattern */
+  #adventure-track::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20"><rect width="30" height="20" fill="none" stroke="%233a2a18" stroke-width="2"/><path d="M15,0 v20 M0,10 h30" stroke="%233a2a18" stroke-width="2"/></svg>') repeat;
+    opacity: 0.5;
+  }
 
-        #adventurer {
-            position: absolute;
-            bottom: 5px;
-            left: 2%;
-            font-size: 2rem;
-            transition: left 0.5s ease-out;
-            z-index: 2;
-        }
+  #adventurer {
+    position: absolute;
+    left: 2%;
+    font-size: 24px;
+    transition: left 0.5s ease-out;
+    z-index: 2;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+  }
 
-        /* Animation classes for dodging/jumping */
-        .jump { animation: jumpAnim 0.6s ease; }
-        .dodge { animation: dodgeAnim 0.5s ease; }
+  #chest {
+    position: absolute;
+    right: 2%;
+    font-size: 24px;
+    z-index: 1;
+    filter: drop-shadow(0 0 8px var(--brass-light));
+  }
 
-        @keyframes jumpAnim {
-            0% { transform: translateY(0); }
-            50% { transform: translateY(-25px); }
-            100% { transform: translateY(0); }
-        }
-        @keyframes dodgeAnim {
-            0% { transform: rotate(0deg); }
-            50% { transform: rotate(20deg) translateY(5px); }
-            100% { transform: rotate(0deg); }
-        }
+  .jump { animation: jumpAnim 0.6s ease; }
+  .dodge { animation: dodgeAnim 0.5s ease; }
 
-        #chest {
-            position: absolute;
-            bottom: 5px;
-            right: 2%;
-            font-size: 2rem;
-        }
+  @keyframes jumpAnim {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-15px); }
+    100% { transform: translateY(0); }
+  }
+  @keyframes dodgeAnim {
+    0% { transform: rotate(0deg); }
+    50% { transform: rotate(20deg) translateY(4px); }
+    100% { transform: rotate(0deg); }
+  }
 
-        /* --- Game Area --- */
-        #game-board {
-            flex: 1;
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding-top: 20px;
-        }
+  /* =========================================================
+     PYRAMID BOARD LAYOUT
+     ========================================================= */
+  .pyramid-container {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
 
-        #pyramid {
-            position: relative;
-            width: 600px;
-            height: 350px;
-        }
+  #pyramid-area {
+    position: relative;
+    /* Dimensions set dynamically via JS based on --card-w */
+    margin: 0 auto;
+  }
 
-        .card {
-            width: 60px;
-            height: 90px;
-            background: #fff;
-            border-radius: 5px;
-            position: absolute;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #000;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s, opacity 0.5s;
-            user-select: none;
-            border: 2px solid var(--stone);
-        }
+  .stockwaste-row {
+    display: flex;
+    justify-content: center;
+    gap: clamp(10px, 3vw, 40px);
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px dashed rgba(255,255,255,0.1);
+    width: 100%;
+  }
 
-        .card.red { color: #d00; }
-        .card.black { color: #111; }
-        
-        .card:not(.covered):hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 15px var(--gold);
-        }
+  .card.covered { filter: brightness(0.5); cursor: not-allowed; }
+  
+  /* Highlight matching selections */
+  .card.selected {
+    box-shadow: 0 0 0 4px #00ffff, 0 4px 15px rgba(0,0,0,0.8);
+    transform: translateY(-5px);
+  }
 
-        .card.selected {
-            border: 3px solid #00ffcc;
-            box-shadow: 0 0 20px #00ffcc;
-            transform: translateY(-5px);
-        }
+  /* =========================================================
+     CINEMATIC WIN OVERLAY
+     ========================================================= */
+  #cinematic-overlay {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 250; /* Above the winmask (200) */
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 1.5s;
+  }
 
-        .card.covered {
-            filter: brightness(0.5);
-            cursor: not-allowed;
-        }
+  #cinematic-overlay.active {
+    display: flex;
+  }
+  #cinematic-overlay.fade-in {
+    opacity: 1;
+  }
 
-        .card.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
+  #cinematic-hero { font-size: 5rem; margin-bottom: 20px; }
+  
+  #treasure-reveal {
+    font-size: 0;
+    opacity: 0;
+    filter: drop-shadow(0 0 0px var(--brass-light));
+    transition: all 2.5s cubic-bezier(0.1, 0.8, 0.2, 1);
+  }
 
-        /* --- Deck Area --- */
-        #deck-area {
-            display: flex;
-            gap: 40px;
-            margin-top: 20px;
-            background: rgba(0,0,0,0.5);
-            padding: 20px;
-            border-radius: 10px;
-            border: 1px solid var(--stone);
-        }
-
-        .pile {
-            width: 60px;
-            height: 90px;
-            border: 2px dashed var(--stone);
-            border-radius: 5px;
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: var(--stone);
-        }
-
-        #stock-pile { cursor: pointer; background: repeating-linear-gradient(45deg, #8b7355, #8b7355 10px, #5c4c37 10px, #5c4c37 20px); }
-        #stock-pile:hover { box-shadow: 0 0 10px var(--highlight); }
-
-        /* --- Cinematic Win Screen --- */
-        #cinematic-overlay {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #000;
-            z-index: 100;
-            display: none;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            transition: opacity 2s;
-        }
-
-        .zoom-active #cinematic-overlay { display: flex; }
-
-        #cinematic-hero { font-size: 5rem; margin-bottom: 20px; }
-        
-        #treasure-reveal {
-            font-size: 0;
-            opacity: 0;
-            filter: drop-shadow(0 0 0px var(--gold));
-            transition: all 3s cubic-bezier(0.1, 0.8, 0.2, 1);
-        }
-
-        .show-treasure #treasure-reveal {
-            font-size: 8rem;
-            opacity: 1;
-            filter: drop-shadow(0 0 50px var(--gold));
-            transform: scale(1.2) rotate(360deg);
-        }
-
-        #win-msg {
-            margin-top: 30px;
-            font-size: 2rem;
-            opacity: 0;
-            transition: opacity 1s 2.5s;
-        }
-        
-        .show-treasure #win-msg { opacity: 1; }
-
-    </style>
+  .show-treasure #treasure-reveal {
+    font-size: 8rem;
+    opacity: 1;
+    filter: drop-shadow(0 0 60px var(--brass-light));
+    transform: scale(1.2) rotate(360deg);
+  }
+</style>
 </head>
 <body>
 
-    <div id="top-ui">
-        <h1>Tut's Tomb</h1>
-        <div id="adventure-track">
-            <div id="adventurer">🤠</div>
-            <div id="chest">💎</div>
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true" style="font-size:30px;">👁️</div>
+    <div class="brand-text">
+      <h1>Tut's Tomb</h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Expedition</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<div id="adventure-track">
+  <div id="adventurer">🤠</div>
+  <div id="chest">🧰</div>
+</div>
+
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="pyramid-container">
+        <div id="pyramid-area"></div>
+        <div class="stockwaste-row">
+          <div class="pile slot" id="pile-stock" data-type="stock"><div class="slot-mark">↺</div></div>
+          <div class="pile slot" id="pile-waste" data-type="waste"></div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<!-- Cinematic Overlay -->
+<div id="cinematic-overlay">
+  <div id="cinematic-hero">🤠 🧰</div>
+  <div id="treasure-reveal"></div>
+</div>
+
+<!-- Standard Winmask Box (modified for Tut's Tomb) -->
+<div class="winmask" id="winmask">
+  <div class="winmask-modal">
+    <h2>Tomb Cleared!</h2>
+    <p id="win-sub">Escaped in — </p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Delve Again</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Abandon Expedition?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current progress will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Tut's Tomb (Pyramid)</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Select two exposed cards that add up to <b>13</b> to remove them.</li>
+      <li>Valid pairs: 10+3, J+2, Q+A, etc.</li>
+      <li><b>Kings</b> are worth 13 and can be removed by themselves with a single tap.</li>
+      <li>Tap the draw pile to cycle through cards. <b>Relaxed Rules:</b> You can cycle the deck infinitely.</li>
+      <li>Clear the entire pyramid to win the game and claim the treasure!</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Card back applies instantly. Timer/score too.</div>
+
+    <div class="field">
+      <label>Card Back</label>
+      <div class="backpicker" id="back-picker">
+        <div class="backswatch" data-val="back_6.png"><img src="cards/back_6.png" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.png"><img src="cards/back_7.png" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.png"><img src="cards/back_9.png" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.png"><img src="cards/back_10.png" alt="Back 10"></div>
+      </div>
     </div>
 
-    <div id="game-board">
-        <div id="pyramid"></div>
-        <div id="deck-area">
-            <div class="pile" id="stock-pile" onclick="drawCard()"></div>
-            <div class="pile" id="discard-pile"></div>
-        </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
     </div>
 
-    <div id="cinematic-overlay">
-        <div id="cinematic-hero">🤠 🧰</div>
-        <div id="treasure-reveal"></div>
-        <div id="win-msg">THE TOMB IS YOURS!</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
     </div>
+  </div>
+</div>
 
-    <script>
-        // --- Game Logic & Setup ---
-        const suits = ['♥', '♦', '♣', '♠'];
-        const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-        const treasures = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const E = window.SEngine;
+const PAGE_VERSION = '1.0';
+const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+const state = {
+  showTimer: false,
+  showScore: false,
+  backStyle: 'back_10.png',
+  stock: [], 
+  waste: [],
+  pyramid: [], // { card, row, col, removed, el }
+  cardsRemaining: 28,
+  score: 0,
+  seconds: 0,
+  timerHandle: null,
+  cascadePlayed: false,
+  selected: null // holds reference to clicked card data
+};
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.png' };
+const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
+
+/* =========================================================
+   CUSTOM CARD GENERATOR (.WEBP ENFORCEMENT)
+   ========================================================= */
+function getWebpSrc(card) {
+    const rankStr = E.rankFile(card.rank).toLowerCase();
+    const suitStr = E.suitFile(card.suit).toLowerCase();
+    return `cards/${rankStr}_of_${suitStr}.webp`;
+}
+
+function createTutsCardEl(card, source) {
+    // We pass null for the event attach function because Pyramid uses a custom click flow 
+    // rather than the engine's drag-and-drop system.
+    const el = E.makeCardEl(card, source, source, 0, false, state.backStyle, null);
+    
+    // Intercept image source to enforce lowercase .webp request
+    if (card.faceUp) {
+        const img = el.querySelector('.card-face-img');
+        if (img) img.src = getWebpSrc(card);
+    }
+    
+    el.addEventListener('click', (e) => {
+        if(el.classList.contains('covered')) return;
+        handleCardClick(card, source);
+    });
+    
+    return el;
+}
+
+/* =========================================================
+   RULES & LOGIC
+   ========================================================= */
+function isCovered(r, c) {
+    return state.pyramid.some(p => !p.removed && p.row === r + 1 && (p.col === c || p.col === c + 1));
+}
+
+function updateCoveredStatus() {
+    state.pyramid.forEach(p => {
+        if (p.removed) return;
+        if (isCovered(p.row, p.col)) {
+            p.el.classList.add('covered');
+        } else {
+            p.el.classList.remove('covered');
+        }
+    });
+}
+
+function drawFromStock() {
+    if (state.stock.length === 0) {
+        if (state.waste.length === 0) return;
+        undo.push();
+        // Relaxed rules: Infinite reshuffles
+        state.stock = state.waste.reverse().map(c => ({...c, faceUp: false}));
+        state.waste = [];
+        E.clearSelection();
+        state.selected = null;
+        renderAll();
+        return;
+    }
+    undo.push();
+    const c = state.stock.pop();
+    c.faceUp = true;
+    state.waste.push(c);
+    
+    E.clearSelection();
+    state.selected = null;
+    renderAll();
+}
+
+function removeCards(card1, source1, card2, source2) {
+    undo.push();
+    
+    const removeCard = (card, source) => {
+        if (source === 'pyramid') {
+            const pCard = state.pyramid.find(p => p.card.id === card.id);
+            pCard.removed = true;
+            state.cardsRemaining--;
+            addScore(15);
+            triggerAdventurerProgress();
+        } else if (source === 'waste') {
+            state.waste.pop(); // Waste is always top card
+            addScore(5);
+        }
+    };
+
+    removeCard(card1, source1);
+    if (card2) removeCard(card2, source2);
+
+    state.selected = null;
+    E.clearSelection();
+    renderAll();
+}
+
+function handleCardClick(card, source) {
+    const val = E.rankValue(card.rank);
+    
+    // Immediate King removal
+    if (val === 13) {
+        removeCards(card, source);
+        return;
+    }
+
+    if (!state.selected) {
+        // Select first card
+        state.selected = { card, source };
+        const domEl = document.querySelector(`.card[data-id="${card.id}"]`);
+        if (domEl) domEl.classList.add('selected');
+    } else {
+        // Deselect if tapping the same card
+        if (state.selected.card.id === card.id) {
+            state.selected = null;
+            E.clearSelection();
+            return;
+        }
+
+        // Check for 13 match
+        const selectedVal = E.rankValue(state.selected.card.rank);
+        if (selectedVal + val === 13) {
+            removeCards(state.selected.card, state.selected.source, card, source);
+        } else {
+            // Unselect old, select new
+            E.clearSelection();
+            state.selected = { card, source };
+            const domEl = document.querySelector(`.card[data-id="${card.id}"]`);
+            if (domEl) domEl.classList.add('selected');
+        }
+    }
+}
+
+/* =========================================================
+   ADVENTURER ANIMATIONS
+   ========================================================= */
+function triggerAdventurerProgress() {
+    const adventurer = document.getElementById('adventurer');
+    const progressPercentage = ((28 - state.cardsRemaining) / 28);
+    const targetLeft = 2 + (progressPercentage * 90);
+    adventurer.style.left = `${targetLeft}%`;
+    adventurer.classList.add('jump'); 
+    setTimeout(() => adventurer.classList.remove('jump'), 600);
+}
+
+// Random idle animations
+setInterval(() => {
+    if (state.cardsRemaining > 0 && state.cardsRemaining < 28) {
+        const adventurer = document.getElementById('adventurer');
+        const anims = ['jump', 'dodge'];
+        const randAnim = anims[Math.floor(Math.random() * anims.length)];
+        adventurer.classList.add(randAnim);
+        setTimeout(() => adventurer.classList.remove(randAnim), 600);
+    }
+}, 4000);
+
+/* =========================================================
+   RENDERING
+   ========================================================= */
+function renderAll() {
+    E.purgeStrayCards();
+    
+    // Determine card sizing based on 7 columns wide
+    E.fitBoard({
+        columns: 7,
+        getMaxStackDepth: () => 1,
+        minStackForFit: 7
+    });
+
+    renderHUD();
+    renderPyramid();
+    renderStock();
+    renderWaste();
+    
+    updateCoveredStatus();
+
+    // Re-apply selection visuals if re-rendering during selection
+    if (state.selected) {
+        const domEl = document.querySelector(`.card[data-id="${state.selected.card.id}"]`);
+        if (domEl) domEl.classList.add('selected');
+    }
+
+    if (state.cardsRemaining === 0) {
+        handleWin();
+    }
+}
+
+function renderPyramid() {
+    const container = document.getElementById('pyramid-area');
+    container.innerHTML = '';
+    
+    const metrics = E.cardMetrics(0);
+    const gap = 10;
+    
+    // Set container size so it centers naturally
+    container.style.width = `${(metrics.w * 7) + (gap * 6)}px`;
+    container.style.height = `${metrics.h + (metrics.h * 0.5 * 6)}px`;
+
+    state.pyramid.forEach(p => {
+        if (p.removed) return;
         
-        let deck = [];
-        let pyramidCards = [];
-        let discardPile = [];
-        let selectedCard = null;
-        let cardsRemaining = 28;
-
-        function getCardValue(val) {
-            if (val === 'A') return 1;
-            if (val === 'J') return 11;
-            if (val === 'Q') return 12;
-            if (val === 'K') return 13;
-            return parseInt(val);
-        }
-
-        function createDeck() {
-            deck = [];
-            for (let s of suits) {
-                for (let v of values) {
-                    deck.push({ 
-                        suit: s, 
-                        value: v, 
-                        numValue: getCardValue(v),
-                        color: (s === '♥' || s === '♦') ? 'red' : 'black'
-                    });
-                }
-            }
-            // Shuffle
-            for (let i = deck.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [deck[i], deck[j]] = [deck[j], deck[i]];
-            }
-        }
-
-        function buildPyramid() {
-            const pyramidEl = document.getElementById('pyramid');
-            pyramidEl.innerHTML = '';
-            pyramidCards = [];
-            let cardIndex = 0;
-
-            const cardWidth = 60;
-            const cardHeight = 90;
-            const gapX = 70;
-            const gapY = 40;
-            
-            // 7 rows (0 to 6)
-            for (let row = 0; row < 7; row++) {
-                for (let col = 0; col <= row; col++) {
-                    const cardData = deck.pop();
-                    cardData.row = row;
-                    cardData.col = col;
-                    cardData.removed = false;
-
-                    const el = document.createElement('div');
-                    el.className = `card ${cardData.color}`;
-                    
-                    // Positioning math to center the pyramid
-                    const leftOffset = 270 - (row * (gapX / 2)) + (col * gapX);
-                    const topOffset = row * gapY;
-                    
-                    el.style.left = `${leftOffset}px`;
-                    el.style.top = `${topOffset}px`;
-                    el.innerHTML = `${cardData.value}<br/>${cardData.suit}`;
-                    el.id = `pyr-${row}-${col}`;
-                    
-                    el.onclick = () => handleCardClick(cardData, el, 'pyramid');
-
-                    pyramidEl.appendChild(el);
-                    pyramidCards.push({ data: cardData, element: el });
-                }
-            }
-            updateCoveredStatus();
-        }
-
-        function updateCoveredStatus() {
-            pyramidCards.forEach(pc => {
-                if (pc.data.removed) return;
-                const r = pc.data.row;
-                const c = pc.data.col;
-                // Check if covered by row+1, col or row+1, col+1
-                const child1 = pyramidCards.find(p => p.data.row === r + 1 && p.data.col === c && !p.data.removed);
-                const child2 = pyramidCards.find(p => p.data.row === r + 1 && p.data.col === c + 1 && !p.data.removed);
-                
-                if (child1 || child2) {
-                    pc.element.classList.add('covered');
-                } else {
-                    pc.element.classList.remove('covered');
-                }
-            });
-        }
-
-        function drawCard() {
-            if (deck.length === 0) {
-                // Relaxed rules: reset discard pile to deck if empty
-                if (discardPile.length === 0) return; 
-                deck = discardPile.reverse();
-                discardPile = [];
-                renderDiscard();
-                return;
-            }
-            const card = deck.pop();
-            discardPile.push(card);
-            renderDiscard();
-            
-            if (selectedCard) clearSelection();
-        }
-
-        function renderDiscard() {
-            const discardEl = document.getElementById('discard-pile');
-            discardEl.innerHTML = '';
-            
-            if (discardPile.length > 0) {
-                const topCard = discardPile[discardPile.length - 1];
-                const el = document.createElement('div');
-                el.className = `card ${topCard.color}`;
-                el.style.position = 'relative';
-                el.innerHTML = `${topCard.value}<br/>${topCard.suit}`;
-                el.onclick = () => handleCardClick(topCard, el, 'discard');
-                discardEl.appendChild(el);
-            }
-        }
-
-        // --- Interaction Logic ---
-        function handleCardClick(cardData, element, source) {
-            // Cannot click covered pyramid cards
-            if (source === 'pyramid' && element.classList.contains('covered')) return;
-
-            // Single King click (Kings = 13, remove immediately)
-            if (cardData.numValue === 13) {
-                removeCard(cardData, element, source);
-                clearSelection();
-                return;
-            }
-
-            if (!selectedCard) {
-                // Select first card
-                selectedCard = { data: cardData, element: element, source: source };
-                element.classList.add('selected');
-            } else {
-                // Deselect if clicking same card
-                if (selectedCard.element === element) {
-                    clearSelection();
-                    return;
-                }
-
-                // Check for match (sum to 13)
-                if (selectedCard.data.numValue + cardData.numValue === 13) {
-                    removeCard(selectedCard.data, selectedCard.element, selectedCard.source);
-                    removeCard(cardData, element, source);
-                }
-                clearSelection();
-            }
-        }
-
-        function clearSelection() {
-            if (selectedCard) selectedCard.element.classList.remove('selected');
-            selectedCard = null;
-        }
-
-        function removeCard(cardData, element, source) {
-            if (source === 'pyramid') {
-                cardData.removed = true;
-                element.classList.add('hidden');
-                cardsRemaining--;
-                updateCoveredStatus();
-                updateAdventurerProgress();
-                
-                if (cardsRemaining === 0) {
-                    setTimeout(triggerWinCinematic, 500);
-                }
-            } else if (source === 'discard') {
-                discardPile.pop();
-                renderDiscard();
-            }
-        }
-
-        // --- Animations & Polish ---
+        const el = createTutsCardEl(p.card, 'pyramid');
+        el.style.position = 'absolute';
         
-        // Randomly make the adventurer dodge/jump while idle
-        setInterval(() => {
-            if (cardsRemaining > 0 && cardsRemaining < 28) {
-                const adventurer = document.getElementById('adventurer');
-                const anims = ['jump', 'dodge'];
-                const randAnim = anims[Math.floor(Math.random() * anims.length)];
-                adventurer.classList.add(randAnim);
-                setTimeout(() => adventurer.classList.remove(randAnim), 600);
-            }
+        // Pyramid centering math
+        const rowWidth = (p.row + 1) * metrics.w + (p.row * gap);
+        const startX = (container.offsetWidth - rowWidth) / 2;
+        
+        el.style.left = `${startX + (p.col * (metrics.w + gap))}px`;
+        el.style.top = `${p.row * (metrics.h * 0.55)}px`; // 55% vertical overlap
+        
+        p.el = el;
+        container.appendChild(el);
+    });
+}
+
+function renderStock() {
+    const p = document.getElementById('pile-stock');
+    p.querySelectorAll('.card').forEach(e => e.remove());
+    if (state.stock.length) {
+        const top = state.stock[state.stock.length - 1];
+        const fake = { id: 'stocktop', rank: top.rank, suit: top.suit, faceUp: false };
+        p.appendChild(createTutsCardEl(fake, 'stock'));
+    }
+}
+
+function renderWaste() {
+    const p = document.getElementById('pile-waste');
+    p.querySelectorAll('.card').forEach(e => e.remove());
+    if (state.waste.length) {
+        const top = state.waste[state.waste.length - 1];
+        p.appendChild(createTutsCardEl(top, 'waste'));
+    }
+}
+
+function renderHUD() {
+    document.getElementById('score-val').textContent = state.score;
+    const m = Math.floor(state.seconds/60), s = state.seconds%60;
+    document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+
+/* =========================================================
+   WIN SEQUENCE
+   ========================================================= */
+function handleWin() {
+    clearInterval(state.timerHandle);
+    if (state.cascadePlayed) return;
+    state.cascadePlayed = true;
+
+    // Trigger Cinematic
+    const overlay = document.getElementById('cinematic-overlay');
+    const hero = document.getElementById('cinematic-hero');
+    const treasure = document.getElementById('treasure-reveal');
+    
+    overlay.classList.add('active');
+    setTimeout(() => overlay.classList.add('fade-in'), 50);
+
+    setTimeout(() => {
+        hero.innerHTML = '🤠 🧳'; // Open chest
+        treasure.innerHTML = TREASURES[Math.floor(Math.random() * TREASURES.length)];
+        overlay.classList.add('show-treasure');
+        
+        // After cinematic, launch standard win cascade + modal
+        setTimeout(() => {
+            overlay.classList.remove('fade-in');
+            setTimeout(() => {
+                overlay.classList.remove('active', 'show-treasure');
+                launchWinCascade();
+            }, 1000);
         }, 3500);
 
-        function updateAdventurerProgress() {
-            const adventurer = document.getElementById('adventurer');
-            // Progress from 2% to 92% across the screen
-            const progressPercentage = ((28 - cardsRemaining) / 28);
-            const targetLeft = 2 + (progressPercentage * 90);
-            adventurer.style.left = `${targetLeft}%`;
-            adventurer.classList.add('jump'); // Jump whenever progress is made
-            setTimeout(() => adventurer.classList.remove('jump'), 600);
+    }, 1500);
+}
+
+function launchWinCascade() {
+    // Generate dummy cards for the engine cascade effect using the discarded deck
+    const cascadeCards = state.waste.slice(0, 15).map(c => ({
+        card: c, sourceEl: document.getElementById('chest') // Cascade from the chest UI
+    }));
+    
+    E.startWinCascade(cascadeCards, (c, cov) => E.buildFaceEl(c, cov), () => E.cardMetrics(), { trail: true });
+    
+    const m = Math.floor(state.seconds/60), s = state.seconds%60;
+    document.getElementById('win-sub').textContent = state.showTimer
+      ? ('Escaped in '+m+':'+String(s).padStart(2,'0'))
+      : 'Tomb pillaged successfully.';
+    
+    setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+}
+
+/* =========================================================
+   UNDO, HINT & SETUP WIRING
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({ 
+      stock: state.stock.map(c=>({...c})), 
+      waste: state.waste.map(c=>({...c})), 
+      pyramid: state.pyramid.map(p=>({ card: {...p.card}, row: p.row, col: p.col, removed: p.removed })), 
+      score: state.score, 
+      cardsRem: state.cardsRemaining 
+  }),
+  (snap)=>{ 
+      state.stock = snap.stock; 
+      state.waste = snap.waste; 
+      state.pyramid = snap.pyramid; 
+      state.score = snap.score; 
+      state.cardsRemaining = snap.cardsRem;
+      state.selected = null; 
+      E.clearSelection(); 
+      triggerAdventurerProgress(); // Reset position visually
+      renderAll(); 
+  },
+  document.getElementById('btn-undo')
+);
+
+function addScore(n) { state.score = Math.max(0, state.score+n); renderHUD(); }
+
+function showHint() {
+    const toastEl = document.getElementById('hint-toast');
+    
+    // Look for Kings first
+    let k = state.pyramid.find(p => !p.removed && !isCovered(p.row, p.col) && E.rankValue(p.card.rank) === 13);
+    if(k) {
+        E.showToast(toastEl, 'Tap the King to clear it.');
+        E.pulse(k.el);
+        return;
+    }
+    if (state.waste.length && E.rankValue(state.waste[state.waste.length-1].rank) === 13) {
+        E.showToast(toastEl, 'Tap the King in the waste pile.');
+        E.pulse(document.getElementById('pile-waste'));
+        return;
+    }
+
+    // Look for a 13 pair across pyramid & waste
+    const available = state.pyramid.filter(p => !p.removed && !isCovered(p.row, p.col)).map(p => ({val: E.rankValue(p.card.rank), el: p.el}));
+    if (state.waste.length) {
+        available.push({ val: E.rankValue(state.waste[state.waste.length-1].rank), el: document.querySelector('#pile-waste .card') });
+    }
+
+    for (let i = 0; i < available.length; i++) {
+        for (let j = i + 1; j < available.length; j++) {
+            if (available[i].val + available[j].val === 13) {
+                E.showToast(toastEl, 'Match these two cards.');
+                E.pulseAll([available[i].el, available[j].el]);
+                return;
+            }
         }
+    }
 
-        function triggerWinCinematic() {
-            document.body.classList.add('zoom-active');
-            
-            // Wait for black screen to fade in, then show treasure
-            setTimeout(() => {
-                const cinematicOverlay = document.getElementById('cinematic-overlay');
-                const treasureReveal = document.getElementById('treasure-reveal');
-                const hero = document.getElementById('cinematic-hero');
-                
-                // Open chest visualization
-                hero.innerHTML = '🤠 🧳'; // Open chest emoji (using luggage as proxy or just assume opened)
-                
-                // Pick random treasure
-                const randomTreasure = treasures[Math.floor(Math.random() * treasures.length)];
-                treasureReveal.innerHTML = randomTreasure;
-                
-                // Trigger CSS animations
-                cinematicOverlay.classList.add('show-treasure');
-            }, 1000);
+    E.showToast(toastEl, 'No matches found. Draw a card.');
+    E.pulse(document.getElementById('pile-stock'));
+}
+
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+
+function newGame() {
+    clearInterval(state.timerHandle);
+    state.showTimer = pendingSettings.showTimer;
+    state.showScore = pendingSettings.showScore;
+    state.backStyle = pendingSettings.backStyle;
+    
+    let deck = E.shuffle(E.buildDeck());
+    
+    state.pyramid = [];
+    state.cardsRemaining = 28;
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col <= row; col++) {
+            const card = deck.pop();
+            card.faceUp = true;
+            state.pyramid.push({ card, row, col, removed: false, el: null });
         }
+    }
+    
+    state.stock = deck.map(c => ({...c, faceUp: false}));
+    state.waste = [];
+    state.score = 0;
+    state.seconds = 0;
+    state.cascadePlayed = false;
+    state.selected = null;
+    
+    undo.reset();
+    E.clearSelection();
+    triggerAdventurerProgress();
 
-        // Initialize Game
-        createDeck();
-        buildPyramid();
+    document.getElementById('winmask').classList.remove('show');
+    E.applyHudVisibility(state);
+    syncTimerInterval();
+    renderAll();
+}
 
-    </script>
+/* =========================================================
+   EVENT LISTENERS & SETTINGS
+   ========================================================= */
+document.getElementById('pile-stock').addEventListener('click', drawFromStock);
+document.getElementById('btn-undo').addEventListener('click', () => undo.undo());
+document.getElementById('btn-hint').addEventListener('click', () => { E.clearSelection(); state.selected = null; showHint(); });
+
+// Resize handling
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderAll, 100);
+});
+
+// Modal Logic
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('winmask').classList.remove('show');
+  const cascade = document.getElementById('cascade-layer');
+  if (cascade) cascade.remove();
+  newGame();
+});
+
+// Settings Logic
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility: () => E.applyHudVisibility(state),
+  syncTimerInterval,
+  onRenderNeeded: renderAll
+});
+
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+// Note: engine.js preload uses .svg, but browser will cache our DOM-generated .webps naturally on first load.
+E.preloadAllCardImages(KNOWN_BACK_FILES);
+newGame();
+
+})();
+</script>
 </body>
 </html>
