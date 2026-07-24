@@ -1,844 +1,882 @@
-/*
+<!DOCTYPE html>
+<!--
     Written by: Johnathon Largent
     Last Updated v2.3
 
-   Found the real bug behind "the trails don't exist": the cleanup
-   timer that removes the whole cascade layer always used
-   cards.length*STAGGER, but STAGGER is meaningless in sequential
-   mode — with slow gravity a real first-bounce takes much longer
-   than that estimate implied, so the layer was very likely getting
-   force-removed mid-cascade, cutting the pile-up short before it
-   ever became visible. Cleanup timing now reflects sequential mode's
-   actual pacing. Also added opts.sequentialMaxWait, which caps how
-   long the next card waits for the previous one's bounce (so pacing
-   can't drift slower than a target) without abandoning the
-   event-driven trigger when it's naturally faster than that.
- */
-/* =========================================================================
-   SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
-   =========================================================================
-   This file owns everything that ISN'T specific to one game's rules:
-     - card assets (filenames, loading, the corner-index fallback)
-     - building a card's DOM element
-     - preloading every image up front
-     - solving card size to fit the screen without scrolling
-     - the whole drag-and-drop + click-to-move interaction pipeline,
-       including the misclick-into-a-run forgiveness and the
-       hover/drag highlight system
-     - a generic undo stack
-     - toast messages + the hint "pulse" glow
-     - the Settings modal shell (card back picker + timer/score toggles)
-     - the win cascade animation
+   Win cascade: gravity eased slightly (0.28→0.25), capped the
+   sequential wait at 250ms (sequentialMaxWait) so pacing stays close
+   to that even though the real trigger is still the previous card's
+   bounce, and suit order within each rank tier is now shuffled
+   (E.shuffle(SUITS.slice())) instead of the same fixed S/H/D/C every
+   time — still processes all 4 suits before the next rank, so no two
+   consecutive cards ever share a suit either way. Also fixed the real
+   cause of the trail pile never showing: see engine.js's changelog.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Klondike</title>
+<link rel="preload" as="image" href="images/ace-of-spades-crest.webp">
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Klondike-only crest: layers the ornate ace-of-spades artwork over
+     the shared brass-gradient circle (see .brand .crest in styles.css)
+     instead of the plain "♠" text glyph it used to hold. The image is
+     pre-cropped/alpha-transparent, sized to 68% so the brass shows
+     through around the edges like a medallion. */
+  .brand .crest{
+    background-image: url('images/ace-of-spades-crest.webp'), radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
+    background-size: 68%, cover;
+    background-position: center 46%, center;
+    background-repeat: no-repeat, no-repeat;
+  }
+</style>
+</head>
+<body>
 
-   A game file (klondike.html, freecell.html, ...) is expected to:
-     1. Load this file: <script src="engine.js"></script>
-     2. Own its OWN game state (piles, rules, scoring) — this file never
-        touches a game's state directly, only through the callback
-        functions the game hands it in a config object.
-     3. Call SEngine.initInteractions(config) once, passing functions
-        like findPileArray/resolveDropTarget/canMoveWithWiden/tryMoveAuto
-        that know the specific rules of that game.
-     4. Call the other SEngine.* helpers (preload, fitBoard, undo,
-        settings, cascade) as needed from its own renderAll()/newGame().
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true"></div>
+    <div class="brand-text">
+      <h1>Klondike<span class="title-suffix"> - Classic Solitaire</span></h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
 
-   Every function below is written so a bug fixed here (e.g. the drag
-   "always snaps back" issue, or the tableau highlight sizing bug) is
-   fixed for every game that uses this file, permanently — that's the
-   whole point of pulling it out of Klondike's file in the first place.
-   ========================================================================= */
-window.SEngine = (function(){
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="row top-row">
+        <div class="stockwaste">
+          <div class="pile slot" id="pile-stock" data-type="stock"><div class="slot-mark">↺</div></div>
+          <div class="pile slot" id="pile-waste" data-type="waste"></div>
+        </div>
+        <div class="foundations">
+          <div class="pile slot" data-type="foundation" data-suit="S" id="f-S"><div class="slot-mark">♠</div></div>
+          <div class="pile slot" data-type="foundation" data-suit="H" id="f-H"><div class="slot-mark">♥</div></div>
+          <div class="pile slot" data-type="foundation" data-suit="D" id="f-D"><div class="slot-mark">♦</div></div>
+          <div class="pile slot" data-type="foundation" data-suit="C" id="f-C"><div class="slot-mark">♣</div></div>
+        </div>
+      </div>
+      <div class="row tableau-row" id="tableau"></div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+    <button class="bottombtn" id="btn-shownext" title="Highlight where each foundation's next card is" style="display:none"><span class="bicon"><img src="images/ace-of-spades-crest.webp" alt=""></span><span class="blabel">Show Next</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="winmask" id="winmask">
+  <h2>You Win!</h2>
+  <p id="win-sub">Cleared in — </p>
+  <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+</div>
+
+<div class="winmask" id="nomovesmask">
+  <h2>No More Moves</h2>
+  <p>Looks like the game is stuck.</p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="nomoves-undo">Undo Last Move</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="nomoves-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Klondike Solitaire</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Drag a card (or a valid stack) onto a foundation or another tableau pile.</li>
+      <li>Double-tap a card to send it straight to its foundation if possible.</li>
+      <li>Tap the stock pile to draw new cards.</li>
+      <li>An empty tableau column only accepts a King.</li>
+      <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make. <b>Auto Move</b> sends any currently eligible top cards to their foundations.</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Card back applies instantly. Timer/score too.</div>
+
+    <div class="field">
+      <label>Draw</label>
+      <div class="segmented" id="seg-draw">
+        <button data-val="1">Draw 1</button>
+        <button data-val="3">Draw 3</button>
+      </div>
+      <div class="fieldnote" id="draw-note" style="display:none;">Cards already drawn this game — draw count will apply on your next New Game.</div>
+    </div>
+
+    <div class="field">
+      <label>Card Back</label>
+      <div class="backpicker" id="back-picker">
+        <div class="backswatch" data-val="back_6.png"><img src="cards/back_6.png" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.png"><img src="cards/back_7.png" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.png"><img src="cards/back_9.png" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.png"><img src="cards/back_10.png" alt="Back 10"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Thoughtful</span>
+        <label class="switch"><input type="checkbox" id="tog-thoughtful"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Shows face-down tableau cards, dimmed, for planning ahead — doesn't include the draw pile, and they still can't be touched.</div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Next</span>
+        <label class="switch"><input type="checkbox" id="tog-shownext"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Adds a button next to Undo/Hint/Auto Move that highlights where each foundation's next needed card is, even if it's buried.</div>
+    </div>
+
+    <div class="field">
+      <label>Testing</label>
+      <button class="textbtn" id="settings-preview-win" style="width:100%;">Preview Win Screen</button>
+      <div class="fieldnote">Plays the win cascade + dialog without touching your current game.</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
 "use strict";
+const E = window.SEngine;
+const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
-   CARD IDENTITY + ASSET PATHS
-   Every game shares the same 52-card model and the same cards/
-   folder convention: cards/<rank>_of_<suit>.svg and cards/back_<id>.png
+   GAME STATE
    ========================================================= */
-const SUITS = ['S','H','D','C'];
-const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-function rankValue(r){ return RANKS.indexOf(r)+1; }
-function isRed(suit){ return suit==='H'||suit==='D'; }
-function suitGlyph(suit){ return {S:'♠',H:'♥',D:'♦',C:'♣'}[suit]; }
-
-const RANK_FILE = {A:'ace', J:'jack', Q:'queen', K:'king'};
-function rankFile(rank){ return RANK_FILE[rank] || rank; }
-const SUIT_FILE = {S:'spades', H:'hearts', D:'diamonds', C:'clubs'};
-function suitFile(suit){ return SUIT_FILE[suit]; }
-function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.svg'; }
-function backImgSrc(style){ return 'cards/'+style; } // style is a full filename, e.g. "back_10.png"
-
-// Point an <img> at a local file; if it 404s, call onFinalFail instead.
-// No external fallback — keeps every game working fully offline.
-function loadCardImage(img, localPath, onFinalFail){
-  img.src = localPath;
-  img.addEventListener('error', function onErr(){
-    img.removeEventListener('error', onErr);
-    if(onFinalFail) onFinalFail();
-  });
-}
-
-// A fresh, unshuffled 52-card deck. `id` is stable and never changes as
-// the card moves between piles — every game should carry it through.
-function buildDeck(){
-  const deck = [];
-  let id = 0;
-  for(const s of SUITS){
-    for(const r of RANKS){
-      deck.push({ id:'c'+(id++), rank:r, suit:s, faceUp:false });
-    }
-  }
-  return deck;
-}
-// Fisher-Yates shuffle.
-function shuffle(arr){
-  for(let i=arr.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]] = [arr[j],arr[i]];
-  }
-  return arr;
-}
+const state = {
+  drawCount: 1,
+  showTimer: false,
+  showScore: false,
+  thoughtful: false,
+  showNextEnabled: false,
+  backStyle: 'back_10.png',
+  stock: [], waste: [],
+  foundations: {S:[],H:[],D:[],C:[]},
+  tableau: [[],[],[],[],[],[],[]],
+  score: 0,
+  seconds: 0,
+  timerHandle: null,
+  cascadePlayed: false
+};
+const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'back_10.png', thoughtful:false, showNextEnabled:false };
+const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
 
 /* =========================================================
-   CARD DOM ELEMENTS
+   RULES
    ========================================================= */
-// Face-up card: real artwork with a text/corner-index fallback if the
-// image 404s. `covered` (true/false) controls whether the fallback's
-// corner badge lays out vertically (fully exposed card) or horizontally
-// (something's stacked on top of it, so only a thin strip stays visible
-// — see the matching CSS comment on .img-fallback .fc-corner).
-function buildFaceEl(card, covered){
-  const wrap = document.createElement('div');
-  wrap.className = 'face';
-  const img = document.createElement('img');
-  img.className = 'card-face-img';
-  img.alt = card.rank+' of '+suitFile(card.suit);
-  img.draggable = false;
-  loadCardImage(img, cardImgSrc(card), ()=>{
-    const cls = isRed(card.suit)?'suit-red':'suit-black';
-    const glyph = suitGlyph(card.suit);
-    const cornerCls = 'fc-corner'+(covered?' stacked':'');
-    wrap.innerHTML = '<div class="img-fallback '+cls+'">'+
-      '<div class="'+cornerCls+' tl"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
-      '<div class="fc-center"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
-      '<div class="'+cornerCls+' br"><span>'+card.rank+'</span><span>'+glyph+'</span></div>'+
-    '</div>';
-  });
-  wrap.appendChild(img);
-  return wrap;
+function canPlaceOnTableau(card, destPile){
+  if(destPile.length===0) return card.rank==='K';
+  const top = destPile[destPile.length-1];
+  if(!top.faceUp) return false;
+  return (E.isRed(card.suit) !== E.isRed(top.suit)) && (E.rankValue(card.rank) === E.rankValue(top.rank)-1);
 }
-// Face-down card: shows whichever back image `backStyle` names (a full
-// filename, e.g. "back_10.png" — matches whatever the game's Settings
-// back-picker currently has selected).
-function buildBackEl(backStyle){
-  const wrap = document.createElement('div');
-  wrap.className = 'back-img-wrap';
-  const img = document.createElement('img');
-  img.className = 'card-back-img';
-  img.alt = 'card back';
-  img.draggable = false;
-  loadCardImage(img, backImgSrc(backStyle));
-  wrap.appendChild(img);
-  return wrap;
+function canPlaceOnFoundation(card, destPile, suit){
+  if(card.suit!==suit) return false;
+  if(destPile.length===0) return card.rank==='A';
+  const top = destPile[destPile.length-1];
+  return E.rankValue(card.rank) === E.rankValue(top.rank)+1;
 }
-
-// Builds one card's full DOM element (face or back), stashes its pile
-// location in data-* attributes (used everywhere by the interaction
-// system to figure out "what did the player just click/drag"), and
-// wires up its drag/click handlers via attachFn (typically
-// SEngine's own internal attachCardEvents, passed in by initInteractions
-// consumers indirectly — see makeCardEl usage in a game file).
-function makeCardEl(card, pileType, pileKey, index, covered, backStyle, attachFn){
-  const el = document.createElement('div');
-  el.className = 'card';
-  el.dataset.id = card.id;
-  el.dataset.pile = pileType;
-  el.dataset.key = pileKey;
-  el.dataset.index = index;
-  el.appendChild(card.faceUp ? buildFaceEl(card, !!covered) : buildBackEl(backStyle));
-  if(attachFn) attachFn(el, card, pileType, pileKey, index);
-  return el;
+function findPileArray(pileType, key){
+  if(pileType==='waste') return state.waste;
+  if(pileType==='tableau') return state.tableau[key];
+  if(pileType==='foundation') return state.foundations[key];
+  return null;
 }
-
-// Sweeps away any stray .card element sitting directly in <body> — a
-// safety net for the scenario that used to cause floating duplicated
-// cards: a drag clone gets reparented to <body> mid-drag, and if some
-// OTHER render fires before the drag finishes, that render only clears
-// cards inside real pile containers, never touches the orphan. Call
-// this at the very top of every renderAll().
-function purgeStrayCards(){
-  document.querySelectorAll('body > .card').forEach(el=>el.remove());
-}
-
-// Fires all 52 face images + every listed back file as background
-// Image() requests immediately, before any card is ever dealt or
-// flipped — without this, the FIRST time any given card appears
-// face-up mid-game there's real fetch+decode latency and it shows up
-// blank for a moment.
-function preloadAllCardImages(backFiles){
-  const urls = [];
-  for(const s of SUITS){
-    for(const r of RANKS){
-      urls.push(cardImgSrc({rank:r, suit:s}));
-    }
-  }
-  (backFiles||[]).forEach(f=> urls.push(backImgSrc(f)));
-  urls.forEach(url=>{
-    const img = new Image();
-    img.src = url;
-  });
-}
-
-/* =========================================================
-   SCREEN-FIT SIZING
-   Solves for the biggest card width that fits the CURRENT window
-   without needing to scroll, exactly like Klondike's fitBoard did —
-   generalized here to accept how many tableau columns a game has and
-   a function to compute the deepest current stack, since that varies
-   per game (and, for FreeCell, per game STATE — an empty column vs a
-   column that grew past its starting depth).
-   ========================================================= */
-const CARD_RATIO = 1.4523; // must match the real card-art aspect ratio; keep in sync with --card-h in CSS
-function cardMetrics(overlapFrac){
-  const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w')) || 80;
-  const h = w * CARD_RATIO;
-  return { w, h, overlap: h*(overlapFrac==null?0.183:overlapFrac), fan: w*0.22 };
-}
-
-// opts: {
-//   columns: how many tableau columns wide the board is,
-//   getMaxStackDepth: () => number (deepest current column/pile),
-//   overlapFrac: vertical overlap fraction (default 0.183),
-//   maxCardW: real upper cap on card width (default 104). minCardW is
-//     accepted for backward compatibility but no longer enforced as a
-//     floor — see the comment above cardW below for why.
-// }
-function fitBoard(opts){
-  const header = document.querySelector('header');
-  const stage = document.querySelector('.stage');
-  const frame = document.querySelector('.table-frame');
-  const felt = document.querySelector('.table-felt');
-  const bottombar = document.querySelector('.bottombar');
-  if(!header || !stage || !frame || !felt) return;
-
-  const overlapFrac = opts.overlapFrac==null ? 0.183 : opts.overlapFrac;
-  const columns = opts.columns;
-  const minCardW = opts.minCardW==null ? 44 : opts.minCardW;
-  const maxCardW = opts.maxCardW==null ? 104 : opts.maxCardW;
-
-  const headerH = header.getBoundingClientRect().height;
-  const bottombarH = bottombar ? bottombar.getBoundingClientRect().height : 0;
-  const stageCS = getComputedStyle(stage);
-  const frameCS = getComputedStyle(frame);
-  const feltCS = getComputedStyle(felt);
-
-  const vPad = parseFloat(stageCS.paddingTop)+parseFloat(stageCS.paddingBottom)
-             + parseFloat(frameCS.paddingTop)+parseFloat(frameCS.paddingBottom)
-             + parseFloat(feltCS.paddingTop)+parseFloat(feltCS.paddingBottom);
-  const hPad = parseFloat(stageCS.paddingLeft)+parseFloat(stageCS.paddingRight)
-             + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
-             + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
-
-  const availH = window.innerHeight - headerH - bottombarH - vPad - 10;
-  const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
-
-  // These used to be flat guesses (10px gap, 18px top-row margin) —
-  // but the real CSS values are viewport-relative (--gap is
-  // clamp(6px,1.2vw,14px); the top-row's margin-bottom is
-  // clamp(10px,2vw,20px)), and on a phone-width screen both resolve
-  // noticeably smaller than those guesses. That mismatch was reserving
-  // more space than the board actually needed, so cards rendered
-  // smaller than they had room to be — reading the browser's own
-  // resolved values instead fixes that at any viewport size or zoom
-  // level, rather than needing a size-specific fudge factor.
-  const topRowEl = document.querySelector('.top-row');
-  const tableauRowEl = document.querySelector('.tableau-row');
-  const topRowGap = topRowEl ? (parseFloat(getComputedStyle(topRowEl).marginBottom) || 18) : 18;
-  const maxStack = Math.max(opts.minStackForFit||7, opts.getMaxStackDepth ? opts.getMaxStackDepth() : 7);
-  const denom = 2 + (maxStack-1)*overlapFrac;
-  const cardHByHeight = (availH - topRowGap) / denom;
-  const cardWByHeight = cardHByHeight / CARD_RATIO;
-
-  // Width is bound by whichever row of the board needs the most space
-  // per card. Normally that's just the tableau (`columns` wide), but a
-  // game can pass opts.extraRows — e.g. [{units, gaps}, ...] — to
-  // describe any other row (free cells + a decorative slot + foundations,
-  // say) whose own card-count/gap math might actually be MORE demanding
-  // than the tableau's. Without this, a row like that can end up wider
-  // than the screen even though the tableau fits fine, which is exactly
-  // what was pushing FreeCell's rightmost foundation off-screen on
-  // narrow/mobile viewports.
-  const gapPx = tableauRowEl ? (parseFloat(getComputedStyle(tableauRowEl).columnGap) || 10) : 10;
-  const rows = [{units: columns, gaps: columns-1}].concat(opts.extraRows || []);
-  let cardWByWidth = Infinity;
-  rows.forEach(r=>{
-    const cw = (availW - gapPx*r.gaps) / r.units;
-    if(cw < cardWByWidth) cardWByWidth = cw;
-  });
-
-  // maxCardW is a real cap (cards shouldn't keep growing forever on a
-  // huge monitor). minCardW is NOT enforced the same way — forcing the
-  // card up to a minimum regardless of available space is exactly what
-  // was still causing the mobile overflow after the extraRows fix: on
-  // a narrow phone the true fit-safe width can genuinely be below 44px,
-  // and clamping it back up to 44 pushes the whole board past the edge
-  // of the screen again. minCardW only ever applies when honoring it
-  // still fits — it can shrink the ceiling, never force an overflow.
-  let cardW = Math.min(cardWByHeight, cardWByWidth, maxCardW);
-  document.documentElement.style.setProperty('--card-w', cardW+'px');
-}
-
-/* =========================================================
-   DRAG-AND-DROP + CLICK-TO-MOVE
-   One shared interaction system for every game. Call
-   SEngine.initInteractions(config) ONCE after your DOM/piles exist.
-   config fields (all required unless noted):
-     findPileArray(pileType, pileKey) -> array
-        Same idea as Klondike's findPileArray — turns a pile
-        descriptor into the actual card array.
-     isCardMovable(card, pileType, pileKey, index) -> bool
-        Should this specific card even start a drag/click? (face-up,
-        and — depending on the game — only the top card of some pile
-        types.)
-     resolveDropTarget(x, y) -> {type, key, highlightEl} | null
-        Exact hit-test (elementFromPoint-based) used while dragging.
-     resolveHoverTargetPadded(x, y) -> {type, key, highlightEl} | null
-        Same shape, but with generous padding around each pile's box —
-        used for click-to-move's cursor-hover highlight (see
-        SEngine.makePaddedResolver below for a ready-made version).
-     canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey) -> index | -1
-        Game's rule check, INCLUDING misclick-widening if desired.
-        Return the index engine should actually use, or -1 if illegal.
-     tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey) -> bool
-        Actually performs the move (mutates the game's state and
-        re-renders) if legal. Called on drop / on destination click.
-     onRenderNeeded()
-        Called after a failed drop/drag-cancel so the game can redraw
-        everything back to its pre-drag position.
-     autoMoveToFoundation(pileType, pileKey, index) -> bool   [optional]
-        Used for double-tap-to-send-home. Omit to disable double-tap.
-     onSelectionChanged()   [optional]
-        Called whenever the click-to-move selection changes (engine
-        manages the actual "selected" bookkeeping internally and calls
-        this so the game can do any of its own bookkeeping if needed).
-   The game triggers card element listeners by passing SEngine's
-   attachCardEvents (exposed below) as the `attachFn` to makeCardEl.
-   ========================================================= */
-let dragCtx = null;
-let dragMoved = false;
-let lastTapTime = 0;
-let lastTapKey = '';
-let dragEls = [];
-let lastPointer = {x:0,y:0};
-let ixConfig = null;
-let selected = null; // {pileType, pileKey, index} while something is picked up via click-to-move
-
-function clearDropHighlights(){
-  document.querySelectorAll('.drop-ok').forEach(el=>el.classList.remove('drop-ok'));
-}
-
-function getSelected(){ return selected; }
-
-function clearSelection(){
-  if(selected){
-    document.querySelectorAll('.card.selected').forEach(e=>e.classList.remove('selected'));
-    selected = null;
-    if(ixConfig && ixConfig.onSelectionChanged) ixConfig.onSelectionChanged();
-  }
-  clearDropHighlights();
-}
-
-// A ready-made resolveHoverTargetPadded implementation: pass a function
-// that returns an array of {type, key, el} zones (every pile a card
-// could conceivably be dropped on), and this returns a resolver
-// checking each zone's bounding box plus `padding` extra pixels on
-// every side — more forgiving than exact pixel hit-testing, which is
-// what click-to-move's hover highlight wants (there's no dragged
-// element to test against, just a bare cursor position).
-function makePaddedResolver(getZones, padding){
-  padding = padding==null ? 26 : padding;
-  return function(x, y){
-    const zones = getZones();
-    for(const z of zones){
-      const r = z.el.getBoundingClientRect();
-      if(x>=r.left-padding && x<=r.right+padding && y>=r.top-padding && y<=r.bottom+padding){
-        return { type:z.type, key:z.key, highlightEl:z.el };
-      }
-    }
-    return null;
-  };
-}
-
-function attachCardEvents(el, card, pileType, pileKey, index){
-  if(!ixConfig.isCardMovable(card, pileType, pileKey, index)){
-    el.style.cursor = 'default';
+function drawFromStock(){
+  if(state.stock.length===0){
+    if(state.waste.length===0) return;
+    undo.push();
+    state.stock = state.waste.reverse().map(c=>({...c, faceUp:false}));
+    state.waste = [];
+    renderAll();
     return;
   }
-  el.style.cursor = 'grab';
-  el.addEventListener('pointerdown', (e)=>{
-    if(e.button!==undefined && e.button!==0) return;
-    dragMoved = false;
-    dragCtx = { el, card, pileType, pileKey, index, startX:e.clientX, startY:e.clientY };
-    try{ el.setPointerCapture(e.pointerId); }catch(err){}
-  });
+  undo.push();
+  const n = Math.min(state.drawCount, state.stock.length);
+  for(let i=0;i<n;i++){
+    const c = state.stock.pop();
+    c.faceUp = true;
+    state.waste.push(c);
+  }
+  renderAll();
 }
-
-function beginVisualDrag(pileType, pileKey, index){
-  const pile = ixConfig.findPileArray(pileType, pileKey);
-  const cards = pile.slice(index); // works for both "just the top card" (index===length-1) and a multi-card run
-  dragEls = [];
-  cards.forEach((c)=>{
-    const el = document.querySelector('.card[data-id="'+c.id+'"]');
-    if(!el) return;
-    const rect = el.getBoundingClientRect();
-    el.classList.add('dragging');
-    el.style.position='fixed';
-    el.style.left = rect.left+'px';
-    el.style.top = rect.top+'px';
-    el.style.zIndex = 999;
-    // pointer-events:none is what makes drop-target hit-testing see
-    // THROUGH the dragged card to whatever's underneath it — without
-    // this, the dragged card (which follows the cursor) is always the
-    // topmost element at the drop point, and elementFromPoint would
-    // find it instead of the real target, so every drop would fail.
-    el.style.pointerEvents = 'none';
-    document.body.appendChild(el);
-    dragEls.push({el, baseLeft:rect.left, baseTop:rect.top});
-  });
-  clearDropHighlights();
-}
-function updateVisualDrag(dx, dy){
-  dragEls.forEach(d=>{
-    d.el.style.left = (d.baseLeft+dx)+'px';
-    d.el.style.top = (d.baseTop+dy)+'px';
-  });
-  clearDropHighlights();
-  const target = ixConfig.resolveDropTarget(lastPointer.x, lastPointer.y);
-  if(target && dragCtx){
-    const idx = ixConfig.canMoveWithWiden(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, target.type, target.key);
-    if(idx>=0) target.highlightEl.classList.add('drop-ok');
+function flipNewTopIfNeeded(col){
+  const pile = state.tableau[col];
+  if(pile.length){
+    const top = pile[pile.length-1];
+    if(!top.faceUp){ top.faceUp = true; addScore(5); }
   }
 }
-function cleanupDragEls(){
-  dragEls.forEach(d=>{
-    d.el.classList.remove('dragging');
-    d.el.style.position=''; d.el.style.left=''; d.el.style.top=''; d.el.style.zIndex=''; d.el.style.pointerEvents='';
-    if(d.el.parentNode === document.body) d.el.remove();
-  });
-  dragEls = [];
-}
-function endVisualDrag(x,y){
-  const target = ixConfig.resolveDropTarget(x,y);
-  clearDropHighlights();
-  let success = false;
-  if(target){
-    success = ixConfig.tryMoveAuto(dragCtx.pileType, dragCtx.pileKey, dragCtx.index, target.type, target.key);
+function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
+  const fromPile = findPileArray(fromType, fromKey);
+  if(!fromPile) return false;
+  if(fromIndex<0 || fromIndex>=fromPile.length) return false;
+  if(fromType==='waste' && fromIndex !== fromPile.length-1) return false;
+  if(fromType==='foundation' && fromIndex !== fromPile.length-1) return false;
+
+  const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
+  if(movingCards.some(c=>!c.faceUp)) return false;
+  if(fromType==='tableau' && movingCards.length>1){
+    for(let i=0;i<movingCards.length-1;i++){
+      const a=movingCards[i], b=movingCards[i+1];
+      if(!((E.isRed(a.suit)!==E.isRed(b.suit)) && E.rankValue(a.rank)===E.rankValue(b.rank)+1)) return false;
+    }
   }
-  cleanupDragEls();
-  if(!success && ixConfig.onRenderNeeded) ixConfig.onRenderNeeded();
-}
-function cancelVisualDrag(){
-  cleanupDragEls();
-  if(ixConfig.onRenderNeeded) ixConfig.onRenderNeeded();
-}
-
-function updateSelectHoverHighlight(x, y){
-  clearDropHighlights();
-  if(!selected) return;
-  const target = ixConfig.resolveHoverTargetPadded(x, y);
-  if(!target) return;
-  if(selected.pileType==='tableau' && target.type==='tableau' && String(selected.pileKey)===String(target.key)) return;
-  if(ixConfig.canMoveWithWiden(selected.pileType, selected.pileKey, selected.index, target.type, target.key) >= 0){
-    target.highlightEl.classList.add('drop-ok');
+  const card = movingCards[0];
+  if(toType==='foundation'){
+    if(movingCards.length!==1) return false;
+    return canPlaceOnFoundation(card, state.foundations[toKey], toKey);
+  } else if(toType==='tableau'){
+    if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false;
+    return canPlaceOnTableau(card, state.tableau[toKey]);
   }
+  return false;
 }
-
-// The click-to-move state machine: first click picks a card up, a
-// second click either completes the move (if it landed on a different,
-// valid destination), cancels the selection (clicked the same card
-// again), or re-selects a different card (if the move attempt failed —
-// lets you change your mind without an extra click to deselect first).
-function handleTapSelect(pileType, pileKey, index, card){
-  if(selected){
-    const sel = selected;
-    if(sel.pileType===pileType && String(sel.pileKey)===String(pileKey) && sel.index===index){
-      clearSelection(); return;
+function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
+  if(canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return fromIndex;
+  if(fromType==='tableau'){
+    const pile = state.tableau[fromKey];
+    for(let i=fromIndex-1; i>=0 && pile[i] && pile[i].faceUp; i--){
+      if(canMoveExact(fromType, fromKey, i, toType, toKey)) return i;
     }
-    const moved = ixConfig.tryMoveAuto(sel.pileType, sel.pileKey, sel.index, pileType, pileKey);
-    clearSelection();
-    if(moved) return;
   }
-  clearSelection();
-  selected = {pileType, pileKey, index};
-  if(ixConfig.onSelectionChanged) ixConfig.onSelectionChanged();
-  const pile = ixConfig.findPileArray(pileType, pileKey);
-  const cards = pile.slice(index);
-  cards.forEach(c=>{
-    const el = document.querySelector('.card[data-id="'+c.id+'"]');
-    if(el) el.classList.add('selected');
-  });
+  return -1;
 }
-
-function initInteractions(config){
-  ixConfig = config;
-
-  document.addEventListener('pointermove', (e)=>{
-    lastPointer.x = e.clientX; lastPointer.y = e.clientY;
-    if(!dragCtx){
-      if(selected) updateSelectHoverHighlight(e.clientX, e.clientY);
-      return;
-    }
-    const dx = e.clientX-dragCtx.startX, dy = e.clientY-dragCtx.startY;
-    if(!dragMoved && Math.hypot(dx,dy) < 6) return;
-    if(!dragMoved){
-      dragMoved = true;
-      beginVisualDrag(dragCtx.pileType, dragCtx.pileKey, dragCtx.index);
-    }
-    updateVisualDrag(dx, dy);
-  });
-
-  document.addEventListener('pointerup', (e)=>{
-    if(!dragCtx) return;
-    const ctx = dragCtx;
-    if(dragMoved){
-      endVisualDrag(e.clientX, e.clientY);
-    } else {
-      const key = ctx.pileType+':'+ctx.pileKey+':'+ctx.index;
-      const now = Date.now();
-      if(key===lastTapKey && now-lastTapTime < 320 && ixConfig.autoMoveToFoundation){
-        ixConfig.autoMoveToFoundation(ctx.pileType, ctx.pileKey, ctx.index);
-        clearSelection();
-        lastTapKey = '';
-      } else {
-        handleTapSelect(ctx.pileType, ctx.pileKey, ctx.index, ctx.card);
-        lastTapKey = key; lastTapTime = now;
-      }
-    }
-    dragCtx = null; dragMoved = false;
-  });
-
-  document.addEventListener('pointercancel', ()=>{
-    if(!dragCtx) return;
-    cancelVisualDrag();
-    dragCtx = null; dragMoved = false;
-  });
-
-  window.addEventListener('blur', ()=>{
-    if(dragCtx){ cancelVisualDrag(); dragCtx = null; dragMoved = false; }
-  });
-}
-
-/* =========================================================
-   UNDO STACK
-   Generic JSON-snapshot push/pop. The game decides what "the state"
-   means by providing getSnapshot()/applySnapshot() — this file never
-   assumes anything about the shape of a game's piles.
-   ========================================================= */
-function createUndoStack(getSnapshot, applySnapshot, undoButtonEl, maxDepth){
-  const stack = [];
-  maxDepth = maxDepth || 200;
-  function updateButton(){
-    if(undoButtonEl) undoButtonEl.style.opacity = stack.length ? '1' : '0.4';
-  }
-  return {
-    push(){
-      stack.push(JSON.stringify(getSnapshot()));
-      if(stack.length>maxDepth) stack.shift();
-      updateButton();
-    },
-    undo(){
-      if(!stack.length) return false;
-      applySnapshot(JSON.parse(stack.pop()));
-      updateButton();
-      return true;
-    },
-    reset(){ stack.length = 0; updateButton(); },
-    canUndo(){ return stack.length>0; },
-    updateButton
-  };
-}
-
-/* =========================================================
-   TOAST + HINT PULSE
-   ========================================================= */
-let toastTimer = null;
-function showToast(toastEl, msg, ms){
-  toastEl.textContent = msg;
-  toastEl.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=> toastEl.classList.remove('show'), ms || 2200);
-}
-// Briefly glows an element (see @keyframes pulseGlow in the shared CSS).
-// The remove-then-reflow-then-add dance forces the animation to restart
-// even if this same element was just pulsed a moment ago.
-function pulse(el){
-  if(!el) return;
-  el.classList.remove('hint-pulse');
-  void el.offsetWidth;
-  el.classList.add('hint-pulse');
-  setTimeout(()=> el.classList.remove('hint-pulse'), 1500);
-}
-// Same idea as pulse() above, but for highlighting several cards at
-// once for a shorter, fixed duration — used by the "Show Next"
-// foundation-preview button so every currently-eligible card lights up
-// together instead of one at a time.
-function pulseAll(els, duration){
-  const ms = duration || 1000;
-  els.forEach(el=>{
-    if(!el) return;
-    el.classList.remove('hint-pulse');
-    void el.offsetWidth;
-    el.classList.add('hint-pulse');
-  });
-  setTimeout(()=>{ els.forEach(el=>{ if(el) el.classList.remove('hint-pulse'); }); }, ms);
-}
-
-/* =========================================================
-   WIN CASCADE ANIMATION
-   Launches one floating copy of each given card from its foundation
-   position, arcs it under gravity, bounces off the bottom a few times,
-   then fades out. `cards` is an ordered array of {card, sourceEl}.
-   `buildFaceElFn` should be the game's own face-builder (so art/back
-   settings match); `getCardMetrics` should return {w,h}.
-   ========================================================= */
-function startWinCascade(cards, buildFaceElFn, getCardMetrics, opts){
-  opts = opts || {};
-  const layer = document.createElement('div');
-  layer.id = 'cascade-layer';
-  document.body.appendChild(layer);
-
-  const STAGGER = opts.stagger!=null ? opts.stagger : 90;
-  const GRAVITY = opts.gravity!=null ? opts.gravity : 0.35;
-  const BOUNCE_DAMP = opts.bounceDamp!=null ? opts.bounceDamp : 0.62;
-  const TRAIL = !!opts.trail; // classic dense-pile look: settled cards stay put instead of fading
-  const SEQUENTIAL = !!opts.sequential; // next card waits for the previous one's first bounce, not a fixed timer
-  const SEQ_MAX_WAIT = opts.sequentialMaxWait!=null ? opts.sequentialMaxWait : null; // caps that wait so pacing can't drift slower than this
-
-  if(SEQUENTIAL){
-    let i = 0;
-    function launchNext(){
-      if(i >= cards.length) return;
-      const entry = cards[i++];
-      let fired = false;
-      const proceed = ()=>{ if(fired) return; fired = true; launchNext(); };
-      spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL, proceed);
-      if(SEQ_MAX_WAIT!=null) setTimeout(proceed, SEQ_MAX_WAIT);
-    }
-    launchNext();
+function tryMove(fromType, fromKey, fromIndex, toType, toKey){
+  if(!canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return false;
+  const fromPile = findPileArray(fromType, fromKey);
+  const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
+  const card = movingCards[0];
+  undo.push();
+  if(toType==='foundation'){
+    fromPile.splice(fromIndex, movingCards.length);
+    state.foundations[toKey].push(card);
+    addScore(10);
   } else {
-    cards.forEach((entry, i)=>{
-      setTimeout(()=> spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL), i*STAGGER);
-    });
+    fromPile.splice(fromIndex, movingCards.length);
+    state.tableau[toKey].push(...movingCards);
+    if(fromType==='waste') addScore(5);
+    if(fromType==='foundation') addScore(-15);
   }
-  // Cleanup timing: for sequential mode this must reflect its ACTUAL
-  // pacing, not the unrelated STAGGER constant — with slow gravity a
-  // real first-bounce can take much longer than STAGGER implies, and
-  // using STAGGER here was removing the whole layer well before the
-  // cascade had finished (or even fully launched), which is very
-  // likely why the trail pile never actually became visible.
-  const perCardEstimate = SEQUENTIAL ? (SEQ_MAX_WAIT!=null ? SEQ_MAX_WAIT : 700) : STAGGER;
-  setTimeout(()=>{ layer.remove(); }, cards.length*perCardEstimate + 8000);
-  return layer;
+  if(fromType==='tableau') flipNewTopIfNeeded(Number(fromKey));
+  renderAll();
+  return true;
 }
-function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, bounceDamp, trail, onFirstBounce){
-  if(!entry.sourceEl){ if(onFirstBounce) onFirstBounce(); return; }
-  const startRect = entry.sourceEl.getBoundingClientRect();
-  const metrics = getCardMetrics();
-
-  const el = document.createElement('div');
-  el.className = 'card cascade-card';
-  el.style.width = metrics.w+'px';
-  el.style.height = metrics.h+'px';
-  el.style.left = startRect.left+'px';
-  el.style.top = startRect.top+'px';
-  el.appendChild(buildFaceElFn(entry.card, false));
-  layer.appendChild(el);
-
-  let x = startRect.left, y = startRect.top;
-  let vx = (Math.random()<0.5 ? -1 : 1) * (2.5 + Math.random()*1.8);
-  let vy = -7 - Math.random()*3;
-  const floorY = window.innerHeight - metrics.h - 8;
-  let bounces = 0;
-  let firstBounceFired = false;
-
-  function frame(){
-    vy += gravity;
-    x += vx;
-    y += vy;
-    if(y >= floorY){
-      y = floorY;
-      vy = -vy*bounceDamp;
-      bounces++;
-      if(!firstBounceFired){
-        firstBounceFired = true;
-        if(onFirstBounce) onFirstBounce();
-      }
-      if(Math.abs(vy) < 2.2 || bounces > 6){
-        el.style.left = x+'px';
-        el.style.top = y+'px';
-        if(trail) return; // stays put, visible, building up the pile — cleared only when the whole layer removes itself
-        el.style.transition = 'opacity .6s ease';
-        el.style.opacity = '0';
-        setTimeout(()=> el.remove(), 650);
-        return;
-      }
-    }
-    if(x < -metrics.w-60 || x > window.innerWidth+60){
-      if(!firstBounceFired && onFirstBounce){ firstBounceFired = true; onFirstBounce(); }
-      el.remove(); return;
-    }
-    el.style.left = x+'px';
-    el.style.top = y+'px';
-    requestAnimationFrame(frame);
+function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
+  const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
+  if(idx<0) return false;
+  return tryMove(fromType, fromKey, idx, toType, toKey);
+}
+function autoMoveToFoundation(fromType, fromKey, fromIndex){
+  const fromPile = findPileArray(fromType, fromKey);
+  if(!fromPile || fromIndex !== fromPile.length-1) return false;
+  const card = fromPile[fromIndex];
+  if(!card.faceUp) return false;
+  for(const s of SUITS){
+    if(canPlaceOnFoundation(card, state.foundations[s], s)) return tryMove(fromType, fromKey, fromIndex, 'foundation', s);
   }
-  requestAnimationFrame(frame);
+  return false;
+}
+function autoMoveAll(){
+  let movedAny = false, guard = 0, progress = true;
+  while(progress && guard < 300){
+    guard++; progress = false;
+    if(state.waste.length){
+      const i = state.waste.length-1;
+      if(autoMoveToFoundation('waste','waste',i)){ progress = true; movedAny = true; continue; }
+    }
+    for(let c=0;c<7;c++){
+      const pile = state.tableau[c];
+      if(pile.length){
+        const i = pile.length-1;
+        if(autoMoveToFoundation('tableau',c,i)){ progress = true; movedAny = true; break; }
+      }
+    }
+  }
+  return movedAny;
 }
 
 /* =========================================================
-   SETTINGS MODAL SHELL
-   Wires up the parts of Settings that are the same in every game:
-   card-back picker (live preview, click to select) + timer/score
-   toggles + Cancel/Apply/Apply&NewGame semantics with a snapshot to
-   revert to. A game adds its OWN extra fields (like Klondike's Draw
-   1/3) alongside these by wiring its own extra controls and passing
-   extraSnapshot()/extraRestore()/extraOnOpen() callbacks so those
-   values ride along in the same snapshot/revert cycle.
-   config: {
-     state, pendingSettings,          // the game's own objects (read/write directly)
-     overlayEl, backPickerSwatchSelector,
-     togTimerEl, togScoreEl,
-     applyHudVisibility(), syncTimerInterval(), onRenderNeeded(),
-     extraSnapshot(), extraRestore(snap), extraOnOpen()   [all optional]
-   }
-   Returns {open, revert, refreshBackPicker} in case the game needs to
-   trigger them itself (e.g. a "New Game" flow that also resets Settings).
+   HINT / NO-MOVES SCANNER
    ========================================================= */
-function wireSettingsShell(cfg){
-  let snapshot = null;
-  function open(){
-    snapshot = Object.assign({
-      backStyle: cfg.state.backStyle, showTimer: cfg.state.showTimer, showScore: cfg.state.showScore
-    }, cfg.extraSnapshot ? cfg.extraSnapshot() : {});
-    cfg.pendingSettings.backStyle = cfg.state.backStyle;
-    cfg.pendingSettings.showTimer = cfg.state.showTimer;
-    cfg.pendingSettings.showScore = cfg.state.showScore;
-    cfg.togTimerEl.checked = cfg.state.showTimer;
-    cfg.togScoreEl.checked = cfg.state.showScore;
-    refreshBackPicker();
-    if(cfg.extraOnOpen) cfg.extraOnOpen();
-    cfg.overlayEl.classList.add('show');
+function findAnyMove(){
+  if(state.waste.length){
+    const i = state.waste.length-1;
+    const c = state.waste[i];
+    for(const s of SUITS){
+      if(canPlaceOnFoundation(c, state.foundations[s], s)) return {type:'waste-foundation', fromKey:'waste', index:i, to:s};
+    }
+    for(let t=0;t<7;t++){
+      if(canPlaceOnTableau(c, state.tableau[t])) return {type:'waste-tableau', fromKey:'waste', index:i, to:t};
+    }
   }
-  function revert(){
-    if(!snapshot) return;
-    cfg.state.backStyle = snapshot.backStyle;
-    cfg.state.showTimer = snapshot.showTimer;
-    cfg.state.showScore = snapshot.showScore;
-    cfg.pendingSettings.backStyle = snapshot.backStyle;
-    cfg.pendingSettings.showTimer = snapshot.showTimer;
-    cfg.pendingSettings.showScore = snapshot.showScore;
-    if(cfg.extraRestore) cfg.extraRestore(snapshot);
-    cfg.syncTimerInterval();
-    cfg.applyHudVisibility();
-    cfg.onRenderNeeded();
+  for(let c=0;c<7;c++){
+    const pile = state.tableau[c];
+    for(let i=0;i<pile.length;i++){
+      if(!pile[i].faceUp) continue;
+      const card = pile[i];
+      if(i===pile.length-1){
+        for(const s of SUITS){
+          if(canPlaceOnFoundation(card, state.foundations[s], s)) return {type:'tableau-foundation', fromKey:c, index:i, to:s};
+        }
+      }
+      if(i===0 || pile[i-1].faceUp) continue;
+      for(let t=0;t<7;t++){
+        if(t===c) continue;
+        if(canPlaceOnTableau(card, state.tableau[t])) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
+      }
+    }
   }
-  function refreshBackPicker(){
-    document.querySelectorAll(cfg.backPickerSwatchSelector).forEach(sw=>{
-      sw.classList.toggle('active', sw.dataset.val===cfg.pendingSettings.backStyle);
+  const stuckCards = state.stock.concat(state.waste);
+  const stockCouldHelp = stuckCards.some(card=>{
+    for(const s of SUITS) if(canPlaceOnFoundation(card, state.foundations[s], s)) return true;
+    for(let t=0;t<7;t++) if(canPlaceOnTableau(card, state.tableau[t])) return true;
+    return false;
+  });
+  if(stockCouldHelp){
+    if(state.stock.length>0) return {type:'draw'};
+    if(state.stock.length===0 && state.waste.length>0) return {type:'recycle'};
+  }
+  return null;
+}
+function checkNoMoves(){
+  const mask = document.getElementById('nomovesmask');
+  const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
+  if(total===52){ mask.classList.remove('show'); return; }
+  mask.classList.toggle('show', !findAnyMove());
+}
+function findCardEl(pileType, pileKey, index){
+  return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
+}
+function showHint(){
+  const move = findAnyMove();
+  const toastEl = document.getElementById('hint-toast');
+  if(!move){ E.showToast(toastEl, "No moves left — try Undo or New Game."); return; }
+  switch(move.type){
+    case 'draw':
+      E.showToast(toastEl, 'Draw from the stock.');
+      E.pulse(document.getElementById('pile-stock'));
+      break;
+    case 'recycle':
+      E.showToast(toastEl, 'Tap the stock to reshuffle the waste back in.');
+      E.pulse(document.getElementById('pile-stock'));
+      break;
+    case 'waste-foundation':
+      E.showToast(toastEl, 'Send the waste card to its foundation.');
+      E.pulse(findCardEl('waste','waste',move.index));
+      break;
+    case 'waste-tableau':
+      E.showToast(toastEl, 'Move the waste card onto column '+(move.to+1)+'.');
+      E.pulse(findCardEl('waste','waste',move.index));
+      break;
+    case 'tableau-foundation':
+      E.showToast(toastEl, 'Send the top card of column '+(move.fromKey+1)+' to its foundation.');
+      E.pulse(findCardEl('tableau',move.fromKey,move.index));
+      break;
+    case 'tableau-tableau':
+      E.showToast(toastEl, 'Move from column '+(move.fromKey+1)+' onto column '+(move.to+1)+'.');
+      E.pulse(findCardEl('tableau',move.fromKey,move.index));
+      break;
+  }
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function ensureTableauCols(){
+  const row = document.getElementById('tableau');
+  if(row.children.length===7) return;
+  row.innerHTML = '';
+  for(let i=0;i<7;i++){
+    const col = document.createElement('div');
+    col.className = 'tcol';
+    col.dataset.index = i;
+    col.innerHTML = '<div class="pile slot"></div>';
+    row.appendChild(col);
+  }
+}
+function makeCardEl(card, pileType, pileKey, index, covered){
+  return E.makeCardEl(card, pileType, pileKey, index, covered, state.backStyle, E.attachCardEvents);
+}
+function renderAll(){
+  E.purgeStrayCards();
+  ensureTableauCols();
+  E.fitBoard({
+    columns: 7,
+    getMaxStackDepth: ()=> Math.max(7, ...state.tableau.map(c=>c.length)),
+    minStackForFit: 7
+  });
+  renderHUD();
+  renderStock();
+  renderWaste();
+  renderFoundations();
+  renderTableau();
+  const won = checkWin();
+  if(!won) checkNoMoves();
+}
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+function renderStock(){
+  const p = document.getElementById('pile-stock');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  if(state.stock.length){
+    const top = state.stock[state.stock.length-1];
+    // Thoughtful mode deliberately does NOT extend to the stock/draw
+    // pile — only tableau cards get revealed by it. Always a back here.
+    const fake = {id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false};
+    p.appendChild(makeCardEl(fake,'stock','stock',state.stock.length-1));
+  }
+}
+function renderWaste(){
+  const p = document.getElementById('pile-waste');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  const n = state.waste.length;
+  if(!n) return;
+  const metrics = E.cardMetrics(0.183);
+  const showN = Math.min(state.drawCount, n);
+  const startIdx = n - showN;
+  for(let i=startIdx;i<n;i++){
+    const card = state.waste[i];
+    const el = makeCardEl(card,'waste','waste',i);
+    el.style.left = ((i-startIdx) * metrics.fan) + 'px';
+    if(i < n-1){ el.style.cursor='default'; }
+    p.appendChild(el);
+  }
+}
+function renderFoundations(){
+  for(const s of SUITS){
+    const p = document.getElementById('f-'+s);
+    p.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.foundations[s];
+    if(pile.length) p.appendChild(makeCardEl(pile[pile.length-1],'foundation',s,pile.length-1));
+  }
+}
+function renderTableau(){
+  const metrics = E.cardMetrics(0.183);
+  for(let c=0;c<7;c++){
+    const col = document.querySelector('.tcol[data-index="'+c+'"]');
+    col.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.tableau[c];
+    pile.forEach((card, i)=>{
+      let renderCard = card, revealing = false;
+      if(!card.faceUp && state.thoughtful){
+        renderCard = { ...card, faceUp: true }; // rendering-only — real card object is untouched
+        revealing = true;
+      }
+      const el = makeCardEl(renderCard,'tableau',c,i, i<pile.length-1);
+      if(revealing) el.classList.add('thoughtful');
+      el.style.top = (i*metrics.overlap)+'px';
+      col.appendChild(el);
     });
-  }
-  document.querySelectorAll(cfg.backPickerSwatchSelector).forEach(sw=>{
-    sw.addEventListener('click', ()=>{
-      cfg.pendingSettings.backStyle = sw.dataset.val;
-      cfg.state.backStyle = sw.dataset.val;
-      refreshBackPicker();
-      cfg.onRenderNeeded();
-    });
-  });
-  cfg.togTimerEl.addEventListener('change', (e)=>{
-    cfg.pendingSettings.showTimer = e.target.checked;
-    cfg.state.showTimer = e.target.checked;
-    cfg.syncTimerInterval();
-    cfg.applyHudVisibility();
-  });
-  cfg.togScoreEl.addEventListener('change', (e)=>{
-    cfg.pendingSettings.showScore = e.target.checked;
-    cfg.state.showScore = e.target.checked;
-    cfg.applyHudVisibility();
-  });
-  cfg.overlayEl.addEventListener('click', (e)=>{ if(e.target===cfg.overlayEl){ revert(); cfg.overlayEl.classList.remove('show'); } });
-
-  return { open, revert, refreshBackPicker };
-}
-
-// Makes every element matching squareSelector exactly as tall AND
-// wide as referenceSelector's real rendered height — used to keep
-// .home-btn a true circle matching .newgame-btn's height. CSS alone
-// (flex align-items:stretch + aspect-ratio:1) turned out not to be
-// reliably honored for this combination, so this measures the actual
-// box directly instead of hoping the two stay in sync on their own.
-// Makes every .home-btn exactly as tall AND wide as #btn-newgame's
-// real rendered height, so it's a true circle matching New Game
-// regardless of font-metric quirks (CSS align-items:stretch +
-// aspect-ratio:1 wasn't reliably doing this on its own). Entirely
-// self-initializing — runs itself on load and on resize, so no game
-// file needs to call anything for this; it's genuinely shared, the
-// way styles.css is, not something each page has to wire up.
-// The score/time chip visibility logic — identical in every game, so
-// it lives here instead of being copy-pasted into each one. Each game
-// still needs its own tiny wrapper (state is a per-file variable), but
-// the actual behavior is defined exactly once.
-function applyHudVisibility(state){
-  const scoreEl = document.getElementById('chip-score');
-  const timeEl = document.getElementById('chip-time');
-  if(scoreEl) scoreEl.style.display = state.showScore ? 'flex' : 'none';
-  if(timeEl) timeEl.style.display = state.showTimer ? 'flex' : 'none';
-  // Optional — only FreeCell has this chip at all. Shown only when
-  // BOTH the mobile breakpoint is active and the person has opted in
-  // via the mobile-only settings toggle, so crossing the breakpoint
-  // (e.g. rotating a tablet) needs this re-run, not just the toggle.
-  const gameNumMobileEl = document.getElementById('game-number-chip-mobile');
-  if(gameNumMobileEl){
-    const isMobile = window.matchMedia('(max-width:560px)').matches;
-    gameNumMobileEl.style.display = (isMobile && state.showGameNumberMobile) ? 'flex' : 'none';
+    col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap + 8) + 'px';
   }
 }
 
-function syncHomeButtonSize(){
-  const ref = document.getElementById('btn-newgame');
-  if(!ref) return;
-  const h = ref.getBoundingClientRect().height;
-  if(!h) return;
-  document.querySelectorAll('.home-btn').forEach(el=>{
-    el.style.width = h+'px';
-    el.style.height = h+'px';
+/* =========================================================
+   WIN + CASCADE
+   ========================================================= */
+function checkWin(){
+  const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
+  if(total===52){
+    clearInterval(state.timerHandle);
+    if(!state.cascadePlayed){
+      state.cascadePlayed = true;
+      launchCascade();
+      const m = Math.floor(state.seconds/60), s = state.seconds%60;
+      document.getElementById('win-sub').textContent = state.showTimer
+        ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+        : (state.showScore ? ('Score '+state.score) : 'Well played.');
+      document.getElementById('win-newgame').textContent = 'Play Again';
+      setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+    }
+    return true;
+  }
+  return false;
+}
+function launchCascade(){
+  const cards = [];
+  const maxLen = Math.max(0, ...SUITS.map(s=>state.foundations[s].length));
+  for(let i=maxLen-1;i>=0;i--){
+    // Shuffled per rank tier — still all 4 suits before moving to the
+    // next rank, so no two consecutive cards ever share a suit, just
+    // not the same fixed S/H/D/C order every single time.
+    const suitOrder = E.shuffle(SUITS.slice());
+    for(const s of suitOrder){
+      if(state.foundations[s][i]) cards.push({ card: state.foundations[s][i], sourceEl: document.getElementById('f-'+s) });
+    }
+  }
+  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 130, gravity: 0.25, bounceDamp: 0.65, trail: true, sequential: true, sequentialMaxWait: 250 });
+}
+let previewingWin = false;
+let previewCascadeLayer = null;
+function previewWinScreen(){
+  previewingWin = true;
+  // buildDeck() already produces each suit's 13 cards in Ace-to-King
+  // order — no shuffle here, since shuffling before grouping by suit
+  // (the old code did) scrambles that order, which is exactly why the
+  // preview wasn't launching in a clean K-Q-J-... sequence.
+  const deck = E.buildDeck();
+  const bySuit = {S:[],H:[],D:[],C:[]};
+  deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
+  const cards = [];
+  for(let i=12;i>=0;i--){
+    const suitOrder = E.shuffle(SUITS.slice());
+    for(const s of suitOrder){
+      if(bySuit[s][i]) cards.push({ card: bySuit[s][i], sourceEl: document.getElementById('f-'+s) });
+    }
+  }
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 130, gravity: 0.25, bounceDamp: 0.65, trail: true, sequential: true, sequentialMaxWait: 250 });
+  document.getElementById('win-sub').textContent = 'Preview — not a real win';
+  document.getElementById('win-newgame').textContent = 'Close Preview';
+  setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+}
+
+/* =========================================================
+   UNDO / TIMER / HUD
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({ stock: state.stock, waste: state.waste, foundations: state.foundations, tableau: state.tableau, score: state.score }),
+  (snap)=>{ state.stock=snap.stock; state.waste=snap.waste; state.foundations=snap.foundations; state.tableau=snap.tableau; state.score=snap.score; E.clearSelection(); renderAll(); },
+  document.getElementById('btn-undo')
+);
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
+
+/* =========================================================
+   DEAL / NEW GAME
+   ========================================================= */
+function newGame(){
+  clearInterval(state.timerHandle);
+  state.drawCount = pendingSettings.drawCount;
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.backStyle = pendingSettings.backStyle;
+  state.stock = E.shuffle(E.buildDeck());
+  state.waste = [];
+  state.foundations = {S:[],H:[],D:[],C:[]};
+  state.tableau = [[],[],[],[],[],[],[]];
+  state.score = 0;
+  state.seconds = 0;
+  state.cascadePlayed = false;
+  undo.reset();
+  E.clearSelection();
+  const oldCascade = document.getElementById('cascade-layer');
+  if(oldCascade) oldCascade.remove();
+
+  for(let col=0; col<7; col++){
+    for(let i=0;i<=col;i++){
+      const card = state.stock.pop();
+      card.faceUp = (i===col);
+      state.tableau[col].push(card);
+    }
+  }
+
+  document.getElementById('winmask').classList.remove('show');
+  document.getElementById('nomovesmask').classList.remove('show');
+  applyHudVisibility();
+  syncTimerInterval();
+  renderAll();
+}
+
+/* =========================================================
+   INTERACTION WIRING
+   ========================================================= */
+function isCardMovable(card, pileType, pileKey, index){
+  if(!card.faceUp) return false;
+  const pile = findPileArray(pileType, pileKey);
+  if(pileType==='waste' || pileType==='foundation') return index===pile.length-1;
+  return true;
+}
+function resolveDropTarget(x,y){
+  const el = document.elementFromPoint(x,y);
+  if(!el) return null;
+  const col = el.closest('.tcol');
+  if(col) return { type:'tableau', key:Number(col.dataset.index), highlightEl:col };
+  const slot = el.closest('.pile.slot[data-type]');
+  if(slot && slot.dataset.type==='foundation') return { type:'foundation', key:slot.dataset.suit, highlightEl:slot };
+  return null;
+}
+function getAllZones(){
+  const zones = [];
+  for(let i=0;i<7;i++){
+    const el = document.querySelector('.tcol[data-index="'+i+'"]');
+    if(el) zones.push({type:'tableau', key:i, el});
+  }
+  for(const s of SUITS){
+    const el = document.getElementById('f-'+s);
+    if(el) zones.push({type:'foundation', key:s, el});
+  }
+  return zones;
+}
+const resolveHoverTargetPadded = E.makePaddedResolver(getAllZones, 26);
+
+E.initInteractions({
+  findPileArray,
+  isCardMovable,
+  resolveDropTarget,
+  resolveHoverTargetPadded,
+  canMoveWithWiden,
+  tryMoveAuto,
+  autoMoveToFoundation,
+  onRenderNeeded: renderAll
+});
+
+document.getElementById('pile-stock').addEventListener('click', ()=>{ E.clearSelection(); drawFromStock(); });
+SUITS.forEach(s=>{
+  document.getElementById('f-'+s).addEventListener('click', (e)=>{
+    if(e.target.closest('.card')) return;
+    const sel = E.getSelected();
+    if(sel){ tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'foundation', s); E.clearSelection(); }
   });
-}
-if(document.readyState==='loading'){
-  document.addEventListener('DOMContentLoaded', syncHomeButtonSize);
-} else {
-  syncHomeButtonSize();
-}
-let homeBtnResizeTimer = null;
-window.addEventListener('resize', ()=>{
-  clearTimeout(homeBtnResizeTimer);
-  homeBtnResizeTimer = setTimeout(syncHomeButtonSize, 100);
+});
+document.getElementById('tableau').addEventListener('click', (e)=>{
+  if(e.target.closest('.card')) return;
+  const col = e.target.closest('.tcol');
+  if(!col) return;
+  const sel = E.getSelected();
+  if(sel){ tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index)); E.clearSelection(); }
 });
 
 /* =========================================================
-   PUBLIC API
+   SETTINGS / DIALOGS
    ========================================================= */
-return {
-  SUITS, RANKS, rankValue, isRed, suitGlyph, rankFile, suitFile,
-  cardImgSrc, backImgSrc, loadCardImage,
-  buildDeck, shuffle,
-  buildFaceEl, buildBackEl, makeCardEl, purgeStrayCards,
-  preloadAllCardImages,
-  CARD_RATIO, cardMetrics, fitBoard,
-  attachCardEvents, initInteractions, clearSelection, getSelected, makePaddedResolver,
-  createUndoStack,
-  showToast, pulse, pulseAll,
-  startWinCascade,
-  wireSettingsShell,
-  applyHudVisibility
-};
+function refreshDrawNote(){
+  const canApplyNow = state.waste.length===0;
+  document.getElementById('draw-note').style.display = canApplyNow ? 'none' : 'block';
+}
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility, syncTimerInterval,
+  onRenderNeeded: renderAll,
+  extraSnapshot: ()=>({ drawCount: pendingSettings.drawCount, thoughtful: pendingSettings.thoughtful, showNextEnabled: pendingSettings.showNextEnabled }),
+  extraRestore: (snap)=>{
+    pendingSettings.drawCount = snap.drawCount; refreshDrawPicker();
+    pendingSettings.thoughtful = snap.thoughtful; state.thoughtful = snap.thoughtful;
+    document.getElementById('tog-thoughtful').checked = snap.thoughtful;
+    pendingSettings.showNextEnabled = snap.showNextEnabled; state.showNextEnabled = snap.showNextEnabled;
+    document.getElementById('tog-shownext').checked = snap.showNextEnabled;
+    document.getElementById('btn-shownext').style.display = state.showNextEnabled ? 'flex' : 'none';
+    renderAll();
+  },
+  extraOnOpen: ()=>{
+    pendingSettings.drawCount = state.drawCount; refreshDrawPicker(); refreshDrawNote();
+    pendingSettings.thoughtful = state.thoughtful;
+    document.getElementById('tog-thoughtful').checked = state.thoughtful;
+    pendingSettings.showNextEnabled = state.showNextEnabled;
+    document.getElementById('tog-shownext').checked = state.showNextEnabled;
+  }
+});
+function refreshDrawPicker(){
+  document.querySelectorAll('#seg-draw button').forEach(b=>{
+    b.classList.toggle('active', Number(b.dataset.val)===pendingSettings.drawCount);
+  });
+}
+document.querySelectorAll('#seg-draw button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    pendingSettings.drawCount = Number(b.dataset.val);
+    refreshDrawPicker();
+    if(state.waste.length===0) state.drawCount = pendingSettings.drawCount;
+    refreshDrawNote();
+  });
+});
+document.getElementById('tog-thoughtful').addEventListener('change', (e)=>{
+  pendingSettings.thoughtful = e.target.checked;
+  state.thoughtful = e.target.checked;
+  renderAll();
+});
+document.getElementById('tog-shownext').addEventListener('change', (e)=>{
+  pendingSettings.showNextEnabled = e.target.checked;
+  state.showNextEnabled = e.target.checked;
+  document.getElementById('btn-shownext').style.display = state.showNextEnabled ? 'flex' : 'none';
+});
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
+});
+document.getElementById('settings-preview-win').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  previewWinScreen();
+});
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('winmask').classList.remove('show');
+  if(previewCascadeLayer){ previewCascadeLayer.remove(); previewCascadeLayer = null; }
+  if(previewingWin){
+    previewingWin = false;
+    document.getElementById('win-newgame').textContent = 'Play Again';
+    return; // real game underneath was never touched — just close the dialog
+  }
+  newGame();
+});
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-automove').addEventListener('click', ()=>{ E.clearSelection(); autoMoveAll(); });
+document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
+document.getElementById('btn-shownext').addEventListener('click', ()=>{
+  E.pulseAll(findNextNeededHighlightTargets(), 1000);
+});
+// Every card currently one legal move away from a foundation — the
+// top of the waste pile and the top (face-up) card of each tableau
+// column. Read-only, purely for the Show Next highlight above.
+// For each suit, the ONE specific card that foundation needs next —
+// wherever it currently sits, buried or not. Skips the stock/draw
+// pile entirely (Thoughtful doesn't cover it either) and only counts
+// a tableau card if it's actually visible to the player right now
+// (face-up, or revealed via Thoughtful) — never a genuinely hidden one.
+// Returns DOM elements to highlight, not card objects — the stock
+// pile only ever renders a single generic top-card element (data-id
+// "stocktop", not the real card's id), so a needed card buried in
+// there can't be pointed at individually the way a waste/tableau card
+// can. In that case this highlights the stock pile itself instead:
+// "it's in here, cycle through to find it" — reasonable since running
+// through the whole stock is trivial anyway.
+function findNextNeededHighlightTargets(){
+  const els = [];
+  for(const s of SUITS){
+    const nextRankIdx = state.foundations[s].length;
+    if(nextRankIdx >= RANKS.length) continue;
+    const neededRank = RANKS[nextRankIdx];
+
+    if(state.waste.some(c=>c.suit===s && c.rank===neededRank)){
+      const el = document.querySelector('#pile-waste .card');
+      if(el) els.push(el);
+      continue;
+    }
+    let foundInTableau = false;
+    outer: for(let col=0; col<7; col++){
+      for(const c of state.tableau[col]){
+        if(c.suit===s && c.rank===neededRank && (c.faceUp || state.thoughtful)){
+          const el = document.querySelector('.card[data-id="'+c.id+'"]');
+          if(el) els.push(el);
+          foundInTableau = true;
+          break outer;
+        }
+      }
+    }
+    if(foundInTableau) continue;
+    if(state.stock.some(c=>c.suit===s && c.rank===neededRank)){
+      const el = document.querySelector('#pile-stock .card');
+      if(el) els.push(el);
+    }
+  }
+  return els;
+}
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('nomoves-undo').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  undo.undo();
+});
+document.getElementById('nomoves-newgame').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  newGame();
+});
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{
+    E.fitBoard({ columns:7, getMaxStackDepth:()=>Math.max(7,...state.tableau.map(c=>c.length)), minStackForFit:7 });
+  }, 100);
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+E.preloadAllCardImages(KNOWN_BACK_FILES);
+ensureTableauCols();
+newGame();
 
 })();
+</script>
+</body>
+</html>
