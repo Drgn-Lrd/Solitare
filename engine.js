@@ -1,10 +1,11 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.4
+    Last Updated v1.5
 
-   applyHudVisibility no longer references #hud-secondary — that
-   element is gone (SCORE/TIME moved into .bottombar, see
-   styles.css), so this just toggles the two chips now.
+   applyHudVisibility now also handles an optional mobile-only game#
+   chip (FreeCell-specific; gracefully skipped when the element
+   doesn't exist, e.g. on Klondike) — shown only when both the mobile
+   breakpoint is active and the person has opted in via settings.
  */
 /*
      Written by: Johnathon Largent
@@ -741,6 +742,15 @@ function applyHudVisibility(state){
   const timeEl = document.getElementById('chip-time');
   if(scoreEl) scoreEl.style.display = state.showScore ? 'flex' : 'none';
   if(timeEl) timeEl.style.display = state.showTimer ? 'flex' : 'none';
+  // Optional — only FreeCell has this chip at all. Shown only when
+  // BOTH the mobile breakpoint is active and the person has opted in
+  // via the mobile-only settings toggle, so crossing the breakpoint
+  // (e.g. rotating a tablet) needs this re-run, not just the toggle.
+  const gameNumMobileEl = document.getElementById('game-number-chip-mobile');
+  if(gameNumMobileEl){
+    const isMobile = window.matchMedia('(max-width:560px)').matches;
+    gameNumMobileEl.style.display = (isMobile && state.showGameNumberMobile) ? 'flex' : 'none';
+  }
 }
 
 function syncHomeButtonSize(){
