@@ -219,7 +219,7 @@
   <div id="treasure-reveal"></div>
 </div>
 
-<!-- Standard Winmask Box (modified for Tut's Tomb) -->
+<!-- Standard Winmask Box -->
 <div class="winmask" id="winmask">
   <div class="winmask-modal">
     <h2>Tomb Cleared!</h2>
@@ -273,15 +273,29 @@
 
     <div class="field">
       <div class="toggrow">
+        <span>Force Winnable</span>
+        <label class="switch"><input type="checkbox" id="tog-winnable"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Ensures the pyramid can be completely cleared (applies on New Deal).</div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
         <span>Show Timer</span>
         <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
       </div>
     </div>
+    
     <div class="field">
       <div class="toggrow">
         <span>Show Score</span>
         <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
       </div>
+    </div>
+    
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
     </div>
 
     <div class="modal-actions">
@@ -297,7 +311,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.0';
+const PAGE_VERSION = '1.1';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 /* =========================================================
@@ -306,6 +320,7 @@ const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 const state = {
   showTimer: false,
   showScore: false,
+  forceWinnable: false,
   backStyle: 'back_10.png',
   stock: [], 
   waste: [],
@@ -317,7 +332,7 @@ const state = {
   cascadePlayed: false,
   selected: null // holds reference to clicked card data
 };
-const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.png' };
+const pendingSettings = { showTimer:false, showScore:false, forceWinnable:false, backStyle:'back_10.png' };
 const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
 
 /* =========================================================
@@ -330,8 +345,6 @@ function getWebpSrc(card) {
 }
 
 function createTutsCardEl(card, source) {
-    // We pass null for the event attach function because Pyramid uses a custom click flow 
-    // rather than the engine's drag-and-drop system.
     const el = E.makeCardEl(card, source, source, 0, false, state.backStyle, null);
     
     // Intercept image source to enforce lowercase .webp request
@@ -673,13 +686,97 @@ function syncTimerInterval(){
   if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
 }
 
+/* =========================================================
+   WINNABLE DECK GENERATOR (DFS SOLVER)
+   ========================================================= */
+function generateWinnableDeck() {
+    // Attempt up to 200 deals. Because of the relaxed "infinite passes" rule,
+    // the search space is extremely small and over 90% of randomized deals are naturally winnable.
+    for (let attempt = 0; attempt < 200; attempt++) {
+        let deck = E.shuffle(E.buildDeck());
+        if (isDeckWinnable(deck)) return deck;
+    }
+    console.warn("Could not find guaranteed winnable deal in 200 tries. Falling back to random.");
+    return E.shuffle(E.buildDeck());
+}
+
+function isDeckWinnable(deck) {
+    let pState = new Array(28).fill(true);
+    let stockCounts = new Array(14).fill(0);
+    for (let i = 28; i < 52; i++) stockCounts[E.rankValue(deck[i].rank)]++;
+    let pVals = deck.slice(0, 28).map(c => E.rankValue(c.rank));
+
+    let iterations = 0;
+
+    function solve(remaining) {
+        iterations++;
+        if (iterations > 2500) return false; // Bailout for extremely deep/rare traps
+        if (remaining === 0) return true;
+        
+        let avail = [];
+        for (let r = 0; r < 7; r++) {
+            for (let c = 0; c <= r; c++) {
+                let idx = (r * (r + 1)) / 2 + c;
+                if (!pState[idx]) continue;
+                if (r < 6) {
+                    let left = ((r + 1) * (r + 2)) / 2 + c;
+                    let right = left + 1;
+                    if (pState[left] || pState[right]) continue;
+                }
+                avail.push(idx);
+            }
+        }
+
+        // 1. Prioritize Kings (Always safe to remove immediately without consuming pairs)
+        for (let idx of avail) {
+            if (pVals[idx] === 13) {
+                pState[idx] = false;
+                let won = solve(remaining - 1);
+                pState[idx] = true;
+                return won; // If you can remove a King, you ALWAYS should. No need to branch.
+            }
+        }
+
+        // 2. Try removing valid pairs
+        // Pyramid + Pyramid
+        for (let i = 0; i < avail.length; i++) {
+            for (let j = i + 1; j < avail.length; j++) {
+                if (pVals[avail[i]] + pVals[avail[j]] === 13) {
+                    pState[avail[i]] = false;
+                    pState[avail[j]] = false;
+                    if (solve(remaining - 2)) return true;
+                    pState[avail[i]] = true;
+                    pState[avail[j]] = true;
+                }
+            }
+        }
+
+        // Pyramid + Stock
+        for (let idx of avail) {
+            let needed = 13 - pVals[idx];
+            if (stockCounts[needed] > 0) {
+                pState[idx] = false;
+                stockCounts[needed]--;
+                if (solve(remaining - 1)) return true;
+                stockCounts[needed]++;
+                pState[idx] = true;
+            }
+        }
+        
+        return false;
+    }
+    
+    return solve(28);
+}
+
 function newGame() {
     clearInterval(state.timerHandle);
     state.showTimer = pendingSettings.showTimer;
     state.showScore = pendingSettings.showScore;
+    state.forceWinnable = pendingSettings.forceWinnable;
     state.backStyle = pendingSettings.backStyle;
     
-    let deck = E.shuffle(E.buildDeck());
+    let deck = state.forceWinnable ? generateWinnableDeck() : E.shuffle(E.buildDeck());
     
     state.pyramid = [];
     state.cardsRemaining = 28;
@@ -700,7 +797,13 @@ function newGame() {
     
     undo.reset();
     E.clearSelection();
-    triggerAdventurerProgress();
+    
+    // Reset adventurer position instantly
+    const adventurer = document.getElementById('adventurer');
+    adventurer.style.transition = 'none';
+    adventurer.style.left = '2%';
+    // Restore transition after a tiny delay
+    setTimeout(() => { adventurer.style.transition = 'left 0.5s ease-out'; }, 50);
 
     document.getElementById('winmask').classList.remove('show');
     E.applyHudVisibility(state);
@@ -748,7 +851,26 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility: () => E.applyHudVisibility(state),
   syncTimerInterval,
-  onRenderNeeded: renderAll
+  onRenderNeeded: renderAll,
+  extraSnapshot: () => ({ forceWinnable: pendingSettings.forceWinnable }),
+  extraRestore: (snap) => {
+      pendingSettings.forceWinnable = snap.forceWinnable;
+      state.forceWinnable = snap.forceWinnable;
+      document.getElementById('tog-winnable').checked = snap.forceWinnable;
+  },
+  extraOnOpen: () => {
+      pendingSettings.forceWinnable = state.forceWinnable;
+      document.getElementById('tog-winnable').checked = state.forceWinnable;
+      
+      const stylesVersion = E.getStylesheetVersion() || 'unknown';
+      document.getElementById('version-info').textContent =
+        'Tut\'s Tomb v' + PAGE_VERSION + ' · engine.js v' + E.ENGINE_VERSION + ' · styles.css v' + stylesVersion;
+  }
+});
+
+document.getElementById('tog-winnable').addEventListener('change', (e) => {
+    pendingSettings.forceWinnable = e.target.checked;
+    state.forceWinnable = e.target.checked;
 });
 
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
@@ -767,7 +889,6 @@ document.getElementById('settings-newgame').addEventListener('click', ()=>{
 /* =========================================================
    INIT
    ========================================================= */
-// Note: engine.js preload uses .svg, but browser will cache our DOM-generated .webps naturally on first load.
 E.preloadAllCardImages(KNOWN_BACK_FILES);
 newGame();
 
