@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.4
+    Last Updated v1.5
 
-   SCORE/TIME chips moved into .bottombar, flanking Undo/Hint/Auto
-   Move at the far left/right edges (was a separate row under the
-   header, which added its own layout — simpler to reuse the bottom
-   bar's existing separator and edges instead).
+   On mobile, GAME# now moves from the header down to the bottom bar
+   (between SCORE and Undo/Hint/Auto Move), gated behind a new
+   settings toggle ("Show Game #") that only appears in the settings
+   pane on the mobile layout. Wired through the existing
+   extraSnapshot/extraRestore/extraOnOpen hooks, same pattern as
+   freeCellCount — Cancel properly reverts it like the other toggles.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -154,6 +156,7 @@
 
 <div class="bottombar">
   <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="chip" id="game-number-chip-mobile"><span id="game-number-display-mobile"></span></div>
   <div class="bottombar-actions">
     <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
@@ -261,6 +264,13 @@
         <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
       </div>
     </div>
+    <div class="field mobile-only-setting">
+      <div class="toggrow">
+        <span>Show Game #</span>
+        <label class="switch"><input type="checkbox" id="tog-gamenum-mobile"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Moves the game number down next to Undo/Hint/Auto Move — only relevant on this narrower layout.</div>
+    </div>
 
     <div class="field">
       <label>Testing</label>
@@ -304,6 +314,7 @@ function supermoveAnimDuration(cardCount){
 const state = {
   showTimer: false,
   showScore: false,
+  showGameNumberMobile: false,
   backStyle: 'back_10.png',
   freeCellCount: 4, // independent slider, 3-5, default 4 (classic)
   freecells: [[],[],[],[]],
@@ -317,7 +328,7 @@ const state = {
 };
 const pendingSettings = {
   showTimer:false, showScore:false, backStyle:'back_10.png',
-  freeCellCount: 4,
+  freeCellCount: 4, showGameNumberMobile: false,
   // Which curated difficulty pools a random "New Game" draws from. All
   // on by default = fully unrestricted random pick, same feel as before
   // this feature existed.
@@ -1208,13 +1219,20 @@ function newGame(gameNumber){
 function updateGameNumberDisplay(){
   const el = document.getElementById('game-number-display');
   const chip = document.getElementById('game-number-chip');
+  const elMobile = document.getElementById('game-number-display-mobile');
   if(!el || !chip) return;
   if(state.gameNumber!=null){
-    el.textContent = 'GAME #'+state.gameNumber;
-    chip.style.display = 'flex';
-  } else {
-    chip.style.display = 'none';
+    const text = 'GAME #'+state.gameNumber;
+    el.textContent = text;
+    if(elMobile) elMobile.textContent = text;
   }
+  // The header chip is set via inline style below, which always wins
+  // over any CSS media query — so hiding it on mobile has to happen
+  // here in JS too, not just in styles.css, or it'd show alongside
+  // the mobile bottombar chip instead of being replaced by it.
+  const isMobile = window.matchMedia('(max-width:560px)').matches;
+  chip.style.display = (state.gameNumber!=null && !isMobile) ? 'flex' : 'none';
+  E.applyHudVisibility(state);
 }
 
 /* =========================================================
@@ -1303,19 +1321,26 @@ const settingsShell = E.wireSettingsShell({
   extraSnapshot: ()=>({
     freeCellCount: pendingSettings.freeCellCount,
     poolExtraEasy: pendingSettings.poolExtraEasy, poolEasy: pendingSettings.poolEasy,
-    poolMedium: pendingSettings.poolMedium, poolHard: pendingSettings.poolHard
+    poolMedium: pendingSettings.poolMedium, poolHard: pendingSettings.poolHard,
+    showGameNumberMobile: pendingSettings.showGameNumberMobile
   }),
   extraRestore: (snap)=>{
     pendingSettings.freeCellCount = snap.freeCellCount;
     pendingSettings.poolExtraEasy = snap.poolExtraEasy; pendingSettings.poolEasy = snap.poolEasy;
     pendingSettings.poolMedium = snap.poolMedium; pendingSettings.poolHard = snap.poolHard;
-    refreshFreeCellSlider(); refreshPoolCheckboxes();
+    pendingSettings.showGameNumberMobile = snap.showGameNumberMobile;
+    state.showGameNumberMobile = snap.showGameNumberMobile;
+    refreshFreeCellSlider(); refreshPoolCheckboxes(); refreshGameNumberMobileToggle();
   },
   extraOnOpen: ()=>{
     pendingSettings.freeCellCount = state.freeCellCount;
-    refreshFreeCellSlider(); refreshPoolCheckboxes();
+    pendingSettings.showGameNumberMobile = state.showGameNumberMobile;
+    refreshFreeCellSlider(); refreshPoolCheckboxes(); refreshGameNumberMobileToggle();
   }
 });
+function refreshGameNumberMobileToggle(){
+  document.getElementById('tog-gamenum-mobile').checked = pendingSettings.showGameNumberMobile;
+}
 function refreshFreeCellSlider(){
   document.getElementById('freecell-slider').value = pendingSettings.freeCellCount;
   document.getElementById('freecell-slider-val').textContent = pendingSettings.freeCellCount;
@@ -1329,6 +1354,11 @@ function refreshPoolCheckboxes(){
 document.getElementById('freecell-slider').addEventListener('input', (e)=>{
   pendingSettings.freeCellCount = parseInt(e.target.value, 10);
   document.getElementById('freecell-slider-val').textContent = pendingSettings.freeCellCount;
+});
+document.getElementById('tog-gamenum-mobile').addEventListener('change', (e)=>{
+  pendingSettings.showGameNumberMobile = e.target.checked;
+  state.showGameNumberMobile = e.target.checked;
+  updateGameNumberDisplay();
 });
 function onPoolCheckboxChange(){
   pendingSettings.poolExtraEasy = document.getElementById('chk-extraeasy').checked;
@@ -1428,6 +1458,7 @@ window.addEventListener('resize', ()=>{
       getMaxStackDepth:()=>Math.max(7,...state.tableau.map(c=>c.length)),
       minStackForFit:7
     });
+    updateGameNumberDisplay();
   }, 100);
 });
 
