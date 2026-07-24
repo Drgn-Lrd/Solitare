@@ -1,11 +1,10 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.5
+    Last Updated v1.6
 
-   applyHudVisibility now also handles an optional mobile-only game#
-   chip (FreeCell-specific; gracefully skipped when the element
-   doesn't exist, e.g. on Klondike) — shown only when both the mobile
-   breakpoint is active and the person has opted in via settings.
+   Added pulseAll(els, duration) — highlights several cards at once for
+   a fixed duration, for the new "Show Next" foundation-preview button
+   (same idea as pulse(), just for a batch instead of one card).
  */
 /*
      Written by: Johnathon Largent
@@ -580,6 +579,20 @@ function pulse(el){
   el.classList.add('hint-pulse');
   setTimeout(()=> el.classList.remove('hint-pulse'), 1500);
 }
+// Same idea as pulse() above, but for highlighting several cards at
+// once for a shorter, fixed duration — used by the "Show Next"
+// foundation-preview button so every currently-eligible card lights up
+// together instead of one at a time.
+function pulseAll(els, duration){
+  const ms = duration || 1000;
+  els.forEach(el=>{
+    if(!el) return;
+    el.classList.remove('hint-pulse');
+    void el.offsetWidth;
+    el.classList.add('hint-pulse');
+  });
+  setTimeout(()=>{ els.forEach(el=>{ if(el) el.classList.remove('hint-pulse'); }); }, ms);
+}
 
 /* =========================================================
    WIN CASCADE ANIMATION
@@ -786,7 +799,7 @@ return {
   CARD_RATIO, cardMetrics, fitBoard,
   attachCardEvents, initInteractions, clearSelection, getSelected, makePaddedResolver,
   createUndoStack,
-  showToast, pulse,
+  showToast, pulse, pulseAll,
   startWinCascade,
   wireSettingsShell,
   applyHudVisibility

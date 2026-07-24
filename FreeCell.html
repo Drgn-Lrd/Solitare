@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.5
+    Last Updated v1.6
 
-   On mobile, GAME# now moves from the header down to the bottom bar
-   (between SCORE and Undo/Hint/Auto Move), gated behind a new
-   settings toggle ("Show Game #") that only appears in the settings
-   pane on the mobile layout. Wired through the existing
-   extraSnapshot/extraRestore/extraOnOpen hooks, same pattern as
-   freeCellCount — Cancel properly reverts it like the other toggles.
+   Added a "Show Next" button (spade icon) to the bottom bar that
+   highlights every free-cell/tableau card currently eligible for a
+   foundation. Fixed the real bug in Preview Win Screen: it claimed
+   not to touch your game, but the ONLY way to dismiss the dialog
+   (the "Play Again" button) unconditionally called newGame() — now
+   tracked via previewingWin, so dismissing a preview just closes it.
+   Free-cell slider expanded from 3-5 to 2-8, still defaults to 4.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -161,6 +162,7 @@
     <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
     <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+    <button class="bottombtn" id="btn-shownext" title="Highlight cards ready for the foundation"><span class="bicon"><img src="images/ace-of-spades-crest.webp" alt=""></span><span class="blabel">Show Next</span></button>
   </div>
   <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
@@ -228,7 +230,7 @@
 
     <div class="field">
       <label>Free Cells: <span id="freecell-slider-val">4</span></label>
-      <input type="range" id="freecell-slider" min="3" max="5" step="1" value="4" style="width:100%;">
+      <input type="range" id="freecell-slider" min="2" max="8" step="1" value="4" style="width:100%;">
       <div class="fieldnote">More free cells = more room to maneuver, independent of which deal you get. Applies on your next New Game.</div>
     </div>
 
@@ -316,7 +318,7 @@ const state = {
   showScore: false,
   showGameNumberMobile: false,
   backStyle: 'back_10.png',
-  freeCellCount: 4, // independent slider, 3-5, default 4 (classic)
+  freeCellCount: 4, // independent slider, 2-8, default 4 (classic)
   freecells: [[],[],[],[]],
   foundations: {S:[],H:[],D:[],C:[]},
   tableau: [[],[],[],[],[],[],[],[]],
@@ -1147,6 +1149,7 @@ function checkWin(){
       document.getElementById('win-sub').textContent = state.showTimer
         ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
         : (state.showScore ? ('Score '+state.score) : 'Well played.');
+      document.getElementById('win-newgame').textContent = 'Play Again';
       setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
     }
     return true;
@@ -1403,9 +1406,13 @@ document.getElementById('btn-play-game-number').addEventListener('click', ()=>{
 
 // Plays the win cascade + "You Win" dialog on demand, for testing —
 // deliberately does NOT touch state.foundations/state.tableau/etc, so
-// your actual in-progress game is untouched and keeps playing normally
-// once you dismiss the dialog.
+// your actual in-progress game is untouched. The dismiss button used
+// to always call newGame() though, which DID wipe your real game the
+// moment you closed the preview — previewingWin below is what fixes
+// that: dismiss now only starts a new game for a real win.
+let previewingWin = false;
 function previewWinScreen(){
+  previewingWin = true;
   const deck = E.shuffle(E.buildDeck());
   const bySuit = {S:[],H:[],D:[],C:[]};
   deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
@@ -1417,16 +1424,44 @@ function previewWinScreen(){
   }
   E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183));
   document.getElementById('win-sub').textContent = 'Preview — not a real win';
+  document.getElementById('win-newgame').textContent = 'Close Preview';
   setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
 }
 
 document.getElementById('win-newgame').addEventListener('click', ()=>{
   document.getElementById('winmask').classList.remove('show');
+  if(previewingWin){
+    previewingWin = false;
+    document.getElementById('win-newgame').textContent = 'Play Again';
+    return; // real game underneath was never touched — just close the dialog
+  }
   newGame();
 });
 document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
 document.getElementById('btn-automove').addEventListener('click', ()=>{ E.clearSelection(); autoMoveAll(); });
 document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
+document.getElementById('btn-shownext').addEventListener('click', ()=>{
+  const cards = findFoundationEligibleCards();
+  const els = cards.map(c=>document.querySelector('.card[data-id="'+c.id+'"]')).filter(Boolean);
+  E.pulseAll(els, 1000);
+});
+// Every card currently one legal move away from a foundation — the
+// top of each free cell and each tableau column. Read-only, doesn't
+// touch state at all, purely for the Show Next highlight above.
+function findFoundationEligibleCards(){
+  const cards = [];
+  for(let i=0;i<state.freeCellCount;i++){
+    const c = state.freecells[i][0];
+    if(c && SUITS.some(s=>canPlaceOnFoundation(c, state.foundations[s], s))) cards.push(c);
+  }
+  for(let col=0; col<8; col++){
+    const pile = state.tableau[col];
+    if(!pile.length) continue;
+    const top = pile[pile.length-1];
+    if(SUITS.some(s=>canPlaceOnFoundation(top, state.foundations[s], s))) cards.push(top);
+  }
+  return cards;
+}
 
 const confirmOverlay = document.getElementById('confirm-overlay');
 document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));

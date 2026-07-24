@@ -1,11 +1,15 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.8
+    Last Updated v1.9
 
-   Added .mobile-only-setting (hides a settings row on desktop — for
-   FreeCell's new "Show Game #" toggle) and a base-hidden rule for
-   #game-number-chip-mobile (FreeCell-only; JS controls actual
-   visibility via inline style, which always wins over these).
+   .bottombar rebuilt with named grid-template-areas (score/actions/
+   time, plus gamenum on mobile) so SCORE/game#/TIME each get a fixed
+   slot regardless of which are actually visible — the previous
+   order+space-between approach repositioned things based on which
+   chips happened to be shown. .bottombtn now has responsive shrinking
+   for a 4th button (Show Next) and an image-icon variant. Added
+   .card.peek for the new Peek Mode toggle (dimmed real face instead
+   of a card back, pointer-events blocked).
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -158,31 +162,41 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
    happen to be showing instead of staying put. */
 .bottombar{
   display:grid; grid-template-columns: 1fr auto 1fr; align-items:center;
+  grid-template-areas: "score actions time";
   gap: clamp(10px,4vw,28px);
   padding: 8px clamp(10px,4vw,28px) calc(8px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(0deg, #150d05, #150d0500 100%);
   border-top: 1px solid #3a2812;
   flex-shrink:0;
 }
-.bottombar .chip{ justify-self:start; }
-.bottombar .chip:last-of-type{ justify-self:end; }
-.bottombar-actions{ display:flex; justify-content:center; align-items:stretch; gap: clamp(10px,4vw,28px); grid-column:2; }
-/* Same breakpoint as .title-suffix (560px) — below that, the grid's
-   auto-sized middle column (the action buttons) doesn't shrink to
-   fit, so the side chip tracks get squeezed and the chips overflow
-   onto the buttons instead of wrapping. This has to come AFTER the
-   base .bottombar rule above: an earlier attempt put an equivalent
-   override higher up in the file, before the base rule, and the base
-   rule silently won the cascade regardless of viewport width — same
-   class of bug as the button.newgame-btn fix elsewhere in this file.
-   Switching to flex-wrap here instead: the actions group is forced
-   onto its own full-width line (flex-basis:100%), then both chips
-   wrap together onto a second line, where justify-content:
-   space-between pushes them to that line's own opposite edges. */
+/* Fixed slots by id, not by visibility/order — SCORE is always the
+   left slot and TIME always the right slot even if one of them (or
+   the mobile game# chip) is hidden; a hidden sibling just leaves its
+   own slot empty instead of shifting anyone else. */
+#chip-score{ grid-area: score; justify-self:start; }
+#chip-time{ grid-area: time; justify-self:end; }
+/* FreeCell-only; always hidden on desktop regardless of the area
+   below, which only matters once the mobile override gives it one. */
+#game-number-chip-mobile{ display:none; }
+.bottombar-actions{ grid-area: actions; display:flex; justify-content:center; align-items:stretch; flex-wrap:wrap; gap: clamp(8px,3vw,24px); }
+/* Same breakpoint as .title-suffix (560px). Below that, .bottombar
+   becomes two grid rows: the action buttons span the full width on
+   their own row, and SCORE/game#/TIME get their own fixed row
+   underneath — game# gets an actual center slot here (it has none on
+   desktop, where it's simply never shown). This has to come AFTER
+   the base .bottombar rule above, not before it — see the note on
+   button.newgame-btn elsewhere in this file for why source order
+   matters here. */
 @media (max-width:560px){
-  .bottombar{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; row-gap:8px; }
-  .bottombar-actions{ flex-basis:100%; order:1; }
-  .bottombar .chip{ order:2; }
+  .bottombar{
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "actions actions actions"
+      "score   gamenum time";
+    row-gap: 8px;
+  }
+  #game-number-chip-mobile{ grid-area: gamenum; justify-self:center; }
 }
 .bottombtn{
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
@@ -193,6 +207,18 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 }
 .bottombtn:active{ transform: scale(.94); }
 .bottombtn .bicon{ font-size:19px; line-height:1; }
+.bottombtn .bicon img{ display:block; width:19px; height:19px; }
+/* The button row can hold up to 4 buttons now (Undo/Hint/Auto Move/
+   Show Next) — shrink padding and min-width once space gets tight,
+   and drop the text labels entirely on genuinely narrow phones,
+   leaving just the glyphs, rather than letting the row overflow. */
+@media (max-width:560px){
+  .bottombtn{ padding:6px 10px; min-width:0; }
+}
+@media (max-width:420px){
+  .bottombtn{ padding:8px; }
+  .bottombtn .blabel{ display:none; }
+}
 .bottombtn .blabel{ font-size:10px; letter-spacing:1px; color:#dce9df; }
 .bottombtn.disabled{ opacity:0.4; pointer-events:none; }
 
@@ -339,6 +365,16 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
    completely regardless of the source image's own aspect ratio,
    cropping any overflow rather than leaving empty gaps.
    ========================================================= */
+/* "Peek" mode (see the Klondike settings toggle): shows a face-down
+   card's real face instead of its back, but visibly dimmed/desaturated
+   so it still reads as "not actually in play" — the point is to let
+   someone plan ahead, not to make the card usable, so it also blocks
+   pointer events entirely rather than becoming draggable. */
+.card.peek{
+  opacity: 0.55;
+  filter: grayscale(0.6);
+  pointer-events: none;
+}
 .card{
   position:absolute; left:0; top:0;
   width: var(--card-w); height: var(--card-h);
@@ -460,3 +496,4 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 }
 .backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
 .backswatch.active{ border-color: #7ee6a8; }
+
