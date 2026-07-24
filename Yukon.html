@@ -2,6 +2,16 @@
 <!--
     Yukon.html
     Written by: Johnathon Largent
+    Version 1.3
+
+   renderTableau's column height had a stray "+ 8" beyond what the
+   card stack actually needs. The .tcol.drop-ok highlight (styles.css)
+   already adds its own +/-4px overhang symmetrically around the
+   column's real height — this file's extra +8 was on top of that,
+   so the glow ended up ~4px past the last card on top but ~12-17px
+   past it on the bottom, looking lopsided. Height now matches the
+   real card stack exactly.
+
     Version 1.2
 
    Three fixes: (1) Hint now only ever suggests a move that actually
@@ -227,7 +237,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.2';
+const PAGE_VERSION = '1.3';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -518,7 +528,7 @@ function renderTableau(){
       el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
     });
-    col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap + 8) + 'px';
+    col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap) + 'px';
   }
 }
 
