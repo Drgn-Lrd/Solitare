@@ -1,14 +1,15 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.1
+    Last Updated v1.2
 
-   Scaled up .iconbtn (36px→44px) and .chip (padding/font-size) —
-   they were still sized for the old 34px crest/header height, and
-   looked visually small/out of proportion once the crest grew to
-   56px. The stretch+aspect-ratio home-btn approach mentioned in the
-   previous note has since been replaced with a JS-measured fix,
-   self-contained in engine.js (see that file's changelog) — no CSS
-   change needed here for that part.
+   Reworked header sizing to an exact formula: crest back to its
+   original 34px, title text now matches button text scale and (with
+   padding) is exactly half the crest's height (17px), the button row
+   below it is the other half (17px), so the two stack to the crest's
+   full height. Home, New Game, GAME#/chip, Help, and Settings are all
+   now 17px tall to match each other, and header aligns its children
+   to the bottom (not center) so the button row lines up exactly with
+   the hud row instead of centering against the crest's full height.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -75,52 +76,50 @@ body{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; }
    HEADER
    ========================================================= */
 header{
-  display:flex; align-items:center; justify-content:space-between;
+  display:flex; align-items:flex-end; justify-content:space-between;
   padding: 10px clamp(10px,3vw,28px);
   background: linear-gradient(180deg, #150d05, #150d0500 92%);
   border-bottom: 1px solid #3a2812;
   position: sticky; top:0; z-index: 50;
 }
-.brand{ display:flex; align-items:center; gap:12px; }
-.brand-text{ display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+.brand{ display:flex; align-items:flex-end; gap:12px; }
+.brand-text{ display:flex; flex-direction:column; gap:0; align-items:flex-start; }
 .brand .crest{
-  width:56px; height:56px; border-radius:50%; flex-shrink:0;
+  width:34px; height:34px; border-radius:50%; flex-shrink:0;
   background: radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
   display:flex; align-items:center; justify-content:center;
-  font-size:30px; color:#3a2a08; font-weight:bold; line-height:1;
+  font-size:18px; color:#3a2a08; font-weight:bold; line-height:1;
   box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008;
 }
+/* Title: same text scale as the buttons now, sized (with padding) to
+   exactly half the crest's height — the button row below it is the
+   other half, so the two stack to the crest's full height overall. */
 .brand h1{
-  margin:0; font-size: clamp(18px,3vw,26px); letter-spacing:2px; font-weight:400;
+  margin:0; height:17px; line-height:17px; font-size:11px; letter-spacing:1px; font-weight:400;
   font-variant: small-caps;
   color: var(--brass-light);
-  text-shadow: 0 1px 0 #000, 0 0 18px rgba(232,200,115,0.25);
+  text-shadow: 0 1px 0 #000;
 }
 .brand small{ display:block; letter-spacing:3px; font-size:9px; color:#c9b89a; opacity:.8; margin-top:-2px;}
-.newgame-btn{ padding:4px 12px; font-size:11px; }
+.newgame-btn{ height:17px; padding:0 12px; font-size:10px; display:flex; align-items:center; }
 
-/* Circular icon-only Home button — sized to match .newgame-btn's
-   height exactly (24px) rather than the larger 36px .iconbtn used for
-   Help/Settings, since it sits directly beside New Game in the same
-   row. Holds an emoji rather than an SVG glyph — overflow:hidden plus
-   a font-size sized to the box keeps it contained inside the circle
-   instead of spilling past it. */
+/* Circular icon-only Home button — matches .newgame-btn's real
+   rendered height via engine.js (see syncHomeButtonSize), whatever
+   that is, so it automatically tracks .newgame-btn's height (17px)
+   without needing its own number here. Holds an emoji rather than an
+   SVG glyph — overflow:hidden plus a font-size sized to the box keeps
+   it contained inside the circle instead of spilling past it. */
 .home-btn{
   aspect-ratio: 1; height: auto; padding:0; flex-shrink:0;
   border-radius:50%; border:1px solid var(--panel-line);
   background: var(--panel); color: var(--brass-light);
   display:inline-flex; align-items:center; justify-content:center;
   overflow:hidden; cursor:pointer; text-decoration:none;
-  font-size:13px; line-height:1;
+  font-size:10px; line-height:1;
   transition: background .15s ease, transform .15s ease;
 }
 .home-btn:hover{ background:#123a2c; transform: translateY(-1px); }
 .home-btn:active{ transform: scale(.92); }
-/* align-items:stretch (not center) is the actual fix here — it makes
-   home-btn's height match newgame-btn's real rendered height exactly,
-   whatever that turns out to be, instead of a guessed fixed px value
-   that was visibly too small. aspect-ratio:1 on .home-btn then keeps
-   it a circle at that height. */
 .brand-actions{ display:flex; align-items:stretch; gap:8px; }
 
 .hud{ display:flex; align-items:center; gap: clamp(5px,1.4vw,12px); flex-wrap:wrap; justify-content:flex-end; }
@@ -165,17 +164,17 @@ header{
 
 .chip{
   background: var(--panel); border: 1px solid var(--panel-line);
-  padding: 8px 16px; border-radius: 22px;
-  font-size: 14px; letter-spacing: 1px; color:#dce9df;
+  height:17px; padding: 0 12px; border-radius: 12px;
+  font-size: 9px; letter-spacing: 1px; color:#dce9df;
   display:flex; gap:6px; align-items:center;
   min-width: 64px; justify-content:center;
 }
 .chip b{ color: var(--brass-light); font-weight:600; }
 .iconbtn{
-  width:44px; height:44px; border-radius:50%;
+  width:17px; height:17px; border-radius:50%;
   border:1px solid var(--panel-line); background: var(--panel); color: var(--brass-light);
   display:flex; align-items:center; justify-content:center;
-  cursor:pointer; font-size:18px;
+  cursor:pointer; font-size:9px;
   transition: transform .15s ease, background .15s ease;
 }
 .iconbtn:hover{ background:#123a2c; transform: translateY(-1px); }
@@ -410,8 +409,3 @@ header{
 }
 .backswatch img{ width:100%; height:100%; object-fit:cover; display:block; }
 .backswatch.active{ border-color: #7ee6a8; }
-
-@media (max-width:560px){
-  .brand small{ display:none; }
-  .chip{ padding:5px 9px; font-size:11px; min-width:52px;}
-}
