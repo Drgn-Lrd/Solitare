@@ -1,23 +1,18 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v2.2
+    Last Updated v2.3
 
-   Added opts.sequential — instead of a fixed time-based stagger
-   between cards, each next card only launches once the previous one
-   has actually bounced off the floor for the first time (an
-   onFirstBounce callback fired from inside spawnCascadeCard's own
-   frame loop), matching the classic Solitaire cascade exactly rather
-   than approximating its timing with a guessed delay.
- */
-/*
-     Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 1645 EDT
-
-   fitBoard now takes an optional opts.extraRows so a game can tell it
-   about a row that needs more width per card than the tableau does —
-   fixes FreeCell's mobile-portrait overflow (free cells + king slot +
-   foundations row was wider than the tableau row, but width was only
-   ever solved for the tableau's column count).
+   Found the real bug behind "the trails don't exist": the cleanup
+   timer that removes the whole cascade layer always used
+   cards.length*STAGGER, but STAGGER is meaningless in sequential
+   mode — with slow gravity a real first-bounce takes much longer
+   than that estimate implied, so the layer was very likely getting
+   force-removed mid-cascade, cutting the pile-up short before it
+   ever became visible. Cleanup timing now reflects sequential mode's
+   actual pacing. Also added opts.sequentialMaxWait, which caps how
+   long the next card waits for the previous one's bounce (so pacing
+   can't drift slower than a target) without abandoning the
+   event-driven trigger when it's naturally faster than that.
  */
 /* =========================================================================
    SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
@@ -616,13 +611,17 @@ function startWinCascade(cards, buildFaceElFn, getCardMetrics, opts){
   const BOUNCE_DAMP = opts.bounceDamp!=null ? opts.bounceDamp : 0.62;
   const TRAIL = !!opts.trail; // classic dense-pile look: settled cards stay put instead of fading
   const SEQUENTIAL = !!opts.sequential; // next card waits for the previous one's first bounce, not a fixed timer
+  const SEQ_MAX_WAIT = opts.sequentialMaxWait!=null ? opts.sequentialMaxWait : null; // caps that wait so pacing can't drift slower than this
 
   if(SEQUENTIAL){
     let i = 0;
     function launchNext(){
       if(i >= cards.length) return;
       const entry = cards[i++];
-      spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL, launchNext);
+      let fired = false;
+      const proceed = ()=>{ if(fired) return; fired = true; launchNext(); };
+      spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL, proceed);
+      if(SEQ_MAX_WAIT!=null) setTimeout(proceed, SEQ_MAX_WAIT);
     }
     launchNext();
   } else {
@@ -630,7 +629,14 @@ function startWinCascade(cards, buildFaceElFn, getCardMetrics, opts){
       setTimeout(()=> spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, GRAVITY, BOUNCE_DAMP, TRAIL), i*STAGGER);
     });
   }
-  setTimeout(()=>{ layer.remove(); }, cards.length*STAGGER + 6000);
+  // Cleanup timing: for sequential mode this must reflect its ACTUAL
+  // pacing, not the unrelated STAGGER constant — with slow gravity a
+  // real first-bounce can take much longer than STAGGER implies, and
+  // using STAGGER here was removing the whole layer well before the
+  // cascade had finished (or even fully launched), which is very
+  // likely why the trail pile never actually became visible.
+  const perCardEstimate = SEQUENTIAL ? (SEQ_MAX_WAIT!=null ? SEQ_MAX_WAIT : 700) : STAGGER;
+  setTimeout(()=>{ layer.remove(); }, cards.length*perCardEstimate + 8000);
   return layer;
 }
 function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, bounceDamp, trail, onFirstBounce){
