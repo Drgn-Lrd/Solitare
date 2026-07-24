@@ -324,8 +324,8 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
   background-image:
     radial-gradient(ellipse 140% 90% at 50% -10%,
       color-mix(in srgb, #1a7a54 75%, transparent),
-      color-mix(in srgb, var(--felt-1) 75%, transparent) 45%,
-      color-mix(in srgb, var(--felt-2) 75%, transparent) 100%);
+      color-mix(in srgb, var(--felt-1) 25%, transparent) 45%,
+      color-mix(in srgb, var(--felt-2) 25%, transparent) 100%);
   box-shadow: inset 0 0 90px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3);
   padding: clamp(14px,2.2vw,26px) clamp(10px,2.4vw,22px) 18px;
   flex:1; min-height:0; width:100%;
