@@ -1,12 +1,17 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.7
+    Last Updated v1.8
 
-   Win cascade now launches King-to-Ace instead of Ace-to-King (both
-   the real win and the preview). Dismissing a win preview now
-   force-removes any still-flying cascade card artifacts instead of
-   waiting for their own 6s cleanup timer.
+   Fixed the real bug behind the preview cascade's card order: the
+   old code shuffled the deck BEFORE grouping by suit, which scrambled
+   the rank order within each suit even though buildDeck() already
+   produces Ace-to-King order — no shuffle needed at all. Show Next
+   redesigned: it now finds each foundation's next-needed card
+   wherever it sits (buried or not), not just cards already playable
+   right now — the whole point in FreeCell, where every card is
+   already visible. Also gated behind a new settings toggle, default
+   off.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -159,7 +164,7 @@
     <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
     <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
-    <button class="bottombtn" id="btn-shownext" title="Highlight cards ready for the foundation"><span class="bicon"><img src="images/ace-of-spades-crest.webp" alt=""></span><span class="blabel">Show Next</span></button>
+    <button class="bottombtn" id="btn-shownext" title="Highlight where each foundation's next card is" style="display:none"><span class="bicon"><img src="images/ace-of-spades-crest.webp" alt=""></span><span class="blabel">Show Next</span></button>
   </div>
   <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
@@ -270,6 +275,13 @@
       </div>
       <div class="fieldnote">Moves the game number down next to Undo/Hint/Auto Move — only relevant on this narrower layout.</div>
     </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Next</span>
+        <label class="switch"><input type="checkbox" id="tog-shownext"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Adds a button next to Undo/Hint/Auto Move that highlights where each foundation's next needed card is, even if it's buried.</div>
+    </div>
 
     <div class="field">
       <label>Testing</label>
@@ -314,6 +326,7 @@ const state = {
   showTimer: false,
   showScore: false,
   showGameNumberMobile: false,
+  showNextEnabled: false,
   backStyle: 'back_10.png',
   freeCellCount: 4, // independent slider, 2-8, default 4 (classic)
   freecells: [[],[],[],[]],
@@ -327,7 +340,7 @@ const state = {
 };
 const pendingSettings = {
   showTimer:false, showScore:false, backStyle:'back_10.png',
-  freeCellCount: 4, showGameNumberMobile: false,
+  freeCellCount: 4, showGameNumberMobile: false, showNextEnabled: false,
   // Which curated difficulty pools a random "New Game" draws from. All
   // on by default = fully unrestricted random pick, same feel as before
   // this feature existed.
@@ -1322,7 +1335,8 @@ const settingsShell = E.wireSettingsShell({
     freeCellCount: pendingSettings.freeCellCount,
     poolExtraEasy: pendingSettings.poolExtraEasy, poolEasy: pendingSettings.poolEasy,
     poolMedium: pendingSettings.poolMedium, poolHard: pendingSettings.poolHard,
-    showGameNumberMobile: pendingSettings.showGameNumberMobile
+    showGameNumberMobile: pendingSettings.showGameNumberMobile,
+    showNextEnabled: pendingSettings.showNextEnabled
   }),
   extraRestore: (snap)=>{
     pendingSettings.freeCellCount = snap.freeCellCount;
@@ -1330,16 +1344,23 @@ const settingsShell = E.wireSettingsShell({
     pendingSettings.poolMedium = snap.poolMedium; pendingSettings.poolHard = snap.poolHard;
     pendingSettings.showGameNumberMobile = snap.showGameNumberMobile;
     state.showGameNumberMobile = snap.showGameNumberMobile;
-    refreshFreeCellSlider(); refreshPoolCheckboxes(); refreshGameNumberMobileToggle();
+    pendingSettings.showNextEnabled = snap.showNextEnabled;
+    state.showNextEnabled = snap.showNextEnabled;
+    refreshFreeCellSlider(); refreshPoolCheckboxes(); refreshGameNumberMobileToggle(); refreshShowNextToggle();
   },
   extraOnOpen: ()=>{
     pendingSettings.freeCellCount = state.freeCellCount;
     pendingSettings.showGameNumberMobile = state.showGameNumberMobile;
-    refreshFreeCellSlider(); refreshPoolCheckboxes(); refreshGameNumberMobileToggle();
+    pendingSettings.showNextEnabled = state.showNextEnabled;
+    refreshFreeCellSlider(); refreshPoolCheckboxes(); refreshGameNumberMobileToggle(); refreshShowNextToggle();
   }
 });
 function refreshGameNumberMobileToggle(){
   document.getElementById('tog-gamenum-mobile').checked = pendingSettings.showGameNumberMobile;
+}
+function refreshShowNextToggle(){
+  document.getElementById('tog-shownext').checked = pendingSettings.showNextEnabled;
+  document.getElementById('btn-shownext').style.display = state.showNextEnabled ? 'flex' : 'none';
 }
 function refreshFreeCellSlider(){
   document.getElementById('freecell-slider').value = pendingSettings.freeCellCount;
@@ -1359,6 +1380,11 @@ document.getElementById('tog-gamenum-mobile').addEventListener('change', (e)=>{
   pendingSettings.showGameNumberMobile = e.target.checked;
   state.showGameNumberMobile = e.target.checked;
   updateGameNumberDisplay();
+});
+document.getElementById('tog-shownext').addEventListener('change', (e)=>{
+  pendingSettings.showNextEnabled = e.target.checked;
+  state.showNextEnabled = e.target.checked;
+  document.getElementById('btn-shownext').style.display = state.showNextEnabled ? 'flex' : 'none';
 });
 function onPoolCheckboxChange(){
   pendingSettings.poolExtraEasy = document.getElementById('chk-extraeasy').checked;
@@ -1413,7 +1439,11 @@ let previewingWin = false;
 let previewCascadeLayer = null;
 function previewWinScreen(){
   previewingWin = true;
-  const deck = E.shuffle(E.buildDeck());
+  // buildDeck() already produces each suit's 13 cards in Ace-to-King
+  // order — no shuffle here, since shuffling before grouping by suit
+  // (the old code did) scrambles that order, which is exactly why the
+  // preview wasn't launching in a clean K-Q-J-... sequence.
+  const deck = E.buildDeck();
   const bySuit = {S:[],H:[],D:[],C:[]};
   deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
   const cards = [];
@@ -1442,24 +1472,38 @@ document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
 document.getElementById('btn-automove').addEventListener('click', ()=>{ E.clearSelection(); autoMoveAll(); });
 document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
 document.getElementById('btn-shownext').addEventListener('click', ()=>{
-  const cards = findFoundationEligibleCards();
+  const cards = findNextNeededCards();
   const els = cards.map(c=>document.querySelector('.card[data-id="'+c.id+'"]')).filter(Boolean);
   E.pulseAll(els, 1000);
 });
 // Every card currently one legal move away from a foundation — the
 // top of each free cell and each tableau column. Read-only, doesn't
 // touch state at all, purely for the Show Next highlight above.
-function findFoundationEligibleCards(){
+// For each suit, the ONE specific card that foundation needs next —
+// wherever it currently sits, buried or not. Every card in FreeCell is
+// always face-up, so this is genuinely useful: it shows you where to
+// dig, not just what's already playable (which you can already see by
+// looking at the top of every pile).
+function findNextNeededCards(){
   const cards = [];
-  for(let i=0;i<state.freeCellCount;i++){
-    const c = state.freecells[i][0];
-    if(c && SUITS.some(s=>canPlaceOnFoundation(c, state.foundations[s], s))) cards.push(c);
+  for(const s of SUITS){
+    const nextRankIdx = state.foundations[s].length;
+    if(nextRankIdx >= RANKS.length) continue; // that foundation is already complete
+    const neededRank = RANKS[nextRankIdx];
+    for(let i=0;i<state.freeCellCount;i++){
+      const c = state.freecells[i][0];
+      if(c && c.suit===s && c.rank===neededRank){ cards.push(c); break; }
+    }
   }
-  for(let col=0; col<8; col++){
-    const pile = state.tableau[col];
-    if(!pile.length) continue;
-    const top = pile[pile.length-1];
-    if(SUITS.some(s=>canPlaceOnFoundation(top, state.foundations[s], s))) cards.push(top);
+  for(const s of SUITS){
+    const nextRankIdx = state.foundations[s].length;
+    if(nextRankIdx >= RANKS.length) continue;
+    const neededRank = RANKS[nextRankIdx];
+    outer: for(let col=0; col<8; col++){
+      for(const c of state.tableau[col]){
+        if(c.suit===s && c.rank===neededRank){ cards.push(c); break outer; }
+      }
+    }
   }
   return cards;
 }

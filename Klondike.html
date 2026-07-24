@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated v1.7
+    Last Updated v1.8
 
-   Renamed "Peek Mode" to "Thoughtful" (the actual standard solitaire
-   term) and scoped it to the tableau only — the draw pile is
-   deliberately excluded (renderStock always shows a back now). Win
-   cascade now launches King-to-Ace instead of Ace-to-King. Dismissing
-   a win preview now force-removes any still-flying cascade card
-   artifacts instead of waiting for their own cleanup timer. Show Next
-   now also highlights Thoughtful-revealed tableau cards, not just
-   genuinely face-up ones.
+   Fixed the real bug behind the preview cascade's card order: it
+   shuffled the deck BEFORE grouping by suit, scrambling rank order
+   within each suit even though buildDeck() already produces Ace-to-
+   King order — no shuffle needed. Show Next redesigned: finds each
+   foundation's next-needed card wherever it sits (buried included),
+   counting a Thoughtful-revealed tableau card but never the stock
+   pile. Also gated behind a new settings toggle, default off.
 -->
 <html lang="en">
 <head>
@@ -80,7 +79,7 @@
     <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
     <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
-    <button class="bottombtn" id="btn-shownext" title="Highlight cards ready for the foundation"><span class="bicon"><img src="images/ace-of-spades-crest.webp" alt=""></span><span class="blabel">Show Next</span></button>
+    <button class="bottombtn" id="btn-shownext" title="Highlight where each foundation's next card is" style="display:none"><span class="bicon"><img src="images/ace-of-spades-crest.webp" alt=""></span><span class="blabel">Show Next</span></button>
   </div>
   <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
@@ -171,6 +170,13 @@
       </div>
       <div class="fieldnote">Shows face-down tableau cards, dimmed, for planning ahead — doesn't include the draw pile, and they still can't be touched.</div>
     </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Next</span>
+        <label class="switch"><input type="checkbox" id="tog-shownext"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Adds a button next to Undo/Hint/Auto Move that highlights where each foundation's next needed card is, even if it's buried.</div>
+    </div>
 
     <div class="field">
       <label>Testing</label>
@@ -201,6 +207,7 @@ const state = {
   showTimer: false,
   showScore: false,
   thoughtful: false,
+  showNextEnabled: false,
   backStyle: 'back_10.png',
   stock: [], waste: [],
   foundations: {S:[],H:[],D:[],C:[]},
@@ -210,7 +217,7 @@ const state = {
   timerHandle: null,
   cascadePlayed: false
 };
-const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'back_10.png', thoughtful:false };
+const pendingSettings = { drawCount:1, showTimer:false, showScore:false, backStyle:'back_10.png', thoughtful:false, showNextEnabled:false };
 const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
 
 /* =========================================================
@@ -562,7 +569,11 @@ let previewingWin = false;
 let previewCascadeLayer = null;
 function previewWinScreen(){
   previewingWin = true;
-  const deck = E.shuffle(E.buildDeck());
+  // buildDeck() already produces each suit's 13 cards in Ace-to-King
+  // order — no shuffle here, since shuffling before grouping by suit
+  // (the old code did) scrambles that order, which is exactly why the
+  // preview wasn't launching in a clean K-Q-J-... sequence.
+  const deck = E.buildDeck();
   const bySuit = {S:[],H:[],D:[],C:[]};
   deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
   const cards = [];
@@ -702,17 +713,22 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraSnapshot: ()=>({ drawCount: pendingSettings.drawCount, thoughtful: pendingSettings.thoughtful }),
+  extraSnapshot: ()=>({ drawCount: pendingSettings.drawCount, thoughtful: pendingSettings.thoughtful, showNextEnabled: pendingSettings.showNextEnabled }),
   extraRestore: (snap)=>{
     pendingSettings.drawCount = snap.drawCount; refreshDrawPicker();
     pendingSettings.thoughtful = snap.thoughtful; state.thoughtful = snap.thoughtful;
     document.getElementById('tog-thoughtful').checked = snap.thoughtful;
+    pendingSettings.showNextEnabled = snap.showNextEnabled; state.showNextEnabled = snap.showNextEnabled;
+    document.getElementById('tog-shownext').checked = snap.showNextEnabled;
+    document.getElementById('btn-shownext').style.display = state.showNextEnabled ? 'flex' : 'none';
     renderAll();
   },
   extraOnOpen: ()=>{
     pendingSettings.drawCount = state.drawCount; refreshDrawPicker(); refreshDrawNote();
     pendingSettings.thoughtful = state.thoughtful;
     document.getElementById('tog-thoughtful').checked = state.thoughtful;
+    pendingSettings.showNextEnabled = state.showNextEnabled;
+    document.getElementById('tog-shownext').checked = state.showNextEnabled;
   }
 });
 function refreshDrawPicker(){
@@ -732,6 +748,11 @@ document.getElementById('tog-thoughtful').addEventListener('change', (e)=>{
   pendingSettings.thoughtful = e.target.checked;
   state.thoughtful = e.target.checked;
   renderAll();
+});
+document.getElementById('tog-shownext').addEventListener('change', (e)=>{
+  pendingSettings.showNextEnabled = e.target.checked;
+  state.showNextEnabled = e.target.checked;
+  document.getElementById('btn-shownext').style.display = state.showNextEnabled ? 'flex' : 'none';
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
@@ -763,25 +784,31 @@ document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
 document.getElementById('btn-automove').addEventListener('click', ()=>{ E.clearSelection(); autoMoveAll(); });
 document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
 document.getElementById('btn-shownext').addEventListener('click', ()=>{
-  const cards = findFoundationEligibleCards();
+  const cards = findNextNeededCards();
   const els = cards.map(c=>document.querySelector('.card[data-id="'+c.id+'"]')).filter(Boolean);
   E.pulseAll(els, 1000);
 });
 // Every card currently one legal move away from a foundation — the
 // top of the waste pile and the top (face-up) card of each tableau
 // column. Read-only, purely for the Show Next highlight above.
-function findFoundationEligibleCards(){
+// For each suit, the ONE specific card that foundation needs next —
+// wherever it currently sits, buried or not. Skips the stock/draw
+// pile entirely (Thoughtful doesn't cover it either) and only counts
+// a tableau card if it's actually visible to the player right now
+// (face-up, or revealed via Thoughtful) — never a genuinely hidden one.
+function findNextNeededCards(){
   const cards = [];
-  if(state.waste.length){
-    const top = state.waste[state.waste.length-1];
-    if(SUITS.some(s=>canPlaceOnFoundation(top, state.foundations[s], s))) cards.push(top);
-  }
-  for(let col=0; col<7; col++){
-    const pile = state.tableau[col];
-    if(!pile.length) continue;
-    const top = pile[pile.length-1];
-    if(!top.faceUp && !state.thoughtful) continue; // genuinely hidden — skip; Thoughtful reveals it, so it counts then
-    if(SUITS.some(s=>canPlaceOnFoundation(top, state.foundations[s], s))) cards.push(top);
+  for(const s of SUITS){
+    const nextRankIdx = state.foundations[s].length;
+    if(nextRankIdx >= RANKS.length) continue;
+    const neededRank = RANKS[nextRankIdx];
+    const inWaste = state.waste.find(c=>c.suit===s && c.rank===neededRank);
+    if(inWaste){ cards.push(inWaste); continue; }
+    outer: for(let col=0; col<7; col++){
+      for(const c of state.tableau[col]){
+        if(c.suit===s && c.rank===neededRank && (c.faceUp || state.thoughtful)){ cards.push(c); break outer; }
+      }
+    }
   }
   return cards;
 }
