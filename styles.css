@@ -1,15 +1,29 @@
 /*
     styles.css
     Written by: Johnathon Largent
-    Version 2.4
+    Version 2.6
 
-   Felt playing surface (.table-felt) is now ~90% opaque instead of
-   fully solid — each gradient color stop runs through color-mix(...,
-   transparent) so the wood table-frame underneath shows through
-   faintly. Deliberately done on the background-image itself rather
-   than an opacity on .table-felt, since .table-felt is the parent of
-   every card/pile on the board and an element-level opacity would
-   have faded the cards along with the felt.
+   .table-frame (the wood frame, previously fully opaque) now gets the
+   same rgba()+var() transparency treatment .table-felt already had,
+   sharing one combined control, --table-opacity (66% to start) —
+   renamed from --felt-opacity since it now covers both layers. With
+   the wood no longer opaque, the page's own background (each game's
+   html,body rule — see FreeCell.html's background photo) shows
+   through the whole table, not just wood-on-wood as before. Cards
+   remain fully solid throughout; nothing about how a .card paints
+   changed here.
+
+   Felt playing surface (.table-felt) transparency now uses
+   rgba(var(--rgb-triplet), var(--felt-opacity)) instead of
+   color-mix(). Functionally the two should produce the same math, but
+   color-mix() showed no visible change even at low values in testing
+   — rgba()+var() is older, more universally-supported syntax and is
+   the safer bet. One important caveat either way: .table-felt's
+   immediate backdrop is .table-frame's OPAQUE wood background, not
+   the page behind it — so "transparent felt" reveals wood-brown
+   showing through, not whatever is behind the whole table. If the
+   goal is to see the actual page background through the felt,
+   .table-frame needs its own opacity treatment too.
 
    #winmask (the "You Win!" dialog specifically) no longer dims the
    whole screen — it was covering the cascade animation happening
@@ -42,9 +56,27 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.4';
-  --felt-1:#0e4432;
-  --felt-2:#082c21;
+  --stylesheet-version: '2.6';
+  /* Stored as bare "r,g,b" triplets (not full color values) so they can
+     be dropped into rgba(var(--x), alpha) for the felt's transparency
+     — rgba() with a var() alpha channel is old, well-supported syntax,
+     unlike color-mix() which turned out to be unreliable in testing.
+     --felt-highlight-rgb is the #1a7a54 top highlight from the felt
+     gradient below. */
+  --felt-1-rgb: 14,68,50;      /* #0e4432 */
+  --felt-2-rgb: 8,44,33;       /* #082c21 */
+  --felt-highlight-rgb: 26,122,84; /* #1a7a54 */
+  --wood-1-rgb: 122,82,48;     /* #7a5230 */
+  --wood-2-rgb: 74,47,24;      /* #4a2f18 */
+  --wood-3-rgb: 44,28,14;      /* #2c1c0e */
+  /* Single control for how see-through the ENTIRE table (wood frame +
+     felt together) is: 1 = fully solid, 0 = fully invisible. Shared by
+     both .table-frame and .table-felt below so every game's table
+     fades as one unit with no per-game CSS needed — games with a
+     background photo (see FreeCell.html's html,body override) show
+     it through both layers; Klondike's plain dark vignette just shows
+     a bit of texture, which is harmless. */
+  --table-opacity: 0.66;
   --wood-1:#7a5230;
   --wood-2:#4a2f18;
   --wood-3:#2c1c0e;
@@ -302,7 +334,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
   border-radius: 22px;
   padding: clamp(10px,1.6vw,18px);
   background:
-    linear-gradient(155deg, var(--wood-1), var(--wood-2) 55%, var(--wood-3)),
+    linear-gradient(155deg, rgba(var(--wood-1-rgb), var(--table-opacity)), rgba(var(--wood-2-rgb), var(--table-opacity)) 55%, rgba(var(--wood-3-rgb), var(--table-opacity))),
     repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 7px);
   box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.06);
   position:relative;
@@ -314,18 +346,14 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
 }
 .table-felt{
   border-radius: 14px;
-  /* Each stop is mixed down to 90% opacity (10% transparent) so the
-     wood .table-frame behind it shows through faintly, giving the
-     felt a slightly translucent look. This is done on the gradient
-     colors themselves, NOT as an opacity on .table-felt — every card
-     and pile on the board is a child of this element, and an
-     element-level opacity would fade the cards along with the felt.
-     Tweak the 90% figures below to adjust how solid the felt looks. */
+  /* rgba() with a var() alpha channel, not color-mix() — see the
+     --table-opacity comment above root for why. Change --table-opacity
+     to retune both this and .table-frame's wood together. */
   background-image:
     radial-gradient(ellipse 140% 90% at 50% -10%,
-      color-mix(in srgb, #1a7a54 25%, transparent),
-      color-mix(in srgb, var(--felt-1) 25%, transparent) 45%,
-      color-mix(in srgb, var(--felt-2) 25%, transparent) 100%);
+      rgba(var(--felt-highlight-rgb), var(--table-opacity)),
+      rgba(var(--felt-1-rgb), var(--table-opacity)) 45%,
+      rgba(var(--felt-2-rgb), var(--table-opacity)) 100%);
   box-shadow: inset 0 0 90px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3);
   padding: clamp(14px,2.2vw,26px) clamp(10px,2.4vw,22px) 18px;
   flex:1; min-height:0; width:100%;
