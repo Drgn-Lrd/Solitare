@@ -1,13 +1,11 @@
 /*
     Written by: Johnathon Largent
-    Last Updated v1.7
+    Last Updated v1.8
 
-   The v1.6 mobile fix never actually applied — same class of bug as
-   the button.newgame-btn cascade issue: the @media override sat
-   BEFORE the base .bottombar rule in the file, so the base rule won
-   regardless of viewport width. Moved the override to after the base
-   rule, where it actually takes effect. Same 560px breakpoint as
-   .title-suffix, as asked.
+   Added .mobile-only-setting (hides a settings row on desktop — for
+   FreeCell's new "Show Game #" toggle) and a base-hidden rule for
+   #game-number-chip-mobile (FreeCell-only; JS controls actual
+   visibility via inline style, which always wins over these).
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -107,6 +105,20 @@ header{
 @media (max-width:560px){
   .title-suffix{ display:none; }
 }
+/* Hides a settings-pane row entirely on desktop — for options that
+   only make sense once a game has switched to its mobile layout,
+   like FreeCell's "Show Game #" toggle. */
+@media (min-width:561px){
+  .mobile-only-setting{ display:none; }
+}
+/* FreeCell-only: a second GAME# chip that lives in the bottom bar for
+   mobile layouts (see FreeCell.html) instead of the header. Hidden by
+   default always — shown only via JS (inline style, which wins
+   regardless of source order here) when both the viewport is under
+   560px AND the person has opted in via the mobile-only settings
+   toggle. Absent entirely on Klondike, so this rule just never
+   matches anything there. */
+#game-number-chip-mobile{ display:none; }
 /* button.newgame-btn (element+class), not just .newgame-btn — the
    plain-class version was losing this override to .textbtn's own
    font-size/padding, since .textbtn happens to be declared LATER in
