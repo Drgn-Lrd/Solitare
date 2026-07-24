@@ -1,8 +1,9 @@
 <!--
 Pyramid.html
 Written by: Johnathon Largent
-Version 0.2
-​Updated the "Force Winnable" algorithm with a full DFS + Memoization solver to guarantee 100% winnability (preventing the 2500-iteration timeout fallback that caused unwinnable states to pass). Replaced the emoji adventurer and chest with custom scalable SVGs featuring a cartoonish Indiana Jones design.
+Version 0.3
+
+​Removed the win cascade animation entirely, replacing it with the requested cinematic sequence: the chest explicitly opens, the adventurer pulls out a glowing random treasure, and traps are slowed down for better visibility.
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -117,7 +118,7 @@ CINEMATIC WIN OVERLAY
 #cinematic-overlay {
 position: fixed;
 inset: 0;
-background: #000;
+background: rgba(0,0,0,0.9);
 z-index: 250;
 display: none;
 flex-direction: column;
@@ -128,7 +129,7 @@ transition: opacity 1.5s;
 }
 ​#cinematic-overlay.active { display: flex; }
 #cinematic-overlay.fade-in { opacity: 1; }
-#cinematic-hero { font-size: 5rem; margin-bottom: 20px; display: flex; gap: 20px; align-items: center; }
+#cinematic-hero { font-size: 6rem; margin-bottom: 20px; display: flex; gap: 30px; align-items: center; }
 ​#treasure-reveal {
 font-size: 0;
 opacity: 0;
@@ -273,7 +274,7 @@ transform: scale(1.2) rotate(360deg);
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '0.2';
+const PAGE_VERSION = '0.3';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 ​/* =========================================================
 SVG ASSETS
@@ -281,8 +282,7 @@ SVG ASSETS
 const SVG_ADVENTURER = <svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;"> <rect x="35" y="40" width="30" height="35" fill="#8b5a2b" rx="5"/> <rect x="38" y="70" width="10" height="25" fill="#4a3b2c" rx="4"/> <rect x="52" y="70" width="10" height="25" fill="#4a3b2c" rx="4"/> <circle cx="50" cy="28" r="14" fill="#f4c29f"/> <ellipse cx="50" cy="18" rx="22" ry="5" fill="#654321"/> <path d="M 38 18 C 38 2, 62 2, 62 18 Z" fill="#654321"/> <rect x="38" y="15" width="24" height="3" fill="#332211"/> <path d="M 30 50 Q 15 50, 15 65 Q 15 75, 25 75" fill="none" stroke="#4a2e15" stroke-width="3"/> </svg>;
 ​const SVG_CHEST_CLOSED = <svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;"> <rect x="15" y="40" width="70" height="45" fill="#8b5a2b" rx="5"/> <path d="M 15 45 C 15 15, 85 15, 85 45 Z" fill="#7a4a20"/> <rect x="15" y="42" width="70" height="6" fill="#d4af37"/> <rect x="25" y="25" width="8" height="60" fill="#d4af37"/> <rect x="67" y="25" width="8" height="60" fill="#d4af37"/> <circle cx="50" cy="45" r="8" fill="#ffd700"/> <circle cx="50" cy="45" r="3" fill="#333"/> </svg>;
 ​const SVG_CHEST_OPEN = <svg viewBox="0 0 100 100" width="1em" height="1em" style="vertical-align: middle;"> <rect x="15" y="55" width="70" height="35" fill="#8b5a2b" rx="5"/> <path d="M 15 55 L 25 20 L 75 20 L 85 55 Z" fill="#7a4a20"/> <rect x="15" y="55" width="70" height="6" fill="#d4af37"/> <rect x="25" y="55" width="8" height="35" fill="#d4af37"/> <rect x="67" y="55" width="8" height="35" fill="#d4af37"/> <polygon points="25,20 33,20 33,55 25,55" fill="#d4af37"/> <polygon points="67,20 75,20 75,55 67,55" fill="#d4af37"/> <rect x="42" y="20" width="16" height="8" fill="#ffd700"/> </svg>;
-​// Initialize DOM elements with custom SVGs
-document.getElementById('adventurer').innerHTML = SVG_ADVENTURER;
+​document.getElementById('adventurer').innerHTML = SVG_ADVENTURER;
 document.getElementById('chest').innerHTML = SVG_CHEST_CLOSED;
 ​/* =========================================================
 GAME STATE
@@ -294,7 +294,7 @@ forceWinnable: false,
 backStyle: 'back_10.png',
 stock: [],
 waste: [],
-pyramid: [], // { card, row, col, removed, el }
+pyramid: [],
 cardsRemaining: 28,
 score: 0,
 seconds: 0,
@@ -314,8 +314,7 @@ return cards/${rankStr}_of_${suitStr}.webp;
 }
 ​function createTutsCardEl(card, source) {
 const el = E.makeCardEl(card, source, source, 0, false, state.backStyle, null);
-​// Intercept image source to enforce lowercase .webp request
-if (card.faceUp) {
+​if (card.faceUp) {
 const img = el.querySelector('.card-face-img');
 if (img) img.src = getWebpSrc(card);
 }
@@ -414,7 +413,7 @@ if (domEl) domEl.classList.add('selected');
 }
 }
 ​/* =========================================================
-ADVENTURER ANIMATIONS
+ADVENTURER ANIMATIONS (SLOWED TRAPS)
 ========================================================= */
 function spawnTrap(targetLeft) {
 const track = document.getElementById('adventure-track');
@@ -425,12 +424,13 @@ trap.style.position = 'absolute';
 trap.style.fontSize = '24px';
 trap.style.zIndex = '1';
 trap.style.bottom = '5px';
-trap.style.left = ${targetLeft + 20}%;
-trap.style.transition = 'left 1s linear, opacity 1s ease-in';
+trap.style.left = ${targetLeft + 25}%;
+// Slowed down transition time from 1s to 2.2s for easier visibility
+trap.style.transition = 'left 2.2s linear, opacity 2.2s ease-in';
 ​track.appendChild(trap);
 ​requestAnimationFrame(() => {
 requestAnimationFrame(() => {
-trap.style.left = ${targetLeft - 10}%;
+trap.style.left = ${targetLeft - 15}%;
 trap.style.opacity = '0';
 });
 });
@@ -438,9 +438,9 @@ trap.style.opacity = '0';
 setTimeout(() => {
 const anim = ['jump', 'dodge'][Math.floor(Math.random() * 2)];
 adventurer.classList.add(anim);
-setTimeout(() => adventurer.classList.remove(anim), 600);
-}, 500);
-​setTimeout(() => trap.remove(), 1000);
+setTimeout(() => adventurer.classList.remove(anim), 1000);
+}, 800);
+​setTimeout(() => trap.remove(), 2200);
 }
 ​function triggerAdventurerProgress(isTrap) {
 const adventurer = document.getElementById('adventurer');
@@ -519,7 +519,7 @@ const m = Math.floor(state.seconds/60), s = state.seconds%60;
 document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
 }
 ​/* =========================================================
-WIN SEQUENCE
+WIN SEQUENCE (CHEST OPEN & TREASURE REVEAL)
 ========================================================= */
 function handleWin() {
 clearInterval(state.timerHandle);
@@ -531,7 +531,7 @@ const treasure = document.getElementById('treasure-reveal');
 ​overlay.classList.add('active');
 setTimeout(() => overlay.classList.add('fade-in'), 50);
 ​setTimeout(() => {
-// Show Adventurer next to Open Chest
+// Explicitly show open chest and adventurer pulling out treasure
 hero.innerHTML = ${SVG_ADVENTURER} ${SVG_CHEST_OPEN};
 treasure.innerHTML = TREASURES[Math.floor(Math.random() * TREASURES.length)];
 overlay.classList.add('show-treasure');
@@ -539,21 +539,15 @@ overlay.classList.add('show-treasure');
 overlay.classList.remove('fade-in');
 setTimeout(() => {
 overlay.classList.remove('active', 'show-treasure');
-launchWinCascade();
-}, 1000);
-}, 3500);
-​}, 1500);
-}
-​function launchWinCascade() {
-const cascadeCards = state.waste.slice(0, 15).map(c => ({
-card: c, sourceEl: document.getElementById('chest')
-}));
-​E.startWinCascade(cascadeCards, (c, cov) => E.buildFaceEl(c, cov), () => E.cardMetrics(), { trail: true });
-​const m = Math.floor(state.seconds/60), s = state.seconds%60;
+​// Show final win dialog without cascade animation
+const m = Math.floor(state.seconds/60), s = state.seconds%60;
 document.getElementById('win-sub').textContent = state.showTimer
 ? ('Escaped in '+m+':'+String(s).padStart(2,'0'))
 : 'Tomb pillaged successfully.';
-​setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+document.getElementById('winmask').classList.add('show');
+}, 1000);
+}, 4000);
+​}, 1500);
 }
 ​/* =========================================================
 UNDO, HINT & SETUP WIRING
@@ -619,8 +613,6 @@ if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; rende
 WINNABLE DECK GENERATOR (DFS SOLVER + MEMOIZATION)
 ========================================================= */
 function generateWinnableDeck() {
-// Generate until we find a guaranteed winnable solution.
-// The optimized DFS solver explores the search space comprehensively without timing out.
 for (let attempt = 0; attempt < 500; attempt++) {
 let deck = E.shuffle(E.buildDeck());
 if (isDeckWinnable(deck)) return deck;
@@ -636,10 +628,9 @@ for (let i = 28; i < 52; i++) initialStock[E.rankValue(deck[i].rank)]++;
 let iterations = 0;
 ​function solve(mask, stock) {
 iterations++;
-if (iterations > 80000) return false; // Prevent full lockup, though typical win deals finish in < 5k iterations
+if (iterations > 80000) return false;
 if (mask === 0) return true;
-​// Memoize failure states based on pyramid configuration and remaining accessible stock
-let sig = mask + "-" + stock.join('');
+​let sig = mask + "-" + stock.join('');
 if (memo.has(sig)) return false;
 ​let avail = [];
 for (let r = 0; r < 7; r++) {
@@ -655,8 +646,7 @@ avail.push(idx);
 }
 }
 }
-​// Always remove Kings first - no branching required as they don't consume stock pairs
-for (let i = 0; i < avail.length; i++) {
+​for (let i = 0; i < avail.length; i++) {
 let idx = avail[i];
 if (pVals[idx] === 13) {
 if (solve(mask ^ (1 << idx), stock)) return true;
@@ -668,15 +658,13 @@ return false;
 let idx1 = avail[i];
 let v1 = pVals[idx1];
 let needed = 13 - v1;
-​// Pyramid + Pyramid pairing
-for (let j = i + 1; j < avail.length; j++) {
+​for (let j = i + 1; j < avail.length; j++) {
 let idx2 = avail[j];
 if (pVals[idx2] === needed) {
 if (solve(mask ^ (1 << idx1) ^ (1 << idx2), stock)) return true;
 }
 }
-​// Pyramid + Stock pairing
-if (stock[needed] > 0) {
+​if (stock[needed] > 0) {
 stock[needed]--;
 if (solve(mask ^ (1 << idx1), stock)) return true;
 stock[needed]++;
@@ -740,8 +728,6 @@ document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.c
 document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
 ​document.getElementById('win-newgame').addEventListener('click', ()=>{
 document.getElementById('winmask').classList.remove('show');
-const cascade = document.getElementById('cascade-layer');
-if (cascade) cascade.remove();
 newGame();
 });
 ​const settingsShell = E.wireSettingsShell({
