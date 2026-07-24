@@ -1,6 +1,20 @@
 /*
     styles.css
     Written by: Johnathon Largent
+    Version 2.7
+
+   .card.selected's highlight (the "move highlighting" ring shown when
+   a card is picked for click-to-move) looked lopsided — thicker on
+   the bottom and right than the top and left. The green ring itself
+   (box-shadow "0 0 0 3px", spread only, no offset) was always
+   symmetric; the culprit was the second shadow in that same
+   declaration, "0 4px 10px rgba(0,0,0,.5)" — a drop-shadow with a 4px
+   DOWNWARD offset. Shifted down, its blur mostly hides under the card
+   on top but bleeds out visibly below/beside it, reading as extra
+   bulk on the bottom/right while the top stayed thin. Zeroed the
+   offset (now "0 0 10px") so that shadow blurs evenly in every
+   direction like the ring it's paired with.
+
     Version 2.6
 
    .table-frame (the wood frame, previously fully opaque) now gets the
@@ -56,7 +70,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.6';
+  --stylesheet-version: '2.7';
   /* Stored as bare "r,g,b" triplets (not full color values) so they can
      be dropped into rgba(var(--x), alpha) for the felt's transparency
      — rgba() with a var() alpha channel is old, well-supported syntax,
@@ -450,7 +464,7 @@ button.newgame-btn{ height:32px; padding:0 16px; font-size:14px; display:flex; a
   overflow:hidden;
 }
 .card.dragging{ cursor:grabbing; z-index:999 !important; filter: drop-shadow(0 10px 14px rgba(0,0,0,.55)); transition:none; }
-.card.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 4px 10px rgba(0,0,0,.5); }
+.card.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 0 10px rgba(0,0,0,.5); }
 .face, .back-img-wrap{ position:absolute; inset:0; border-radius:var(--card-radius); overflow:hidden; background:transparent; }
 .back-img-wrap{ background:#0d3358; }
 .card-face-img, .card-back-img{
