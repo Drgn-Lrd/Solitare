@@ -1,17 +1,13 @@
 <!DOCTYPE html>
 <!--
+    FreeCell.html
     Written by: Johnathon Largent
-    Last Updated v1.8
+    Version 2.1
 
-   Fixed the real bug behind the preview cascade's card order: the
-   old code shuffled the deck BEFORE grouping by suit, which scrambled
-   the rank order within each suit even though buildDeck() already
-   produces Ace-to-King order — no shuffle needed at all. Show Next
-   redesigned: it now finds each foundation's next-needed card
-   wherever it sits (buried or not), not just cards already playable
-   right now — the whole point in FreeCell, where every card is
-   already visible. Also gated behind a new settings toggle, default
-   off.
+   Added a version-info line to the settings pane (About section) —
+   shows this page's version, engine.js's, and styles.css's together,
+   reading engine.js's ENGINE_VERSION/getStylesheetVersion() plus a
+   local PAGE_VERSION constant.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -289,6 +285,11 @@
       <div class="fieldnote">Plays the win cascade + dialog without touching your current game.</div>
     </div>
 
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="textbtn" id="settings-cancel">Cancel</button>
       <button class="textbtn" id="settings-apply">Apply</button>
@@ -302,6 +303,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
+const PAGE_VERSION = '2.1';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 // Shared timing for the supermove fly-through-the-free-cells animation
@@ -1353,8 +1355,14 @@ const settingsShell = E.wireSettingsShell({
     pendingSettings.showGameNumberMobile = state.showGameNumberMobile;
     pendingSettings.showNextEnabled = state.showNextEnabled;
     refreshFreeCellSlider(); refreshPoolCheckboxes(); refreshGameNumberMobileToggle(); refreshShowNextToggle();
+    refreshVersionInfo();
   }
 });
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'FreeCell.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
 function refreshGameNumberMobileToggle(){
   document.getElementById('tog-gamenum-mobile').checked = pendingSettings.showGameNumberMobile;
 }

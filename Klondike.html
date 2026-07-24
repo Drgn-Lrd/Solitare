@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <!--
+    Klondike.html
     Written by: Johnathon Largent
-    Last Updated v2.2
+    Version 2.4
 
-   Win cascade now also uses sequential:true — the next card doesn't
-   bounce out until the previous one actually hits the floor for the
-   first time, not a fixed timer. Matches the classic Solitaire
-   cascade's real timing instead of approximating it.
+   Added a version-info line to the settings pane (About section) —
+   shows this page's version, engine.js's, and styles.css's together,
+   reading engine.js's ENGINE_VERSION/getStylesheetVersion() plus a
+   local PAGE_VERSION constant.
 -->
 <html lang="en">
 <head>
@@ -181,6 +182,11 @@
       <div class="fieldnote">Plays the win cascade + dialog without touching your current game.</div>
     </div>
 
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="textbtn" id="settings-cancel">Cancel</button>
       <button class="textbtn" id="settings-apply">Apply</button>
@@ -194,6 +200,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
+const PAGE_VERSION = '2.4';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -556,12 +563,16 @@ function launchCascade(){
   const cards = [];
   const maxLen = Math.max(0, ...SUITS.map(s=>state.foundations[s].length));
   for(let i=maxLen-1;i>=0;i--){
-    for(const s of SUITS){
+    // Shuffled per rank tier — still all 4 suits before moving to the
+    // next rank, so no two consecutive cards ever share a suit, just
+    // not the same fixed S/H/D/C order every single time.
+    const suitOrder = E.shuffle(SUITS.slice());
+    for(const s of suitOrder){
       if(state.foundations[s][i]) cards.push({ card: state.foundations[s][i], sourceEl: document.getElementById('f-'+s) });
     }
   }
   E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
-    { stagger: 130, gravity: 0.28, bounceDamp: 0.65, trail: true, sequential: true });
+    { stagger: 130, gravity: 0.25, bounceDamp: 0.65, trail: true, sequential: true, sequentialMaxWait: 250 });
 }
 let previewingWin = false;
 let previewCascadeLayer = null;
@@ -576,12 +587,13 @@ function previewWinScreen(){
   deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
   const cards = [];
   for(let i=12;i>=0;i--){
-    for(const s of SUITS){
+    const suitOrder = E.shuffle(SUITS.slice());
+    for(const s of suitOrder){
       if(bySuit[s][i]) cards.push({ card: bySuit[s][i], sourceEl: document.getElementById('f-'+s) });
     }
   }
   previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
-    { stagger: 130, gravity: 0.28, bounceDamp: 0.65, trail: true, sequential: true });
+    { stagger: 130, gravity: 0.25, bounceDamp: 0.65, trail: true, sequential: true, sequentialMaxWait: 250 });
   document.getElementById('win-sub').textContent = 'Preview — not a real win';
   document.getElementById('win-newgame').textContent = 'Close Preview';
   setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
@@ -728,8 +740,14 @@ const settingsShell = E.wireSettingsShell({
     document.getElementById('tog-thoughtful').checked = state.thoughtful;
     pendingSettings.showNextEnabled = state.showNextEnabled;
     document.getElementById('tog-shownext').checked = state.showNextEnabled;
+    refreshVersionInfo();
   }
 });
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'Klondike.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
 function refreshDrawPicker(){
   document.querySelectorAll('#seg-draw button').forEach(b=>{
     b.classList.toggle('active', Number(b.dataset.val)===pendingSettings.drawCount);

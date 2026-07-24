@@ -1,10 +1,12 @@
 /*
+    styles.css
     Written by: Johnathon Largent
-    Last Updated v1.10
+    Version 2.1
 
-   Renamed .card.peek to .card.thoughtful, matching the actual
-   solitaire terminology ("Thoughtful") instead of the placeholder
-   name it launched with.
+   Declared --stylesheet-version on :root, readable from JS via
+   engine.js's getStylesheetVersion() — part of showing all three
+   file versions (page/engine/styles) together in each game's
+   settings modal.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -21,6 +23,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
+  --stylesheet-version: '2.1';
   --felt-1:#0e4432;
   --felt-2:#082c21;
   --wood-1:#7a5230;

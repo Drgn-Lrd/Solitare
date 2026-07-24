@@ -1,15 +1,15 @@
 /*
     engine.js
     Written by: Johnathon Largent
-    Version 2.4
+    Version 2.5
 
-   Cleaned up the changelog to a single block going forward, in the
-   new template format. Added ENGINE_VERSION and getStylesheetVersion()
-   so a game's settings modal can show the HTML page's, engine.js's,
-   and styles.css's version numbers together — styles.css needs a
-   --stylesheet-version custom property added for its part of this,
-   and each HTML file needs its own PAGE_VERSION constant plus the
-   actual settings-modal display markup, neither of which exist yet.
+   Found the real bug behind cards vanishing before they ever settled
+   into a trail: a card drifting past the left/right edge of the
+   viewport was just deleted outright, often before it had even
+   reached the floor once — especially likely with slower gravity,
+   which gives more time to drift sideways first. It now bounces off
+   the edges (same reflection idea already used for the floor) instead
+   of vanishing.
  */
 /* =========================================================================
    SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
@@ -51,7 +51,7 @@ window.SEngine = (function(){
 // what lets a settings modal show all three (page/engine/styles) at
 // once. getStylesheetVersion() reads a --stylesheet-version custom
 // property off :root; returns null if styles.css hasn't declared one.
-const ENGINE_VERSION = '2.4';
+const ENGINE_VERSION = '2.5';
 function getStylesheetVersion(){
   const v = getComputedStyle(document.documentElement).getPropertyValue('--stylesheet-version');
   return v ? v.trim().replace(/^['"]|['"]$/g, '') : null;
@@ -690,10 +690,13 @@ function spawnCascadeCard(layer, entry, buildFaceElFn, getCardMetrics, gravity, 
         return;
       }
     }
-    if(x < -metrics.w-60 || x > window.innerWidth+60){
-      if(!firstBounceFired && onFirstBounce){ firstBounceFired = true; onFirstBounce(); }
-      el.remove(); return;
-    }
+    // Bounce off the left/right edges of the viewport instead of
+    // vanishing — a card drifting sideways used to just get deleted
+    // the instant it crossed the boundary, often before it had ever
+    // even reached the floor once. Same reflection idea as the floor
+    // bounce above, just on the horizontal axis.
+    if(x < 0){ x = 0; vx = -vx*bounceDamp; }
+    else if(x > window.innerWidth - metrics.w){ x = window.innerWidth - metrics.w; vx = -vx*bounceDamp; }
     el.style.left = x+'px';
     el.style.top = y+'px';
     requestAnimationFrame(frame);
