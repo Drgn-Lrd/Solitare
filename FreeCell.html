@@ -2,10 +2,13 @@
 <!--
     FreeCell.html
     Written by: Johnathon Largent
-    Version 2.2
+    Version 2.3
 
-   Win dialog now wrapped in .winmask-modal (a small bounded box) —
-   see styles.css's changelog for why.
+   Switched card back art (KNOWN_BACK_FILES, default backStyle, the
+   back-picker swatches) and the King Watcher's king_of_spades image
+   from png/svg to webp to match the new webp card set — same
+   filenames, extension only. Face-card art comes from engine.js's
+   cardImgSrc(), updated there.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from
@@ -245,10 +248,10 @@
     <div class="field">
       <label>Card Back</label>
       <div class="backpicker" id="back-picker">
-        <div class="backswatch" data-val="back_6.png"><img src="cards/back_6.png" alt="Back 6"></div>
-        <div class="backswatch" data-val="back_7.png"><img src="cards/back_7.png" alt="Back 7"></div>
-        <div class="backswatch" data-val="back_9.png"><img src="cards/back_9.png" alt="Back 9"></div>
-        <div class="backswatch" data-val="back_10.png"><img src="cards/back_10.png" alt="Back 10"></div>
+        <div class="backswatch" data-val="back_6.webp"><img src="cards/back_6.webp" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.webp"><img src="cards/back_7.webp" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.webp"><img src="cards/back_9.webp" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.webp"><img src="cards/back_10.webp" alt="Back 10"></div>
       </div>
     </div>
 
@@ -303,7 +306,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '2.2';
+const PAGE_VERSION = '2.3';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 // Shared timing for the supermove fly-through-the-free-cells animation
@@ -329,7 +332,7 @@ const state = {
   showScore: false,
   showGameNumberMobile: false,
   showNextEnabled: false,
-  backStyle: 'back_10.png',
+  backStyle: 'back_10.webp',
   freeCellCount: 4, // independent slider, 2-8, default 4 (classic)
   freecells: [[],[],[],[]],
   foundations: {S:[],H:[],D:[],C:[]},
@@ -341,14 +344,14 @@ const state = {
   gameNumber: null // the classic Microsoft game number currently in play — every deal has one now, random or chosen
 };
 const pendingSettings = {
-  showTimer:false, showScore:false, backStyle:'back_10.png',
+  showTimer:false, showScore:false, backStyle:'back_10.webp',
   freeCellCount: 4, showGameNumberMobile: false, showNextEnabled: false,
   // Which curated difficulty pools a random "New Game" draws from. All
   // on by default = fully unrestricted random pick, same feel as before
   // this feature existed.
   poolExtraEasy: true, poolEasy: true, poolMedium: true, poolHard: true
 };
-const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
+const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 
 /* =========================================================
    CURATED DIFFICULTY POOLS
@@ -1128,7 +1131,7 @@ function initKingWatcher(){
   // If this file 404s (e.g. previewing without the cards/ folder
   // available), just hide the decorative slot entirely rather than
   // showing a broken image or an odd fallback crop.
-  E.loadCardImage(img, 'cards/king_of_spades.svg', ()=>{ slot.style.display = 'none'; });
+  E.loadCardImage(img, 'cards/king_of_spades.webp', ()=>{ slot.style.display = 'none'; });
   slot.appendChild(img);
   kingWatcherSlotEl = slot;
 }

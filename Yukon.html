@@ -2,7 +2,12 @@
 <!--
     Yukon.html
     Written by: Johnathon Largent
-    Version 1.0
+    Version 1.1
+
+   Switched card back art (KNOWN_BACK_FILES, default backStyle, the
+   back-picker swatches) from png to webp to match the new webp card
+   set — same filenames, extension only. Face-card art comes from
+   engine.js's cardImgSrc(), updated there.
 
    New file: Yukon Solitaire. Built on the shared engine.js + styles.css
    exactly like Klondike/FreeCell — this file only contains what's
@@ -143,10 +148,10 @@
     <div class="field">
       <label>Card Back</label>
       <div class="backpicker" id="back-picker">
-        <div class="backswatch" data-val="back_6.png"><img src="cards/back_6.png" alt="Back 6"></div>
-        <div class="backswatch" data-val="back_7.png"><img src="cards/back_7.png" alt="Back 7"></div>
-        <div class="backswatch" data-val="back_9.png"><img src="cards/back_9.png" alt="Back 9"></div>
-        <div class="backswatch" data-val="back_10.png"><img src="cards/back_10.png" alt="Back 10"></div>
+        <div class="backswatch" data-val="back_6.webp"><img src="cards/back_6.webp" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.webp"><img src="cards/back_7.webp" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.webp"><img src="cards/back_9.webp" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.webp"><img src="cards/back_10.webp" alt="Back 10"></div>
       </div>
     </div>
 
@@ -187,7 +192,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.0';
+const PAGE_VERSION = '1.1';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -196,7 +201,7 @@ const SUITS = E.SUITS, RANKS = E.RANKS;
 const state = {
   showTimer: false,
   showScore: false,
-  backStyle: 'back_10.png',
+  backStyle: 'back_10.webp',
   foundations: {S:[],H:[],D:[],C:[]},
   tableau: [[],[],[],[],[],[],[]],
   score: 0,
@@ -204,8 +209,8 @@ const state = {
   timerHandle: null,
   cascadePlayed: false
 };
-const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.png' };
-const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp' };
+const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 
 /* =========================================================
    RULES

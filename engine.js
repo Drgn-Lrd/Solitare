@@ -1,14 +1,15 @@
 /*
     engine.js
     Written by: Johnathon Largent
-    Version 2.6
+    Version 2.7
 
-   The missing "trail" wasn't just about settled cards staying put —
-   the classic cascade actually leaves copies of each card behind
-   along its ENTIRE bounce path, not just its final resting spot.
-   trail mode now periodically clones the card at its current position
-   every ~70ms while it's still falling/bouncing (.cascade-ghost),
-   which is what actually produces those dense arch shapes.
+   Face card art now loads from webp instead of svg — cardImgSrc() is
+   the single spot every game shares, so this one line covers all of
+   Klondike/FreeCell/Yukon. Card BACKS were already extension-agnostic
+   here (backImgSrc() just echoes whatever full filename `style`
+   already carries), so their webp switch happens entirely in each
+   game's own KNOWN_BACK_FILES/backStyle/back-picker — see those
+   files' own changelogs.
  */
 /* =========================================================================
    SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
@@ -50,7 +51,7 @@ window.SEngine = (function(){
 // what lets a settings modal show all three (page/engine/styles) at
 // once. getStylesheetVersion() reads a --stylesheet-version custom
 // property off :root; returns null if styles.css hasn't declared one.
-const ENGINE_VERSION = '2.6';
+const ENGINE_VERSION = '2.7';
 function getStylesheetVersion(){
   const v = getComputedStyle(document.documentElement).getPropertyValue('--stylesheet-version');
   return v ? v.trim().replace(/^['"]|['"]$/g, '') : null;
@@ -59,7 +60,7 @@ function getStylesheetVersion(){
 /* =========================================================
    CARD IDENTITY + ASSET PATHS
    Every game shares the same 52-card model and the same cards/
-   folder convention: cards/<rank>_of_<suit>.svg and cards/back_<id>.png
+   folder convention: cards/<rank>_of_<suit>.webp and cards/back_<id>.webp
    ========================================================= */
 const SUITS = ['S','H','D','C'];
 const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
@@ -71,8 +72,8 @@ const RANK_FILE = {A:'ace', J:'jack', Q:'queen', K:'king'};
 function rankFile(rank){ return RANK_FILE[rank] || rank; }
 const SUIT_FILE = {S:'spades', H:'hearts', D:'diamonds', C:'clubs'};
 function suitFile(suit){ return SUIT_FILE[suit]; }
-function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.svg'; }
-function backImgSrc(style){ return 'cards/'+style; } // style is a full filename, e.g. "back_10.png"
+function cardImgSrc(card){ return 'cards/'+rankFile(card.rank)+'_of_'+suitFile(card.suit)+'.webp'; }
+function backImgSrc(style){ return 'cards/'+style; } // style is a full filename, e.g. "back_10.webp"
 
 // Point an <img> at a local file; if it 404s, call onFinalFail instead.
 // No external fallback — keeps every game working fully offline.
@@ -134,7 +135,7 @@ function buildFaceEl(card, covered){
   return wrap;
 }
 // Face-down card: shows whichever back image `backStyle` names (a full
-// filename, e.g. "back_10.png" — matches whatever the game's Settings
+// filename, e.g. "back_10.webp" — matches whatever the game's Settings
 // back-picker currently has selected).
 function buildBackEl(backStyle){
   const wrap = document.createElement('div');
