@@ -2,42 +2,25 @@
 <!--
     Yukon.html
     Written by: Johnathon Largent
-    Version 1.4
-
-   renderTableau's column-height line now calls engine.js's new shared
-   E.setColumnHeight(col, pile.length, metrics) instead of carrying its
-   own copy of that formula — same fix as 1.3 below, just moved to the
-   one shared place it belonged (see engine.js's changelog).
-
     Version 1.3
 
-   renderTableau's column height had a stray "+ 8" beyond what the
-   card stack actually needs. The .tcol.drop-ok highlight (styles.css)
-   already adds its own +/-4px overhang symmetrically around the
-   column's real height — this file's extra +8 was on top of that,
-   so the glow ended up ~4px past the last card on top but ~12-17px
-   past it on the bottom, looking lopsided. Height now matches the
-   real card stack exactly.
+   Hint was still missing real moves: it only counted a tableau move as
+   useful if it flipped a face-down card, but a card can also be
+   sitting on top of an ALREADY-face-up card that's foundation-ready
+   (e.g. an 8 covering an already-exposed Ace) — moving it off is just
+   as much progress, it just doesn't flip anything. findUsefulMove()
+   now also checks whether the card it would uncover can go straight
+   to a foundation. Hint messages also now name the actual cards
+   ("Move the 8 of Spades onto the 9 of Hearts") instead of column
+   numbers, except foundation moves, which still just say "to the
+   foundation" rather than naming a specific suit slot.
 
-    Version 1.2
-
-   Three fixes: (1) Hint now only ever suggests a move that actually
-   makes progress (flips a card, empties a column, or sends something
-   to a foundation) instead of pointless run-shuffling between two
-   columns that goes nowhere — see findUsefulMove() vs. the exhaustive
-   findAnyMove() still used for the no-moves check. (2) Foundations
-   are now a vertical stack pinned to the right of the tableau, sharing
-   one row with it, instead of a horizontal row above — matches the
-   hub page's Yukon tile art. (3) Added the custom Yukon.webp table
-   background (preloaded ahead of the per-card images), same treatment
-   as FreeCell's.
-
-   New file: Yukon Solitaire. Built on the shared engine.js + styles.css
-   exactly like Klondike/FreeCell — this file only contains what's
-   actually specific to Yukon: board layout, the deal, and the rules.
-   Everything else (drag/drop, click-to-move, undo, settings shell,
-   hint pulse/toast, win cascade, screen-fit sizing, card asset
-   loading/fallback) comes from engine.js untouched.
+   Built on the shared engine.js + styles.css exactly like Klondike/
+   FreeCell — this file only contains what's actually specific to
+   Yukon: board layout, the deal, and the rules. Everything else
+   (drag/drop, click-to-move, undo, settings shell, hint pulse/toast,
+   win cascade, screen-fit sizing, card asset loading/fallback) comes
+   from engine.js untouched.
 
    Three things actually define Yukon vs. Klondike:
      1. DEAL — all 52 cards go straight into the 7 tableau columns, no
@@ -244,7 +227,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.4';
+const PAGE_VERSION = '1.3';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -387,14 +370,19 @@ function autoMoveAll(){
        has to walk every face-up index in every column, not just the
        first exposed run the way Klondike's scanner does.
      - showHint() should only ever suggest a move that actually makes
-       progress. A tableau-tableau move that doesn't flip a new card
-       or empty its source column just relocates a run — you could
-       shuffle a 7-6-5 back and forth between two 8s all day and never
-       get anywhere, and a hint that suggests that isn't a hint. So
-       findUsefulMove() below applies the SAME boundary check Klondike
-       uses (only the card sitting right after a face-down card, or at
-       the very top of a now-empty-able column, counts), even though
-       Yukon's actual DRAG rule is more permissive than that.
+       progress. findUsefulMove() below only considers moving pile[i..]
+       off a column when that actually accomplishes something:
+         (a) it flips a new face-down card, or
+         (b) it empties the column outright, or
+         (c) the card it uncovers (already face-up, just buried) can
+             go straight to a foundation.
+       (c) is the case a plain "flips a new card" check misses: an
+       already-exposed run can still bury a foundation-ready card
+       underneath it, and moving the top part off is genuinely useful
+       even though nothing gets *flipped*. Without (c), a card sitting
+       on top of a playable Ace looked identical to two cards being
+       pointlessly shuffled back and forth — both "don't flip
+       anything" by the narrower test, but only one of them is stuck.
    ========================================================= */
 function findAnyMove(){
   for(let c=0;c<7;c++){
@@ -415,6 +403,20 @@ function findAnyMove(){
   }
   return null;
 }
+// Would removing pile[fromIndex..] off this column actually accomplish
+// something (vs. just relocating an already-fully-exposed run)?
+function movingOffExposesProgress(col, fromIndex){
+  const pile = state.tableau[col];
+  if(fromIndex===0) return true; // empties the column
+  const newTop = pile[fromIndex-1];
+  if(!newTop.faceUp) return true; // flips a new card face-up
+  // newTop was already face-up but buried — still progress if it can
+  // go straight to a foundation once uncovered.
+  for(const s of SUITS){
+    if(canPlaceOnFoundation(newTop, state.foundations[s], s)) return true;
+  }
+  return false;
+}
 function findUsefulMove(){
   for(let c=0;c<7;c++){
     const pile = state.tableau[c];
@@ -432,11 +434,7 @@ function findUsefulMove(){
     const pile = state.tableau[c];
     for(let i=0;i<pile.length;i++){
       if(!pile[i].faceUp) continue;
-      // Only a card sitting right after a face-down card (or one that
-      // would empty the column entirely) makes moving it worthwhile —
-      // moving anything else just relocates cards that were already
-      // fully exposed and accomplishes nothing on its own.
-      if(i>0 && pile[i-1].faceUp) continue;
+      if(!movingOffExposesProgress(c,i)) continue;
       const card = pile[i];
       for(let t=0;t<7;t++){
         if(t===c) continue;
@@ -455,21 +453,34 @@ function checkNoMoves(){
 function findCardEl(pileType, pileKey, index){
   return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
 }
+// "Ace of Spades", "8 of Hearts", "King of Clubs" — built off engine.js's
+// existing rankFile()/suitFile() (which already hold "ace"/"king"/etc.
+// and "spades"/"hearts"/etc. for the image filenames), just title-cased.
+function cardName(card){
+  const rank = E.rankFile(card.rank);
+  const suit = E.suitFile(card.suit);
+  return rank.charAt(0).toUpperCase()+rank.slice(1)+' of '+suit.charAt(0).toUpperCase()+suit.slice(1);
+}
 function showHint(){
   const move = findUsefulMove();
   const toastEl = document.getElementById('hint-toast');
   if(!move){ E.showToast(toastEl, "No moves that make progress right now — try Undo or New Game."); return; }
+  const card = state.tableau[move.fromKey][move.index];
   switch(move.type){
     case 'tableau-foundation':
-      E.showToast(toastEl, 'Send the top card of column '+(move.fromKey+1)+' to its foundation.');
+      E.showToast(toastEl, 'Move the '+cardName(card)+' to the foundation.');
       E.pulse(findCardEl('tableau',move.fromKey,move.index));
       break;
-    case 'tableau-tableau':
-      E.showToast(toastEl, 'Move from column '+(move.fromKey+1)+' onto column '+(move.to+1)+'.');
+    case 'tableau-tableau': {
+      const destPile = state.tableau[move.to];
+      const destText = destPile.length ? cardName(destPile[destPile.length-1]) : 'the empty column';
+      E.showToast(toastEl, 'Move the '+cardName(card)+' onto the '+destText+'.');
       E.pulse(findCardEl('tableau',move.fromKey,move.index));
       break;
+    }
   }
 }
+
 
 /* =========================================================
    RENDER
@@ -535,7 +546,7 @@ function renderTableau(){
       el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
     });
-    E.setColumnHeight(col, pile.length, metrics);
+    col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap + 8) + 'px';
   }
 }
 
