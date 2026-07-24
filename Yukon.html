@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<!--
+    Yukon.html
+    Written by: Johnathon Largent
+    Version 1.0
+
+   New file: Yukon Solitaire. Built on the shared engine.js + styles.css
+   exactly like Klondike/FreeCell — this file only contains what's
+   actually specific to Yukon: board layout (foundations only, no
+   stock/waste, 7 tableau columns), the deal, and the rules. Everything
+   else (drag/drop, click-to-move, undo, settings shell, hint pulse/
+   toast, win cascade, screen-fit sizing, card asset loading/fallback)
+   comes from engine.js untouched.
+
+   Three things actually define Yukon vs. Klondike:
+     1. DEAL — all 52 cards go straight into the 7 tableau columns, no
+        stock/waste. Column 0 gets a single face-up card; columns 1-6
+        each start with (col) face-down cards (1 through 6) topped by
+        5 more dealt face-up, giving the standard 1/6/7/8/9/10/11 spread.
+     2. DRAGGING — any face-up tableau card can be picked up together
+        with every card below it, in whatever order they happen to be
+        in. This falls out of engine.js almost for free: beginVisualDrag()
+        already does `pile.slice(index)` unconditionally, and
+        handleTapSelect() (click-to-move) does the same. The only change
+        needed is in canMoveExact() below, which drops Klondike's
+        "movingCards must themselves form a valid descending/alternating
+        run" check — it only requires every carried card be face-up, and
+        that the LEAD card (the one actually clicked/tapped) fits the
+        destination.
+     3. PLACEMENT — identical to Klondike: alternating color, descending
+        rank on tableau piles; empty columns take a King (or a King-led
+        group); foundations build A-to-K by suit, one card at a time.
+
+   No Draw-count / Thoughtful / Show-Next controls — those are
+   Klondike-only extras with no Yukon equivalent yet.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Yukon</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true">&#10052;</div>
+    <div class="brand-text">
+      <h1>Yukon<span class="title-suffix"> Solitaire</span></h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<!-- Foundations only up top (no stock/waste) — all 52 cards dealt
+     straight into the 7 tableau columns below. -->
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="row top-row" style="justify-content:flex-end;">
+        <div class="foundations">
+          <div class="pile slot" data-type="foundation" data-suit="S" id="f-S"><div class="slot-mark">♠</div></div>
+          <div class="pile slot" data-type="foundation" data-suit="H" id="f-H"><div class="slot-mark">♥</div></div>
+          <div class="pile slot" data-type="foundation" data-suit="D" id="f-D"><div class="slot-mark">♦</div></div>
+          <div class="pile slot" data-type="foundation" data-suit="C" id="f-C"><div class="slot-mark">♣</div></div>
+        </div>
+      </div>
+      <div class="row tableau-row" id="tableau"></div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-automove" title="Send eligible top cards home"><span class="bicon">⇧</span><span class="blabel">Auto Move</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="winmask" id="winmask">
+  <div class="winmask-modal">
+    <h2>You Win!</h2>
+    <p id="win-sub">Cleared in — </p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  </div>
+</div>
+
+<div class="winmask" id="nomovesmask">
+  <h2>No More Moves</h2>
+  <p>Looks like the game is stuck.</p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="nomoves-undo">Undo Last Move</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="nomoves-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Yukon Solitaire</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>All 52 cards are dealt out at the start — there's no stock or waste pile.</li>
+      <li>Any face-up card can be dragged together with every card stacked below it, even if that sub-stack isn't in order.</li>
+      <li>A card (or group) can only be dropped where the top card of the destination is the opposite color and one rank higher — same as Klondike.</li>
+      <li>An empty tableau column only accepts a King (or a group led by one).</li>
+      <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make. <b>Auto Move</b> sends any currently eligible top cards to their foundations.</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Card back applies instantly. Timer/score too.</div>
+
+    <div class="field">
+      <label>Card Back</label>
+      <div class="backpicker" id="back-picker">
+        <div class="backswatch" data-val="back_6.png"><img src="cards/back_6.png" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.png"><img src="cards/back_7.png" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.png"><img src="cards/back_9.png" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.png"><img src="cards/back_10.png" alt="Back 10"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Testing</label>
+      <button class="textbtn" id="settings-preview-win" style="width:100%;">Preview Win Screen</button>
+      <div class="fieldnote">Plays the win cascade + dialog without touching your current game.</div>
+    </div>
+
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const E = window.SEngine;
+const PAGE_VERSION = '1.0';
+const SUITS = E.SUITS, RANKS = E.RANKS;
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+const state = {
+  showTimer: false,
+  showScore: false,
+  backStyle: 'back_10.png',
+  foundations: {S:[],H:[],D:[],C:[]},
+  tableau: [[],[],[],[],[],[],[]],
+  score: 0,
+  seconds: 0,
+  timerHandle: null,
+  cascadePlayed: false
+};
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.png' };
+const KNOWN_BACK_FILES = ['back_6.png','back_7.png','back_9.png','back_10.png'];
+
+/* =========================================================
+   RULES
+   ========================================================= */
+function canPlaceOnTableau(card, destPile){
+  if(destPile.length===0) return card.rank==='K';
+  const top = destPile[destPile.length-1];
+  if(!top.faceUp) return false;
+  return (E.isRed(card.suit) !== E.isRed(top.suit)) && (E.rankValue(card.rank) === E.rankValue(top.rank)-1);
+}
+function canPlaceOnFoundation(card, destPile, suit){
+  if(card.suit!==suit) return false;
+  if(destPile.length===0) return card.rank==='A';
+  const top = destPile[destPile.length-1];
+  return E.rankValue(card.rank) === E.rankValue(top.rank)+1;
+}
+function findPileArray(pileType, key){
+  if(pileType==='tableau') return state.tableau[key];
+  if(pileType==='foundation') return state.foundations[key];
+  return null;
+}
+function flipNewTopIfNeeded(col){
+  const pile = state.tableau[col];
+  if(pile.length){
+    const top = pile[pile.length-1];
+    if(!top.faceUp){ top.faceUp = true; addScore(5); }
+  }
+}
+// The Yukon-specific rule change lives here: movingCards only needs to
+// be all face-up. Unlike Klondike there's no requirement that they form
+// a descending/alternating run among themselves — the lead card (at
+// fromIndex) just needs to fit the destination on its own.
+function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
+  const fromPile = findPileArray(fromType, fromKey);
+  if(!fromPile) return false;
+  if(fromIndex<0 || fromIndex>=fromPile.length) return false;
+  if(fromType==='foundation' && fromIndex !== fromPile.length-1) return false;
+
+  const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
+  if(movingCards.some(c=>!c.faceUp)) return false;
+
+  const card = movingCards[0];
+  if(toType==='foundation'){
+    if(movingCards.length!==1) return false;
+    return canPlaceOnFoundation(card, state.foundations[toKey], toKey);
+  } else if(toType==='tableau'){
+    if(fromType==='tableau' && Number(fromKey)===Number(toKey)) return false;
+    return canPlaceOnTableau(card, state.tableau[toKey]);
+  }
+  return false;
+}
+// Misclick forgiveness, same idea as Klondike's: if the exact card
+// clicked/tapped doesn't fit the destination, walk upward through the
+// face-up cards above it in the same column and use the first one that
+// does — picking up a bigger (still possibly scrambled) group instead.
+function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
+  if(canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return fromIndex;
+  if(fromType==='tableau'){
+    const pile = state.tableau[fromKey];
+    for(let i=fromIndex-1; i>=0 && pile[i] && pile[i].faceUp; i--){
+      if(canMoveExact(fromType, fromKey, i, toType, toKey)) return i;
+    }
+  }
+  return -1;
+}
+function tryMove(fromType, fromKey, fromIndex, toType, toKey){
+  if(!canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return false;
+  const fromPile = findPileArray(fromType, fromKey);
+  const movingCards = fromType==='tableau' ? fromPile.slice(fromIndex) : [fromPile[fromIndex]];
+  const card = movingCards[0];
+  undo.push();
+  if(toType==='foundation'){
+    fromPile.splice(fromIndex, movingCards.length);
+    state.foundations[toKey].push(card);
+    addScore(10);
+  } else {
+    fromPile.splice(fromIndex, movingCards.length);
+    state.tableau[toKey].push(...movingCards);
+    if(fromType==='foundation') addScore(-15);
+  }
+  if(fromType==='tableau') flipNewTopIfNeeded(Number(fromKey));
+  renderAll();
+  return true;
+}
+function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
+  const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
+  if(idx<0) return false;
+  return tryMove(fromType, fromKey, idx, toType, toKey);
+}
+function autoMoveToFoundation(fromType, fromKey, fromIndex){
+  const fromPile = findPileArray(fromType, fromKey);
+  if(!fromPile || fromIndex !== fromPile.length-1) return false;
+  const card = fromPile[fromIndex];
+  if(!card.faceUp) return false;
+  for(const s of SUITS){
+    if(canPlaceOnFoundation(card, state.foundations[s], s)) return tryMove(fromType, fromKey, fromIndex, 'foundation', s);
+  }
+  return false;
+}
+function autoMoveAll(){
+  let movedAny = false, guard = 0, progress = true;
+  while(progress && guard < 300){
+    guard++; progress = false;
+    for(let c=0;c<7;c++){
+      const pile = state.tableau[c];
+      if(pile.length){
+        const i = pile.length-1;
+        if(autoMoveToFoundation('tableau',c,i)){ progress = true; movedAny = true; break; }
+      }
+    }
+  }
+  return movedAny;
+}
+
+/* =========================================================
+   HINT / NO-MOVES SCANNER
+   Unlike Klondike, EVERY face-up card in a column (not just the one
+   sitting right after a face-down boundary) is a legal move source, so
+   this walks every face-up index in every column rather than just the
+   first exposed run.
+   ========================================================= */
+function findAnyMove(){
+  for(let c=0;c<7;c++){
+    const pile = state.tableau[c];
+    for(let i=0;i<pile.length;i++){
+      if(!pile[i].faceUp) continue;
+      const card = pile[i];
+      if(i===pile.length-1){
+        for(const s of SUITS){
+          if(canPlaceOnFoundation(card, state.foundations[s], s)) return {type:'tableau-foundation', fromKey:c, index:i, to:s};
+        }
+      }
+      for(let t=0;t<7;t++){
+        if(t===c) continue;
+        if(canPlaceOnTableau(card, state.tableau[t])) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
+      }
+    }
+  }
+  return null;
+}
+function checkNoMoves(){
+  const mask = document.getElementById('nomovesmask');
+  const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
+  if(total===52){ mask.classList.remove('show'); return; }
+  mask.classList.toggle('show', !findAnyMove());
+}
+function findCardEl(pileType, pileKey, index){
+  return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
+}
+function showHint(){
+  const move = findAnyMove();
+  const toastEl = document.getElementById('hint-toast');
+  if(!move){ E.showToast(toastEl, "No moves left — try Undo or New Game."); return; }
+  switch(move.type){
+    case 'tableau-foundation':
+      E.showToast(toastEl, 'Send the top card of column '+(move.fromKey+1)+' to its foundation.');
+      E.pulse(findCardEl('tableau',move.fromKey,move.index));
+      break;
+    case 'tableau-tableau':
+      E.showToast(toastEl, 'Move from column '+(move.fromKey+1)+' onto column '+(move.to+1)+'.');
+      E.pulse(findCardEl('tableau',move.fromKey,move.index));
+      break;
+  }
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function ensureTableauCols(){
+  const row = document.getElementById('tableau');
+  if(row.children.length===7) return;
+  row.innerHTML = '';
+  for(let i=0;i<7;i++){
+    const col = document.createElement('div');
+    col.className = 'tcol';
+    col.dataset.index = i;
+    col.innerHTML = '<div class="pile slot"></div>';
+    row.appendChild(col);
+  }
+}
+function makeCardEl(card, pileType, pileKey, index, covered){
+  return E.makeCardEl(card, pileType, pileKey, index, covered, state.backStyle, E.attachCardEvents);
+}
+function renderAll(){
+  E.purgeStrayCards();
+  ensureTableauCols();
+  // Yukon's deepest starting column is 11 cards (vs Klondike's 7), so
+  // both the live-depth probe and the floor passed to fitBoard need to
+  // reflect that or early-game columns would render oversized then jump
+  // smaller the moment a card gets flipped/moved.
+  E.fitBoard({
+    columns: 7,
+    getMaxStackDepth: ()=> Math.max(11, ...state.tableau.map(c=>c.length)),
+    minStackForFit: 11
+  });
+  renderHUD();
+  renderFoundations();
+  renderTableau();
+  const won = checkWin();
+  if(!won) checkNoMoves();
+}
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+function renderFoundations(){
+  for(const s of SUITS){
+    const p = document.getElementById('f-'+s);
+    p.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.foundations[s];
+    if(pile.length) p.appendChild(makeCardEl(pile[pile.length-1],'foundation',s,pile.length-1));
+  }
+}
+function renderTableau(){
+  const metrics = E.cardMetrics(0.183);
+  for(let c=0;c<7;c++){
+    const col = document.querySelector('.tcol[data-index="'+c+'"]');
+    col.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.tableau[c];
+    pile.forEach((card, i)=>{
+      const el = makeCardEl(card,'tableau',c,i, i<pile.length-1);
+      el.style.top = (i*metrics.overlap)+'px';
+      col.appendChild(el);
+    });
+    col.style.height = (metrics.h + Math.max(pile.length-1,0)*metrics.overlap + 8) + 'px';
+  }
+}
+
+/* =========================================================
+   WIN + CASCADE
+   ========================================================= */
+function checkWin(){
+  const total = SUITS.reduce((n,s)=>n+state.foundations[s].length,0);
+  if(total===52){
+    clearInterval(state.timerHandle);
+    if(!state.cascadePlayed){
+      state.cascadePlayed = true;
+      launchCascade();
+      const m = Math.floor(state.seconds/60), s = state.seconds%60;
+      document.getElementById('win-sub').textContent = state.showTimer
+        ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+        : (state.showScore ? ('Score '+state.score) : 'Well played.');
+      document.getElementById('win-newgame').textContent = 'Play Again';
+      setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+    }
+    return true;
+  }
+  return false;
+}
+function launchCascade(){
+  const cards = [];
+  const maxLen = Math.max(0, ...SUITS.map(s=>state.foundations[s].length));
+  for(let i=maxLen-1;i>=0;i--){
+    const suitOrder = E.shuffle(SUITS.slice());
+    for(const s of suitOrder){
+      if(state.foundations[s][i]) cards.push({ card: state.foundations[s][i], sourceEl: document.getElementById('f-'+s) });
+    }
+  }
+  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 130, gravity: 0.25, bounceDamp: 0.65, trail: true, sequential: true, sequentialMaxWait: 250 });
+}
+let previewingWin = false;
+let previewCascadeLayer = null;
+function previewWinScreen(){
+  previewingWin = true;
+  const deck = E.buildDeck();
+  const bySuit = {S:[],H:[],D:[],C:[]};
+  deck.forEach(c=>{ c.faceUp = true; bySuit[c.suit].push(c); });
+  const cards = [];
+  for(let i=12;i>=0;i--){
+    const suitOrder = E.shuffle(SUITS.slice());
+    for(const s of suitOrder){
+      if(bySuit[s][i]) cards.push({ card: bySuit[s][i], sourceEl: document.getElementById('f-'+s) });
+    }
+  }
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 130, gravity: 0.25, bounceDamp: 0.65, trail: true, sequential: true, sequentialMaxWait: 250 });
+  document.getElementById('win-sub').textContent = 'Preview — not a real win';
+  document.getElementById('win-newgame').textContent = 'Close Preview';
+  setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+}
+
+/* =========================================================
+   UNDO / TIMER / HUD
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({ foundations: state.foundations, tableau: state.tableau, score: state.score }),
+  (snap)=>{ state.foundations=snap.foundations; state.tableau=snap.tableau; state.score=snap.score; E.clearSelection(); renderAll(); },
+  document.getElementById('btn-undo')
+);
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
+
+/* =========================================================
+   DEAL / NEW GAME
+   Column 0: 1 card, face up.
+   Columns 1-6: (col) face-down cards, then 5 more dealt face-up on
+   top — giving the standard Yukon spread of 1/6/7/8/9/10/11 cards
+   per column (52 total).
+   ========================================================= */
+function newGame(){
+  clearInterval(state.timerHandle);
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.backStyle = pendingSettings.backStyle;
+  state.foundations = {S:[],H:[],D:[],C:[]};
+  state.tableau = [[],[],[],[],[],[],[]];
+  state.score = 0;
+  state.seconds = 0;
+  state.cascadePlayed = false;
+  undo.reset();
+  E.clearSelection();
+  const oldCascade = document.getElementById('cascade-layer');
+  if(oldCascade) oldCascade.remove();
+
+  const deck = E.shuffle(E.buildDeck());
+  let di = 0;
+  {
+    const card = deck[di++]; card.faceUp = true;
+    state.tableau[0].push(card);
+  }
+  for(let col=1; col<7; col++){
+    for(let i=0;i<col;i++){
+      const card = deck[di++]; card.faceUp = false;
+      state.tableau[col].push(card);
+    }
+  }
+  for(let round=0; round<5; round++){
+    for(let col=1; col<7; col++){
+      const card = deck[di++]; card.faceUp = true;
+      state.tableau[col].push(card);
+    }
+  }
+
+  document.getElementById('winmask').classList.remove('show');
+  document.getElementById('nomovesmask').classList.remove('show');
+  applyHudVisibility();
+  syncTimerInterval();
+  renderAll();
+}
+
+/* =========================================================
+   INTERACTION WIRING
+   ========================================================= */
+function isCardMovable(card, pileType, pileKey, index){
+  if(!card.faceUp) return false;
+  if(pileType==='foundation'){
+    const pile = findPileArray(pileType, pileKey);
+    return index===pile.length-1;
+  }
+  // tableau: any face-up card is a legal drag/tap start — engine.js's
+  // beginVisualDrag()/handleTapSelect() both grab pile.slice(index)
+  // unconditionally, which is exactly the "drag the scrambled sub-stack
+  // below it" behavior Yukon needs, with no extra work required here.
+  return true;
+}
+function resolveDropTarget(x,y){
+  const el = document.elementFromPoint(x,y);
+  if(!el) return null;
+  const col = el.closest('.tcol');
+  if(col) return { type:'tableau', key:Number(col.dataset.index), highlightEl:col };
+  const slot = el.closest('.pile.slot[data-type]');
+  if(slot && slot.dataset.type==='foundation') return { type:'foundation', key:slot.dataset.suit, highlightEl:slot };
+  return null;
+}
+function getAllZones(){
+  const zones = [];
+  for(let i=0;i<7;i++){
+    const el = document.querySelector('.tcol[data-index="'+i+'"]');
+    if(el) zones.push({type:'tableau', key:i, el});
+  }
+  for(const s of SUITS){
+    const el = document.getElementById('f-'+s);
+    if(el) zones.push({type:'foundation', key:s, el});
+  }
+  return zones;
+}
+const resolveHoverTargetPadded = E.makePaddedResolver(getAllZones, 26);
+
+E.initInteractions({
+  findPileArray,
+  isCardMovable,
+  resolveDropTarget,
+  resolveHoverTargetPadded,
+  canMoveWithWiden,
+  tryMoveAuto,
+  autoMoveToFoundation,
+  onRenderNeeded: renderAll
+});
+
+SUITS.forEach(s=>{
+  document.getElementById('f-'+s).addEventListener('click', (e)=>{
+    if(e.target.closest('.card')) return;
+    const sel = E.getSelected();
+    if(sel){ tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'foundation', s); E.clearSelection(); }
+  });
+});
+document.getElementById('tableau').addEventListener('click', (e)=>{
+  if(e.target.closest('.card')) return;
+  const col = e.target.closest('.tcol');
+  if(!col) return;
+  const sel = E.getSelected();
+  if(sel){ tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index)); E.clearSelection(); }
+});
+
+/* =========================================================
+   SETTINGS / DIALOGS
+   ========================================================= */
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility, syncTimerInterval,
+  onRenderNeeded: renderAll,
+  extraOnOpen: refreshVersionInfo
+});
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'Yukon.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
+});
+document.getElementById('settings-preview-win').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  previewWinScreen();
+});
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('winmask').classList.remove('show');
+  if(previewCascadeLayer){ previewCascadeLayer.remove(); previewCascadeLayer = null; }
+  if(previewingWin){
+    previewingWin = false;
+    document.getElementById('win-newgame').textContent = 'Play Again';
+    return;
+  }
+  newGame();
+});
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-automove').addEventListener('click', ()=>{ E.clearSelection(); autoMoveAll(); });
+document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('nomoves-undo').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  undo.undo();
+});
+document.getElementById('nomoves-newgame').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  newGame();
+});
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{
+    E.fitBoard({ columns:7, getMaxStackDepth:()=>Math.max(11,...state.tableau.map(c=>c.length)), minStackForFit:11 });
+  }, 100);
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+E.preloadAllCardImages(KNOWN_BACK_FILES);
+ensureTableauCols();
+newGame();
+
+})();
+</script>
+</body>
+</html>
