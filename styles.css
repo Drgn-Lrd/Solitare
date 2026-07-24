@@ -1,6 +1,18 @@
 /*
     styles.css
     Written by: Johnathon Largent
+    Version 2.8
+
+   The "highlight is thicker on the bottom/right" issue (see 2.7's
+   entry below) wasn't actually the shadow offset — it was
+   --card-w/--card-h resolving to fractional pixel values, which gave
+   every box sized off them (cards, the selection ring, the drop-ok
+   glow) an anti-aliased edge that browsers only draw on the
+   bottom/right of a fractional-width box. --card-h is now wrapped in
+   round(...,1px); the matching fix for --card-w itself is in
+   engine.js's fitBoard (JS overwrites --card-w at runtime, so this
+   file's own clamp() value was never the one actually in effect).
+
     Version 2.7
 
    .card.selected's highlight (the "move highlighting" ring shown when
@@ -70,7 +82,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.7';
+  --stylesheet-version: '2.8';
   /* Stored as bare "r,g,b" triplets (not full color values) so they can
      be dropped into rgba(var(--x), alpha) for the felt's transparency
      — rgba() with a var() alpha channel is old, well-supported syntax,
@@ -107,7 +119,12 @@
      --card-h is derived from the real card-art aspect ratio (must match
      SEngine.CARD_RATIO in engine.js if you ever change it). */
   --card-w: clamp(50px, 8.6vw, 100px);
-  --card-h: calc(var(--card-w) * 1.4523);
+  /* Wrapped in round(...,1px): --card-w itself is now always a whole
+     pixel (see engine.js fitBoard), but multiplying by 1.4523
+     reintroduces a fraction — rounding here keeps --card-h whole too,
+     so nothing sized off it (the card, its selection ring, the
+     drop-ok glow) gets an anti-aliased edge on just the bottom/right. */
+  --card-h: round(calc(var(--card-w) * 1.4523), 1px);
   --gap: clamp(6px, 1.2vw, 14px);
 
   /* Real playing cards round their corners at roughly 4-5% of the
