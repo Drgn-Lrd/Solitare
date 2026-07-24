@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 2130 EDT
+    Last Updated v1.1
 
-   Crest crop shifted up (280x280px region now at 180,85) so his torso
-   sits centered vertically instead of toward the top of the circle.
-   The Home-above-New-Game stacking and Klondike's broken spade were
-   both shared-CSS bugs, fixed in styles.css this round — no other
-   changes needed here.
+   Home button now gets its size (width/height) measured directly from
+   New Game's real rendered height — handled entirely inside
+   engine.js now (self-initializing, no call needed here) rather than
+   the CSS-only align-items:stretch + aspect-ratio:1 approach, which
+   wasn't reliably producing a true circle.
  -->
 <!--
   FreeCell — built on the shared engine.js + styles.css extracted from

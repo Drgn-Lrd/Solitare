@@ -1,11 +1,14 @@
 /*
     Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 2135 EDT
+    Last Updated v1.1
 
-   .home-btn no longer guesses a fixed 24px height — it now stretches
-   to match .newgame-btn's actual rendered height (align-items:stretch
-   on .brand-actions + aspect-ratio:1 on .home-btn), since the guessed
-   value was visibly shorter than New Game in practice.
+   Scaled up .iconbtn (36px→44px) and .chip (padding/font-size) —
+   they were still sized for the old 34px crest/header height, and
+   looked visually small/out of proportion once the crest grew to
+   56px. The stretch+aspect-ratio home-btn approach mentioned in the
+   previous note has since been replaced with a JS-measured fix,
+   self-contained in engine.js (see that file's changelog) — no CSS
+   change needed here for that part.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -162,17 +165,17 @@ header{
 
 .chip{
   background: var(--panel); border: 1px solid var(--panel-line);
-  padding: 6px 12px; border-radius: 20px;
-  font-size: 13px; letter-spacing: 1px; color:#dce9df;
+  padding: 8px 16px; border-radius: 22px;
+  font-size: 14px; letter-spacing: 1px; color:#dce9df;
   display:flex; gap:6px; align-items:center;
   min-width: 64px; justify-content:center;
 }
 .chip b{ color: var(--brass-light); font-weight:600; }
 .iconbtn{
-  width:36px; height:36px; border-radius:50%;
+  width:44px; height:44px; border-radius:50%;
   border:1px solid var(--panel-line); background: var(--panel); color: var(--brass-light);
   display:flex; align-items:center; justify-content:center;
-  cursor:pointer; font-size:16px;
+  cursor:pointer; font-size:18px;
   transition: transform .15s ease, background .15s ease;
 }
 .iconbtn:hover{ background:#123a2c; transform: translateY(-1px); }

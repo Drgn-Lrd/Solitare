@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <!--
     Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 2130 EDT
+    Last Updated v1.1
 
-   Header brought in line with the shared pattern now used across the
-   suite: removed the redundant "Solitaire" subtitle, Home is now a
-   circular emoji button before New Game instead of a text link, and
-   the crest now layers the ornate ace-of-spades artwork over the
-   brass gradient instead of a plain "♠" text glyph.
+   Home button now gets its size measured directly from New Game's
+   real rendered height — handled entirely inside engine.js now
+   (self-initializing, no call needed here), same as FreeCell.
 -->
 <html lang="en">
 <head>
@@ -742,7 +740,9 @@ helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOver
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(()=>{ E.fitBoard({ columns:7, getMaxStackDepth:()=>Math.max(7,...state.tableau.map(c=>c.length)), minStackForFit:7 }); }, 100);
+  resizeTimer = setTimeout(()=>{
+    E.fitBoard({ columns:7, getMaxStackDepth:()=>Math.max(7,...state.tableau.map(c=>c.length)), minStackForFit:7 });
+  }, 100);
 });
 
 /* =========================================================

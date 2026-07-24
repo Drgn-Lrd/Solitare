@@ -1,12 +1,12 @@
 /*
     Written by: Johnathon Largent
-    Last Updated 23 July 2026 @ 2130 EDT
+    Last Updated v1.2
 
-   fitBoard now reads the real, browser-computed gap and top-row
-   margin instead of flat guesses (10px/18px) — those guesses were
-   bigger than what the actual clamp()-based CSS values resolve to on
-   a phone-width screen, so cards were rendering smaller than they had
-   room to be at native (100%) zoom.
+   syncSquareButtons (v1.1) is now self-initializing instead of
+   something each game file has to call — renamed to
+   syncHomeButtonSize, runs itself on load and resize. No game file
+   needs to call anything for this anymore; it's genuinely shared the
+   way styles.css is, not wired up per-page.
  */
 /*
      Written by: Johnathon Largent
@@ -720,6 +720,40 @@ function wireSettingsShell(cfg){
 
   return { open, revert, refreshBackPicker };
 }
+
+// Makes every element matching squareSelector exactly as tall AND
+// wide as referenceSelector's real rendered height — used to keep
+// .home-btn a true circle matching .newgame-btn's height. CSS alone
+// (flex align-items:stretch + aspect-ratio:1) turned out not to be
+// reliably honored for this combination, so this measures the actual
+// box directly instead of hoping the two stay in sync on their own.
+// Makes every .home-btn exactly as tall AND wide as #btn-newgame's
+// real rendered height, so it's a true circle matching New Game
+// regardless of font-metric quirks (CSS align-items:stretch +
+// aspect-ratio:1 wasn't reliably doing this on its own). Entirely
+// self-initializing — runs itself on load and on resize, so no game
+// file needs to call anything for this; it's genuinely shared, the
+// way styles.css is, not something each page has to wire up.
+function syncHomeButtonSize(){
+  const ref = document.getElementById('btn-newgame');
+  if(!ref) return;
+  const h = ref.getBoundingClientRect().height;
+  if(!h) return;
+  document.querySelectorAll('.home-btn').forEach(el=>{
+    el.style.width = h+'px';
+    el.style.height = h+'px';
+  });
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', syncHomeButtonSize);
+} else {
+  syncHomeButtonSize();
+}
+let homeBtnResizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(homeBtnResizeTimer);
+  homeBtnResizeTimer = setTimeout(syncHomeButtonSize, 100);
+});
 
 /* =========================================================
    PUBLIC API
