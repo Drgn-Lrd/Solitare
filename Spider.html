@@ -2,40 +2,21 @@
 <!--
     Spider.html
     Written by: Johnathon Largent
-    Version 1.3
+    Version 2.0
 
-   Five fixes from another play test:
-   1. Hint (and Find Next) still had a real oscillation source: a move
-      counted as "productive" just for landing on a matching suit,
-      without checking whether it actually made things better —
-      peeling e.g. the 4,3,2 off a 7,6,5,4,3,2 run to set it on some
-      OTHER 5 only forms a 4-card run, shorter than the 6-card run it
-      came from, even though it's perfectly legal and suit-matched.
-      Both now use a shared isProductiveTableauMove() that only counts
-      a move as real progress if the WHOLE coherent run relocates, or
-      the resulting run at the destination ends up longer than the run
-      it was part of before.
-   2. Genuine bug, not just tuning: detectCompletedRuns() never
-      checked faceUp — a still-hidden card can coincidentally sit in a
-      valid King-to-Ace same-suit sequential position purely by luck
-      of the initial shuffle (not even rare with 8 copies of a rank in
-      a 1-suit game), and it was getting swept into the foundation as
-      "completed" despite never being legitimately revealed or played
-      there. Thoughtful mode is what exposed it — it rendered the
-      hidden King visibly, and the sweep fired on it anyway. Fixed.
-   3. Dropping part of a run onto an EMPTY column always grabbed the
-      WHOLE coherent run regardless of which card was actually tapped
-      or dragged — since an empty column accepts anything, every
-      index was equally "legal" there, so the widen-to-the-run's-head
-      logic (added for normal targets) always won, making it
-      impossible to split a run to free up an empty column. Widening
-      is now skipped specifically for empty-column drops; the exact
-      card tapped/dragged is honored instead, same as it always was
-      for non-empty targets before widening existed.
-   4. Background image (images/Spider.webp) + dark-gradient legibility
-      treatment on html,body, same pattern as FreeCell's own
-      background — separate from Spider-crest.webp, which stays as
-      the dedicated (smaller, cropped) crest art.
+   New: move-selector modal for splitting a run onto an EMPTY column —
+   the one interaction the "widen only for non-empty targets" fix from
+   1.3 couldn't fully solve, since an empty column accepts any card,
+   so whichever card actually got tapped/dragged was taken completely
+   at face value, and precise tapping is exactly what's hard on a
+   phone. tryMoveAuto now intercepts that specific case (tableau ->
+   empty tableau column, run longer than 1 card) and opens a modal
+   showing every card in the run separately, at the SAME size the
+   board is already using (var(--card-w)/--h, inherited globally from
+   :root) rather than the cramped overlapping column layout — tapping
+   one moves it and everything below it. Bumped to a full major
+   version since this closes out the last real interaction gap from
+   the last several rounds of testing.
 -->
 <!--
   New game built on the shared engine.js + styles.css, following the
@@ -173,6 +154,28 @@
      clean hint. Only the frontmost (last, topmost-painted) slot needs
      to show it. */
   .foundations-fan .pile.slot:not(:last-child) .slot-mark{ display:none; }
+
+  /* Move-selector modal: each candidate card renders at the exact same
+     size the board itself is currently using (var(--card-w)/--h, set
+     globally on :root by fitBoard — see engine.js — so it's already
+     inherited here regardless of this modal sitting outside
+     .table-frame). Deliberately NOT the shared .card class, since that
+     carries position:absolute for board placement, which would pull
+     these out of the flex-wrap layout entirely. */
+  .moveselect-card{
+    position: relative;
+    width: var(--card-w);
+    height: var(--card-h);
+    border-radius: var(--card-radius);
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .moveselect-card:hover, .moveselect-card:active{
+    transform: translateY(-4px);
+    box-shadow: 0 6px 14px rgba(0,0,0,.5);
+  }
 </style>
 </head>
 <body>
@@ -245,6 +248,17 @@
   <div style="display:flex; gap:12px;">
     <button class="textbtn" style="padding:10px 20px;" id="nomoves-undo">Undo Last Move</button>
     <button class="textbtn primary" style="padding:10px 20px;" id="nomoves-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="moveselect-overlay">
+  <div class="modal" style="max-width:min(94vw, 720px); text-align:center;">
+    <h3>Move Which Cards?</h3>
+    <div class="sub">Tap the highest card you want to move — everything below it comes along.</div>
+    <div id="moveselect-cards" style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:18px 0;"></div>
+    <div class="modal-actions">
+      <button class="textbtn" id="moveselect-cancel" style="flex:1;">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -350,7 +364,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.3';
+const PAGE_VERSION = '2.0';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -486,10 +500,70 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
   return true;
 }
 function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
+  // Dropping onto an EMPTY column is where precise tapping/dragging
+  // matters most and is hardest to get right on mobile — an empty
+  // column accepts anything, so every index in a coherent run is
+  // equally "legal" there, meaning whichever card actually got
+  // tapped/dragged is taken completely at face value with no
+  // widening (see canMoveWithWiden above). If that run is more than
+  // one card, don't guess: ask via the selector modal instead of
+  // silently moving based on what might have been an imprecise tap.
+  if(fromType==='tableau' && toType==='tableau' && state.tableau[toKey] && state.tableau[toKey].length===0){
+    const pile = state.tableau[fromKey];
+    if(pile && pile[fromIndex] && pile[fromIndex].faceUp){
+      const runLen = coherentRunLength(pile, fromIndex);
+      if(runLen>1){
+        openMoveSelector(Number(fromKey), pile.length-runLen, Number(toKey));
+        return false; // caller (click-to-move or drag) treats this as "not completed" and cleans up/snaps back — the modal takes it from here
+      }
+    }
+  }
   const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
   if(idx<0) return false;
   return tryMove(fromType, fromKey, idx, toType, toKey);
 }
+/* =========================================================
+   MOVE SELECTOR MODAL
+   Only reached from the interception in tryMoveAuto above. Shows every
+   card in the coherent run being considered, each at full board size
+   and fully spaced out (not the overlapping in-column layout), so a
+   precise tap works even on a small screen. Tapping a card moves it
+   and everything below it (in pile order, i.e. everything more
+   exposed) to the empty column — nothing else in tryMoveAuto's
+   validation needs re-checking here, since ANY suffix of a coherent
+   run is automatically legal against an empty column.
+   ========================================================= */
+let moveSelectorCtx = null;
+function openMoveSelector(fromKey, runStart, toKey){
+  moveSelectorCtx = { fromKey, toKey };
+  const pile = state.tableau[fromKey];
+  const container = document.getElementById('moveselect-cards');
+  container.innerHTML = '';
+  for(let i=runStart; i<pile.length; i++){
+    const card = pile[i];
+    const tile = document.createElement('div');
+    tile.className = 'moveselect-card';
+    tile.appendChild(E.buildFaceEl(card, false));
+    tile.addEventListener('click', ()=> confirmMoveSelector(i));
+    container.appendChild(tile);
+  }
+  document.getElementById('moveselect-overlay').classList.add('show');
+}
+function closeMoveSelector(){
+  document.getElementById('moveselect-overlay').classList.remove('show');
+  moveSelectorCtx = null;
+}
+function confirmMoveSelector(chosenIndex){
+  const ctx = moveSelectorCtx;
+  closeMoveSelector();
+  if(!ctx) return;
+  E.clearSelection();
+  tryMove('tableau', ctx.fromKey, chosenIndex, 'tableau', ctx.toKey);
+}
+document.getElementById('moveselect-cancel').addEventListener('click', ()=>{
+  closeMoveSelector();
+  E.clearSelection();
+});
 function flipNewTopIfNeeded(col){
   const pile = state.tableau[col];
   if(pile.length){
