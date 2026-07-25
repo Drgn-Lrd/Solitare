@@ -2,52 +2,52 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 1.1
+    Version 1.2
 
-   Header now matches every other game's real markup exactly:
-   brand-actions (Home/New Game) nested INSIDE .brand-text below the
-   <h1>, not off to the side of it, and no invented subtitle line —
-   there never was a "Solitaire Suite" byline under the title anywhere
-   else in the suite. Title itself is just "Mahjong", no suffix.
-   Pairs/Time chips moved out of the header hud and into the bottombar
-   (#chip-score/#chip-time), same as Klondike/FreeCell — the header
-   hud only ever holds Help/Settings.
+   Tile color got misread last pass: Light/Dark tiles was never meant
+   to alternate two colors across the board (that's what the card-back
+   picker explicitly does NOT do either — one chosen back for every
+   card). It's ONE tile appearance for the whole board, same as every
+   other game's single chosen look — Light is the tile face, Dark is
+   its shaded edge, both ends of the same per-tile bevel gradient every
+   tile already had. The checkerboard-by-position logic is gone;
+   tileShadeColor() no longer exists. Also swapped the raw
+   <input type=color> for each of Light/Dark for a proper swatch
+   picker (a curated palette + a "Custom" swatch that still opens the
+   native picker as an escape hatch) — matches the card-back-picker
+   pattern instead of dropping a bare OS color dialog on mobile.
 
-   Real bug fix: tile z-index (layer*1000 + row*20 + col, so up into
-   the thousands) was painting every tile ABOVE .overlay/.winmask
-   (z-index 100/200) instead of under them — Settings/Help/Confirm/No
-   Moves were rendering, just invisibly behind the board, which is why
-   Settings looked like it only "dimmed half the tiles and did
-   nothing." Tile z-index is now capped at layer*20+row (max ~70,
-   nowhere near overlay range), and .overlay/.winmask additionally get
-   a local z-index:5000 override here just so this can never regress
-   even if the tile-numbering scheme changes later.
+   Show Timer / Show Pairs Count / Show Find Match Button now default
+   OFF, matching the rest of the suite's own convention (Klondike's
+   score/time chips start hidden too).
 
-   Background now uses the same photo+scrim technique as Spider.html/
-   FreeCell.html (images/Mahjong.webp, dark gradient scrim, --table-
-   opacity already shared via styles.css so the wood/felt read the
-   photo through them the same way) instead of the flat vignette this
-   started with.
-
-   Two settings this game adds that no card game needed:
-     - Light/Dark tile color pickers (two <input type=color>) driving
-       --tile-light/--tile-dark, which every tile's face gradient reads
-       from live — tiles alternate between the two shades in a
-       checkerboard based on board position, purely so adjacent/
-       stacked tiles stay visually distinct from each other.
-     - "Find Match" — mirrors Spider's find-next button, but the
-       Mahjong equivalent of "where can this go" is "where's this
-       tile's pair": select a tile, tap Find Match, and every
-       CURRENTLY FREE tile sharing its match-group pulses. Only
-       currently-free tiles ever pulse — like Spider's version, this
-       never spoils a buried tile that isn't actually reachable yet.
+   Two new things:
+     - A "Tile Text Size" slider lives on the page itself (a slim bar
+       under the header), not buried in Settings — scales just the
+       artwork/glyph drawn on each tile (via a CSS transform on the
+       tile's <img>) without touching tile size or board layout, for
+       anyone who wants the pips/characters easier to read.
+     - A Layouts button next to Help opens a side-scrolling gallery of
+       board shapes (Turtle/Pyramid/Fortress so far) with a schematic
+       preview per shape, generated straight from each layout's own
+       coordinate data — no separate preview images to keep in sync.
+       Picking one starts a new game in that shape. The single
+       TILE_LAYOUT constant is now a LAYOUTS registry keyed by name;
+       generateSolvableLayout() takes whichever one is active.
+       Fortress's ring shape occasionally (~3% of attempts) paints
+       itself into a corner with fewer than 2 free positions left near
+       the end of generation — generateSolvableLayout() now retries
+       the whole attempt (up to 25x) whenever that happens rather than
+       falling back to a non-free pair, so every layout stays
+       genuinely guaranteed-solvable, not just Turtle/Pyramid.
 -->
 <!--
   Mahjong-specific rules:
-    - 144 tiles across 4 layers (see TILE_LAYOUT below): 34 distinct
-      "kinds" (9 Dots, 9 Bamboo, 9 Characters, 4 Winds, 3 Dragons) at 4
-      copies each = 136, plus 4 Flowers + 4 Seasons (one of each design,
-      no duplicates) = 144 total.
+    - 144 tiles across 4 layers (see the LAYOUTS registry below): 34
+      distinct "kinds" (9 Dots, 9 Bamboo, 9 Characters, 4 Winds, 3
+      Dragons) at 4 copies each = 136, plus 4 Flowers + 4 Seasons (one
+      of each design, no duplicates) = 144 total. Every layout shape
+      in LAYOUTS totals exactly 144 positions.
     - A tile is FREE (selectable) only if no other tile sits on top of
       it (any layer above whose footprint overlaps), AND at least one
       of its left/right neighbors at the same layer is empty.
@@ -60,7 +60,8 @@
       together at each step — see generateSolvableLayout(). Since
       freeness only ever depends on position, not kind, that removal
       order stays 100% legal once kinds are assigned, so every fresh
-      deal is guaranteed solvable start to finish.
+      deal is guaranteed solvable start to finish (the whole attempt
+      retries if a rare geometric dead-end shows up mid-generation).
     - Shuffle (bottom bar, and offered automatically if no matching
       pair remains) randomizes the kinds currently sitting on whatever
       tiles are still on the board. This does NOT re-run the solver —
@@ -94,17 +95,31 @@
   }
   .brand .crest{ font-size:30px; }
 
+  /* ===== On-page text-size bar (not in Settings — see header note) ===== */
+  .textsize-bar{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:6px 12px 10px; font-size:12px; color:#bcdccb; letter-spacing:.5px;
+  }
+  .textsize-bar .ts-label{ text-transform:uppercase; font-size:11px; letter-spacing:1.5px; opacity:.85; }
+  .textsize-bar input[type=range]{ width:130px; accent-color: var(--brass); cursor:pointer; }
+  .textsize-bar .ts-a{ line-height:1; color:#dce9df; flex-shrink:0; }
+  .textsize-bar .ts-a.small{ font-size:11px; }
+  .textsize-bar .ts-a.large{ font-size:19px; }
+
   /* ===== Board ===== */
   .table-felt{ display:flex; align-items:center; justify-content:center; overflow:auto; }
   #board{ position:relative; margin:auto; flex-shrink:0; }
 
-  /* --tile-light/--tile-dark are the two settings-driven colors; every
-     tile reads one or the other depending on a checkerboard parity of
-     its board position, purely to keep stacked/adjacent tiles visually
-     distinct — see tileShadeVar() in the script below. */
+  /* --tile-light/--tile-dark are the two settings-driven colors for
+     the ONE tile appearance used across the whole board (same idea as
+     the card-back picker choosing one back for every card) — every
+     tile reads the exact same gradient, light face to dark shaded
+     edge, top to bottom. --tile-glyph-scale is the on-page text-size
+     slider's only job: it scales each tile's <img> in place. */
   :root{
     --tile-light: #f6efdd;
     --tile-dark: #ddd0ac;
+    --tile-glyph-scale: 1;
   }
 
   .mtile{
@@ -115,6 +130,9 @@
   .mtile-body{
     position:absolute; inset:0;
     border-radius: 14%;
+    background-image:
+      linear-gradient(160deg, rgba(255,255,255,.35), rgba(0,0,0,.06)),
+      linear-gradient(160deg, var(--tile-light), var(--tile-dark));
     box-shadow:
       0 3px 0 rgba(0,0,0,.32),
       0 6px 10px rgba(0,0,0,.45),
@@ -125,6 +143,8 @@
     position:absolute; inset:0; width:100%; height:100%;
     padding: 12%; box-sizing:border-box;
     object-fit:contain; pointer-events:none; user-select:none; display:block;
+    transform: scale(var(--tile-glyph-scale));
+    transition: transform .1s ease;
   }
   .mtile.blocked{ cursor:default; }
   .mtile.blocked .mtile-body{ filter: saturate(0.7) brightness(0.86); }
@@ -136,23 +156,56 @@
       0 3px 0 rgba(0,0,0,.32), 0 6px 10px rgba(0,0,0,.45);
   }
 
-  /* ===== Settings: tile-color pickers ===== */
-  .colorfield{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:4px 0; }
-  .colorfield span{ font-size:14px; color:#e7f2ea; }
-  .colorfield input[type=color]{
-    width:44px; height:30px; border:1px solid var(--panel-line); border-radius:8px;
-    background:none; padding:0; cursor:pointer;
+  /* ===== Settings: tile-color swatch pickers (mirrors .backpicker/
+     .backswatch's pattern from styles.css, just square + flat-color
+     instead of card-shaped + imaged) ===== */
+  .colorpicker-sub{ font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9fc9b6; margin:0 0 6px; }
+  .colorpicker{ display:flex; gap:8px; flex-wrap:wrap; }
+  .colorswatch{
+    width:32px; height:32px; border-radius:7px; cursor:pointer; flex-shrink:0;
+    border:2px solid transparent; box-shadow:0 2px 5px rgba(0,0,0,.4);
+    display:flex; align-items:center; justify-content:center; font-size:14px; color:#fff;
+  }
+  .colorswatch.active{ border-color:#7ee6a8; }
+  .colorswatch.custom-swatch{
+    background: repeating-conic-gradient(#4a4a4a 0% 25%, #333 0% 50%) 0 0/12px 12px;
   }
 
   .helpbody{ font-size:13px; line-height:1.7; color:#dce9df; }
   .helpbody b{ color:var(--brass-light); }
   .helpbody ul{ margin:6px 0 14px; padding-left:20px; }
 
+  /* ===== Layouts gallery ===== */
+  .layouts-modal{ width:min(480px, 92vw); }
+  .layout-carousel-wrap{ display:flex; align-items:center; gap:4px; }
+  .layout-nav{
+    background:none; border:none; color:var(--brass-light); font-size:30px; cursor:pointer;
+    padding:4px 6px; flex-shrink:0; line-height:1;
+  }
+  .layout-nav:disabled{ opacity:.3; cursor:default; }
+  .layout-carousel{
+    display:flex; overflow-x:auto; scroll-snap-type:x mandatory;
+    border-radius:10px; background:rgba(0,0,0,.22); flex:1;
+    -webkit-overflow-scrolling:touch;
+  }
+  .layout-carousel::-webkit-scrollbar{ display:none; }
+  .layout-card{
+    flex:0 0 100%; scroll-snap-align:center; padding:18px 16px 14px;
+    display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center;
+  }
+  .layout-card-title{ font-variant:small-caps; letter-spacing:1.5px; color:var(--brass-light); font-size:19px; }
+  .layout-card-svg{ width:100%; max-width:260px; }
+  .layout-card-svg svg{ width:100%; height:auto; display:block; }
+  .layout-card-desc{ font-size:12.5px; color:#cfe6d8; line-height:1.55; min-height:38px; }
+  .layout-dots{ display:flex; justify-content:center; gap:6px; margin-top:12px; }
+  .layout-dot{ width:7px; height:7px; border-radius:50%; background:#2c5a44; cursor:pointer; }
+  .layout-dot.active{ background: var(--brass-light); }
+
   /* Tiles are stacked with their own z-index scheme (see renderAll's
-     layer*20+row math — max ~70), which stays comfortably under
-     .overlay's z-index:100 already. This explicit override is just a
-     safety net so a modal can never again render silently behind the
-     board even if that tile formula changes later. */
+     layer*20+row math — max ~90 across every layout shape), which
+     stays comfortably under .overlay's z-index:100 already. This
+     explicit override is just a safety net so a modal can never again
+     render silently behind the board even if that formula changes. */
   .overlay, .winmask{ z-index: 5000; }
 </style>
 </head>
@@ -170,10 +223,21 @@
     </div>
   </div>
   <div class="hud">
+    <button class="iconbtn" id="btn-layouts" title="Choose board layout">🗺</button>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
+
+<!-- On-page accessibility control (deliberately NOT in Settings) —
+     scales only the artwork drawn on each tile, never the tile or
+     board layout itself. -->
+<div class="textsize-bar">
+  <span class="ts-label">Tile Text Size</span>
+  <span class="ts-a small" aria-hidden="true">A</span>
+  <input type="range" id="text-size-range" min="90" max="160" step="5" value="100" aria-label="Tile text size">
+  <span class="ts-a large" aria-hidden="true">A</span>
+</div>
 
 <div class="stage">
   <div class="table-frame">
@@ -203,9 +267,36 @@
     <div class="sub" id="version-info">Mahjong.html</div>
 
     <div class="field">
-      <label>Tile Colors</label>
-      <div class="colorfield"><span>Light tiles</span><input type="color" id="color-light"></div>
-      <div class="colorfield"><span>Dark tiles</span><input type="color" id="color-dark"></div>
+      <label>Tile Color</label>
+      <div class="fieldnote" style="margin:0 0 10px;">One look for every tile on the board — Light is the face, Dark is its shaded edge.</div>
+
+      <div class="colorpicker-sub">Light</div>
+      <div class="colorpicker" id="light-picker">
+        <div class="colorswatch" data-val="#f6efdd" style="background:#f6efdd"></div>
+        <div class="colorswatch" data-val="#e8e2d0" style="background:#e8e2d0"></div>
+        <div class="colorswatch" data-val="#ddc9a3" style="background:#ddc9a3"></div>
+        <div class="colorswatch" data-val="#cfe0d6" style="background:#cfe0d6"></div>
+        <div class="colorswatch" data-val="#c9d2e0" style="background:#c9d2e0"></div>
+        <div class="colorswatch" data-val="#5a5248" style="background:#5a5248"></div>
+        <div class="colorswatch" data-val="#2b2622" style="background:#2b2622"></div>
+        <div class="colorswatch" data-val="#7a2e2e" style="background:#7a2e2e"></div>
+        <div class="colorswatch custom-swatch" title="Custom color">✎</div>
+      </div>
+      <input type="color" id="light-custom-input" style="display:none">
+
+      <div class="colorpicker-sub" style="margin-top:12px;">Dark</div>
+      <div class="colorpicker" id="dark-picker">
+        <div class="colorswatch" data-val="#f6efdd" style="background:#f6efdd"></div>
+        <div class="colorswatch" data-val="#e8e2d0" style="background:#e8e2d0"></div>
+        <div class="colorswatch" data-val="#ddc9a3" style="background:#ddc9a3"></div>
+        <div class="colorswatch" data-val="#cfe0d6" style="background:#cfe0d6"></div>
+        <div class="colorswatch" data-val="#c9d2e0" style="background:#c9d2e0"></div>
+        <div class="colorswatch" data-val="#5a5248" style="background:#5a5248"></div>
+        <div class="colorswatch" data-val="#2b2622" style="background:#2b2622"></div>
+        <div class="colorswatch" data-val="#7a2e2e" style="background:#7a2e2e"></div>
+        <div class="colorswatch custom-swatch" title="Custom color">✎</div>
+      </div>
+      <input type="color" id="dark-custom-input" style="display:none">
     </div>
 
     <div class="field">
@@ -250,10 +341,30 @@
         selection.</li>
         <li><b>Shuffle</b> randomizes the kinds on whatever tiles remain —
         useful if you get stuck.</li>
+        <li><b>Layouts</b> (map icon, top of the page) lets you pick a
+        different board shape before starting a new game.</li>
       </ul>
     </div>
     <div class="modal-actions">
       <button class="textbtn primary" id="help-close">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- LAYOUTS GALLERY -->
+<div class="overlay" id="layouts-overlay">
+  <div class="modal layouts-modal">
+    <h3>Board Layouts</h3>
+    <div class="sub">Swipe or use the arrows to preview a shape, then play it.</div>
+    <div class="layout-carousel-wrap">
+      <button class="layout-nav" id="layout-prev" aria-label="Previous layout">‹</button>
+      <div class="layout-carousel" id="layout-carousel"></div>
+      <button class="layout-nav" id="layout-next" aria-label="Next layout">›</button>
+    </div>
+    <div class="layout-dots" id="layout-dots"></div>
+    <div class="modal-actions">
+      <button class="textbtn" id="layouts-cancel">Cancel</button>
+      <button class="textbtn primary" id="layouts-play">Play This Layout</button>
     </div>
   </div>
 </div>
@@ -297,20 +408,43 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '1.1';
+const PAGE_VERSION = '1.2';
 
 /* =========================================================
-   TILE LAYOUT
-   [layer, col, row] — col/row are in half-tile "grid units" (a tile
-   is 2 units wide/tall), so same-layer neighbors sit exactly 2 units
-   apart and cross-layer overlap is a simple bounding-box test. 4
-   layers, 144 total positions: 84 + 40 + 12 + 8, each layer centered
-   over the one below it (with a deliberate half-unit stagger between
-   some layers — the same brick-like interlock real tile sets use).
+   BOARD LAYOUTS
+   Each entry is [layer, col, row] — col/row are in half-tile "grid
+   units" (a tile is 2 units wide/tall), so same-layer neighbors sit
+   exactly 2 units apart and cross-layer overlap is a simple
+   bounding-box test. Every layout below totals exactly 144 positions
+   (34 kinds x 4 + 4 Flowers + 4 Seasons). Add a new shape by adding
+   another entry here plus one line in LAYOUTS_ORDER — the Layouts
+   gallery's preview art and everything else derives from the
+   coordinates automatically, no separate assets needed.
    ========================================================= */
-const TILE_LAYOUT = [
+const LAYOUTS = {
+  turtle: {
+    name: 'Turtle',
+    desc: 'The original stepped layout — four layers tapering toward a shell-like ridge.',
+    coords: [
 [0,0,0],[0,2,0],[0,4,0],[0,6,0],[0,8,0],[0,10,0],[0,12,0],[0,14,0],[0,16,0],[0,18,0],[0,20,0],[0,22,0],[0,24,0],[0,26,0],[0,0,2],[0,2,2],[0,4,2],[0,6,2],[0,8,2],[0,10,2],[0,12,2],[0,14,2],[0,16,2],[0,18,2],[0,20,2],[0,22,2],[0,24,2],[0,26,2],[0,0,4],[0,2,4],[0,4,4],[0,6,4],[0,8,4],[0,10,4],[0,12,4],[0,14,4],[0,16,4],[0,18,4],[0,20,4],[0,22,4],[0,24,4],[0,26,4],[0,0,6],[0,2,6],[0,4,6],[0,6,6],[0,8,6],[0,10,6],[0,12,6],[0,14,6],[0,16,6],[0,18,6],[0,20,6],[0,22,6],[0,24,6],[0,26,6],[0,0,8],[0,2,8],[0,4,8],[0,6,8],[0,8,8],[0,10,8],[0,12,8],[0,14,8],[0,16,8],[0,18,8],[0,20,8],[0,22,8],[0,24,8],[0,26,8],[0,0,10],[0,2,10],[0,4,10],[0,6,10],[0,8,10],[0,10,10],[0,12,10],[0,14,10],[0,16,10],[0,18,10],[0,20,10],[0,22,10],[0,24,10],[0,26,10],[1,3,1],[1,5,1],[1,7,1],[1,9,1],[1,11,1],[1,13,1],[1,15,1],[1,17,1],[1,19,1],[1,21,1],[1,3,3],[1,5,3],[1,7,3],[1,9,3],[1,11,3],[1,13,3],[1,15,3],[1,17,3],[1,19,3],[1,21,3],[1,3,5],[1,5,5],[1,7,5],[1,9,5],[1,11,5],[1,13,5],[1,15,5],[1,17,5],[1,19,5],[1,21,5],[1,3,7],[1,5,7],[1,7,7],[1,9,7],[1,11,7],[1,13,7],[1,15,7],[1,17,7],[1,19,7],[1,21,7],[2,7,3],[2,9,3],[2,11,3],[2,13,3],[2,15,3],[2,17,3],[2,7,5],[2,9,5],[2,11,5],[2,13,5],[2,15,5],[2,17,5],[3,9,3],[3,11,3],[3,13,3],[3,15,3],[3,9,5],[3,11,5],[3,13,5],[3,15,5]
-];
+    ]
+  },
+  pyramid: {
+    name: 'Pyramid',
+    desc: 'A steeper four-layer climb, tapering fast to a small peak.',
+    coords: [
+[0,0,0],[0,2,0],[0,4,0],[0,6,0],[0,8,0],[0,10,0],[0,12,0],[0,14,0],[0,16,0],[0,18,0],[0,20,0],[0,22,0],[0,24,0],[0,26,0],[0,0,2],[0,2,2],[0,4,2],[0,6,2],[0,8,2],[0,10,2],[0,12,2],[0,14,2],[0,16,2],[0,18,2],[0,20,2],[0,22,2],[0,24,2],[0,26,2],[0,0,4],[0,2,4],[0,4,4],[0,6,4],[0,8,4],[0,10,4],[0,12,4],[0,14,4],[0,16,4],[0,18,4],[0,20,4],[0,22,4],[0,24,4],[0,26,4],[0,0,6],[0,2,6],[0,4,6],[0,6,6],[0,8,6],[0,10,6],[0,12,6],[0,14,6],[0,16,6],[0,18,6],[0,20,6],[0,22,6],[0,24,6],[0,26,6],[0,0,8],[0,2,8],[0,4,8],[0,6,8],[0,8,8],[0,10,8],[0,12,8],[0,14,8],[0,16,8],[0,18,8],[0,20,8],[0,22,8],[0,24,8],[0,26,8],[0,0,10],[0,2,10],[0,4,10],[0,6,10],[0,8,10],[0,10,10],[0,12,10],[0,14,10],[0,16,10],[0,18,10],[0,20,10],[0,22,10],[0,24,10],[0,26,10],[1,5,2],[1,7,2],[1,9,2],[1,11,2],[1,13,2],[1,15,2],[1,17,2],[1,19,2],[1,21,2],[1,5,4],[1,7,4],[1,9,4],[1,11,4],[1,13,4],[1,15,4],[1,17,4],[1,19,4],[1,21,4],[1,5,6],[1,7,6],[1,9,6],[1,11,6],[1,13,6],[1,15,6],[1,17,6],[1,19,6],[1,21,6],[1,5,8],[1,7,8],[1,9,8],[1,11,8],[1,13,8],[1,15,8],[1,17,8],[1,19,8],[1,21,8],[2,8,3],[2,10,3],[2,12,3],[2,14,3],[2,16,3],[2,18,3],[2,8,5],[2,10,5],[2,12,5],[2,14,5],[2,16,5],[2,18,5],[2,8,7],[2,10,7],[2,12,7],[2,14,7],[2,16,7],[2,18,7],[3,11,4],[3,13,4],[3,15,4],[3,11,6],[3,13,6],[3,15,6]
+    ]
+  },
+  fortress: {
+    name: 'Fortress',
+    desc: 'A hollow courtyard ring with a tower rising from its center.',
+    coords: [
+[0,0,0],[0,2,0],[0,4,0],[0,6,0],[0,8,0],[0,10,0],[0,12,0],[0,14,0],[0,16,0],[0,18,0],[0,20,0],[0,22,0],[0,24,0],[0,26,0],[0,0,2],[0,2,2],[0,4,2],[0,6,2],[0,8,2],[0,10,2],[0,12,2],[0,14,2],[0,16,2],[0,18,2],[0,20,2],[0,22,2],[0,24,2],[0,26,2],[0,0,4],[0,2,4],[0,4,4],[0,20,4],[0,22,4],[0,24,4],[0,26,4],[0,0,6],[0,2,6],[0,4,6],[0,20,6],[0,22,6],[0,24,6],[0,26,6],[0,0,8],[0,2,8],[0,4,8],[0,20,8],[0,22,8],[0,24,8],[0,26,8],[0,0,10],[0,2,10],[0,4,10],[0,20,10],[0,22,10],[0,24,10],[0,26,10],[0,0,12],[0,2,12],[0,4,12],[0,6,12],[0,8,12],[0,10,12],[0,12,12],[0,14,12],[0,16,12],[0,18,12],[0,20,12],[0,22,12],[0,24,12],[0,26,12],[0,0,14],[0,2,14],[0,4,14],[0,6,14],[0,8,14],[0,10,14],[0,12,14],[0,14,14],[0,16,14],[0,18,14],[0,20,14],[0,22,14],[0,24,14],[0,26,14],[1,8,4],[1,10,4],[1,12,4],[1,14,4],[1,16,4],[1,18,4],[1,8,6],[1,10,6],[1,12,6],[1,14,6],[1,16,6],[1,18,6],[1,8,8],[1,10,8],[1,12,8],[1,14,8],[1,16,8],[1,18,8],[1,8,10],[1,10,10],[1,12,10],[1,14,10],[1,16,10],[1,18,10],[2,9,4],[2,11,4],[2,13,4],[2,15,4],[2,17,4],[2,9,6],[2,11,6],[2,13,6],[2,15,6],[2,17,6],[2,9,8],[2,11,8],[2,13,8],[2,15,8],[2,17,8],[2,9,10],[2,11,10],[2,13,10],[2,15,10],[2,17,10],[3,10,4],[3,12,4],[3,14,4],[3,16,4],[3,10,6],[3,12,6],[3,14,6],[3,16,6],[3,10,8],[3,12,8],[3,14,8],[3,16,8],[3,10,10],[3,12,10],[3,14,10],[3,16,10]
+    ]
+  }
+};
+const LAYOUTS_ORDER = ['turtle','pyramid','fortress'];
 
 const KINDS_34 = [
   'dot_1','dot_2','dot_3','dot_4','dot_5','dot_6','dot_7','dot_8','dot_9',
@@ -336,14 +470,14 @@ let state = {
   tiles: [],           // {id, layer, col, row, kind, removed}
   selectedId: null,
   matchedCount: 0,
-  showTimer: true,
-  showScore: true,
-  findMatchEnabled: true,
+  currentLayoutKey: 'turtle',
+  showTimer: false,
+  showScore: false,
+  findMatchEnabled: false,
   tileLight: '#f6efdd',
   tileDark: '#ddd0ac',
   elapsedSeconds: 0
 };
-let pendingSettings = {};
 let timerInterval = null;
 const toastEl = document.getElementById('toast');
 
@@ -381,10 +515,14 @@ function isFreeRuntime(tile){ return isFreeAmong(tile, activeTiles()); }
    at each step, then stamps a matching pair of kinds onto exactly
    those two positions. Freeness only depends on position, never kind,
    so replaying that same removal order in the real game is always
-   still legal — guaranteeing the fresh deal is solvable.
+   still legal. Most layouts never hit the fallback below, but a
+   shape like Fortress's ring occasionally paints itself into a corner
+   near the end of a random attempt — rather than let that one rare
+   attempt silently produce a non-guaranteed board, the whole attempt
+   just retries from scratch.
    ========================================================= */
-function generateSolvableLayout(){
-  const positions = TILE_LAYOUT.map((p,i)=>({ id:'t'+i, layer:p[0], col:p[1], row:p[2], kind:null, removed:false }));
+function attemptSolvableLayout(coords){
+  const positions = coords.map((p,i)=>({ id:'t'+i, layer:p[0], col:p[1], row:p[2], kind:null, removed:false }));
 
   const pairSlots = [];
   KINDS_34.forEach(k=>{ pairSlots.push(k, k); });
@@ -397,16 +535,17 @@ function generateSolvableLayout(){
 
   let active = positions.slice();
   let guard = 0;
+  let fallbackHit = false;
   while(pairSlots.length && guard++ < 10000){
     const free = active.filter(p=> isFreeAmong(p, active));
+    let posA, posB;
     if(free.length < 2){
-      // Extremely unlikely with this layout, but fall back to any two
-      // remaining active positions rather than looping forever.
-      free.length = 0;
-      free.push(active[0], active[1]);
+      fallbackHit = true;
+      posA = active[0]; posB = active[1];
+    } else {
+      E.shuffle(free);
+      posA = free[0]; posB = free[1];
     }
-    E.shuffle(free);
-    const posA = free[0], posB = free[1];
     const slot = pairSlots.pop();
     if(slot === 'FLOWER'){
       posA.kind = flowerPool.pop();
@@ -419,7 +558,15 @@ function generateSolvableLayout(){
     }
     active = active.filter(p=> p!==posA && p!==posB);
   }
-  return positions;
+  return { positions, fallbackHit };
+}
+function generateSolvableLayout(){
+  const coords = LAYOUTS[state.currentLayoutKey].coords;
+  let result = attemptSolvableLayout(coords);
+  for(let i=0; i<25 && result.fallbackHit; i++){
+    result = attemptSolvableLayout(coords);
+  }
+  return result.positions;
 }
 
 /* =========================================================
@@ -431,7 +578,7 @@ const LAYER_SHIFT = 4; // px each axis, purely a "stacked height" visual cue
 
 function boardBounds(){
   let maxCol=0, maxRow=0;
-  TILE_LAYOUT.forEach(p=>{ if(p[1]+2>maxCol) maxCol=p[1]+2; if(p[2]+2>maxRow) maxRow=p[2]+2; });
+  LAYOUTS[state.currentLayoutKey].coords.forEach(p=>{ if(p[1]+2>maxCol) maxCol=p[1]+2; if(p[2]+2>maxRow) maxRow=p[2]+2; });
   return { unitsW:maxCol, unitsH:maxRow };
 }
 function fitBoard(){
@@ -464,19 +611,10 @@ function fitBoard(){
 function tileEl(id){ return document.querySelector('.mtile[data-id="'+id+'"]'); }
 function findTile(id){ return state.tiles.find(t=>t.id===id); }
 
-// Alternates the two settings-driven tile colors in a checkerboard
-// based on board position, purely so overlapping/adjacent tiles read
-// as visually distinct blocks rather than one solid mass.
-function tileShadeColor(t){
-  const parity = ((t.col/2) + (t.row/2) + t.layer) % 2;
-  return parity===0 ? 'var(--tile-light)' : 'var(--tile-dark)';
-}
-
 function renderAll(){
   E.purgeStrayCards(); // harmless no-op here, kept for parity with the other games' render entry point
   const boardEl = document.getElementById('board');
   boardEl.innerHTML = '';
-  const halfW = tileW/2, halfH = tileH/2;
   const active = activeTiles();
   active.forEach(t=>{
     const free = isFreeAmong(t, active);
@@ -489,19 +627,17 @@ function renderAll(){
     el.style.top = top + 'px';
     el.style.width = tileW + 'px';
     el.style.height = tileH + 'px';
-    // Small, deliberately capped range (max ~70 for 4 layers) — keeps
-    // higher layers reliably painting over lower ones without ever
-    // approaching .overlay/.winmask's z-index (see the local override
-    // in <style> above for why that headroom matters).
+    // Small, deliberately capped range (max ~90 across every layout
+    // shape) — keeps higher layers reliably painting over lower ones
+    // without ever approaching .overlay/.winmask's z-index (see the
+    // local override in <style> above for why that headroom matters).
     el.style.zIndex = String(t.layer*20 + t.row);
 
+    // Tile appearance itself (the --tile-light/--tile-dark gradient)
+    // is defined once in the shared .mtile-body CSS rule above — every
+    // tile reads the exact same two colors, nothing set per-tile here.
     const body = document.createElement('div');
     body.className = 'mtile-body';
-    body.style.background = 'linear-gradient(160deg, ' + tileShadeColor(t) + ', ' + tileShadeColor(t) + ')';
-    // Real two-tone gradient (light->dark) layered on top of the
-    // checkerboard base color, so every tile still reads as a
-    // rounded, lit block regardless of which shade it landed on.
-    body.style.backgroundImage = 'linear-gradient(160deg, rgba(255,255,255,.35), rgba(0,0,0,.06)), linear-gradient(160deg, '+tileShadeColor(t)+', '+tileShadeColor(t)+')';
 
     const img = document.createElement('img');
     img.src = tileImgSrc(t.kind);
@@ -663,6 +799,50 @@ function refreshVersionInfo(){
     'Mahjong.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
 }
 
+// Generic swatch-picker wiring shared by the Light/Dark tile-color
+// fields — click a preset swatch to use it directly, or the "Custom"
+// swatch to fall back to the native color dialog for anything else.
+// Mirrors the card-back picker's one-look-for-everything pattern.
+function wireColorPicker(pickerId, hiddenInputId, getCurrent, setValue){
+  const picker = document.getElementById(pickerId);
+  const hiddenInput = document.getElementById(hiddenInputId);
+  const customSwatch = picker.querySelector('.custom-swatch');
+
+  function refresh(){
+    const current = (getCurrent() || '').toLowerCase();
+    let matched = false;
+    picker.querySelectorAll('.colorswatch:not(.custom-swatch)').forEach(sw=>{
+      const on = sw.dataset.val.toLowerCase() === current;
+      sw.classList.toggle('active', on);
+      if(on) matched = true;
+    });
+    if(matched){
+      customSwatch.classList.remove('active');
+      customSwatch.style.background = '';
+      customSwatch.textContent = '✎';
+    } else {
+      customSwatch.classList.add('active');
+      customSwatch.style.background = current;
+      customSwatch.textContent = '';
+    }
+  }
+
+  picker.querySelectorAll('.colorswatch:not(.custom-swatch)').forEach(sw=>{
+    sw.addEventListener('click', ()=>{ setValue(sw.dataset.val); refresh(); });
+  });
+  customSwatch.addEventListener('click', ()=>{
+    hiddenInput.value = getCurrent();
+    hiddenInput.click();
+  });
+  hiddenInput.addEventListener('input', ()=>{ setValue(hiddenInput.value); refresh(); });
+
+  return { refresh };
+}
+const lightPicker = wireColorPicker('light-picker', 'light-custom-input',
+  ()=> state.tileLight, v=>{ state.tileLight = v; applyTileColors(); });
+const darkPicker = wireColorPicker('dark-picker', 'dark-custom-input',
+  ()=> state.tileDark, v=>{ state.tileDark = v; applyTileColors(); });
+
 let settingsSnapshot = null;
 function openSettings(){
   settingsSnapshot = {
@@ -672,8 +852,8 @@ function openSettings(){
   document.getElementById('tog-timer').checked = state.showTimer;
   document.getElementById('tog-score').checked = state.showScore;
   document.getElementById('tog-findmatch').checked = state.findMatchEnabled;
-  document.getElementById('color-light').value = state.tileLight;
-  document.getElementById('color-dark').value = state.tileDark;
+  lightPicker.refresh();
+  darkPicker.refresh();
   refreshVersionInfo();
   document.getElementById('settings-overlay').classList.add('show');
 }
@@ -691,8 +871,6 @@ function revertSettings(){
 document.getElementById('tog-timer').addEventListener('change', e=>{ state.showTimer = e.target.checked; syncTimerInterval(); updateHud(); });
 document.getElementById('tog-score').addEventListener('change', e=>{ state.showScore = e.target.checked; updateHud(); });
 document.getElementById('tog-findmatch').addEventListener('change', e=>{ state.findMatchEnabled = e.target.checked; updateHud(); });
-document.getElementById('color-light').addEventListener('input', e=>{ state.tileLight = e.target.value; applyTileColors(); });
-document.getElementById('color-dark').addEventListener('input', e=>{ state.tileDark = e.target.value; applyTileColors(); });
 
 document.getElementById('btn-settings').addEventListener('click', openSettings);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
@@ -711,6 +889,90 @@ document.getElementById('settings-overlay').addEventListener('click', (e)=>{
     revertSettings();
     document.getElementById('settings-overlay').classList.remove('show');
   }
+});
+
+/* =========================================================
+   TEXT SIZE (on-page, not Settings)
+   ========================================================= */
+document.getElementById('text-size-range').addEventListener('input', (e)=>{
+  document.documentElement.style.setProperty('--tile-glyph-scale', Number(e.target.value)/100);
+});
+
+/* =========================================================
+   LAYOUTS GALLERY
+   ========================================================= */
+function layoutPreviewSVG(coords){
+  let maxCol=0, maxRow=0;
+  coords.forEach(([l,c,r])=>{ if(c+2>maxCol) maxCol=c+2; if(r+2>maxRow) maxRow=r+2; });
+  const vbW = 260, vbH = Math.max(70, vbW * (maxRow/maxCol));
+  const scaleX = vbW/maxCol, scaleY = vbH/maxRow;
+  const layerColors = ['#8a6a26','#a3812f','#c9a24b','#e8c873'];
+  const sorted = coords.slice().sort((a,b)=> a[0]-b[0]);
+  let rects = '';
+  sorted.forEach(([l,c,r])=>{
+    const x = (c*scaleX).toFixed(1), y = (r*scaleY).toFixed(1);
+    const w = (2*scaleX-1).toFixed(1), h = (2*scaleY-1).toFixed(1);
+    const color = layerColors[Math.min(l, layerColors.length-1)];
+    rects += '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="1.5" fill="'+color+'" stroke="rgba(0,0,0,.35)" stroke-width="0.5"/>';
+  });
+  return '<svg viewBox="0 0 '+vbW+' '+vbH+'" xmlns="http://www.w3.org/2000/svg">'+rects+'</svg>';
+}
+
+let layoutCardsBuilt = false;
+let layoutCarouselIndex = 0;
+function buildLayoutCards(){
+  if(layoutCardsBuilt) return;
+  const wrap = document.getElementById('layout-carousel');
+  const dotsWrap = document.getElementById('layout-dots');
+  wrap.innerHTML = ''; dotsWrap.innerHTML = '';
+  LAYOUTS_ORDER.forEach((key, i)=>{
+    const L = LAYOUTS[key];
+    const card = document.createElement('div');
+    card.className = 'layout-card';
+    card.dataset.key = key;
+    card.innerHTML =
+      '<div class="layout-card-title">'+L.name+'</div>'+
+      '<div class="layout-card-svg">'+layoutPreviewSVG(L.coords)+'</div>'+
+      '<div class="layout-card-desc">'+L.desc+'</div>';
+    wrap.appendChild(card);
+
+    const dot = document.createElement('div');
+    dot.className = 'layout-dot'+(i===0 ? ' active' : '');
+    dot.addEventListener('click', ()=> scrollToLayoutIndex(i));
+    dotsWrap.appendChild(dot);
+  });
+  layoutCardsBuilt = true;
+}
+function scrollToLayoutIndex(i){
+  i = Math.max(0, Math.min(LAYOUTS_ORDER.length-1, i));
+  const wrap = document.getElementById('layout-carousel');
+  wrap.scrollTo({ left: i*wrap.clientWidth, behavior:'smooth' });
+}
+function updateActiveDot(i){
+  layoutCarouselIndex = i;
+  document.querySelectorAll('.layout-dot').forEach((d,idx)=> d.classList.toggle('active', idx===i));
+}
+document.getElementById('layout-prev').addEventListener('click', ()=> scrollToLayoutIndex(layoutCarouselIndex-1));
+document.getElementById('layout-next').addEventListener('click', ()=> scrollToLayoutIndex(layoutCarouselIndex+1));
+document.getElementById('layout-carousel').addEventListener('scroll', ()=>{
+  const wrap = document.getElementById('layout-carousel');
+  if(!wrap.clientWidth) return;
+  updateActiveDot(Math.round(wrap.scrollLeft / wrap.clientWidth));
+});
+
+const layoutsOverlay = document.getElementById('layouts-overlay');
+document.getElementById('btn-layouts').addEventListener('click', ()=>{
+  buildLayoutCards();
+  layoutsOverlay.classList.add('show');
+  const idx = Math.max(0, LAYOUTS_ORDER.indexOf(state.currentLayoutKey));
+  requestAnimationFrame(()=>{ scrollToLayoutIndex(idx); updateActiveDot(idx); });
+});
+document.getElementById('layouts-cancel').addEventListener('click', ()=> layoutsOverlay.classList.remove('show'));
+layoutsOverlay.addEventListener('click', (e)=>{ if(e.target===layoutsOverlay) layoutsOverlay.classList.remove('show'); });
+document.getElementById('layouts-play').addEventListener('click', ()=>{
+  state.currentLayoutKey = LAYOUTS_ORDER[layoutCarouselIndex];
+  layoutsOverlay.classList.remove('show');
+  newGame();
 });
 
 /* =========================================================
