@@ -2,33 +2,40 @@
 <!--
     Spider.html
     Written by: Johnathon Largent
-    Version 1.2
+    Version 1.3
 
-   Four fixes/additions from an actual play test:
-   1. Hint still had a source of non-productive suggestions: its
-      "empties a column" check never required the destination to
-      match suit, so it could recommend relocating a run onto an
-      unrelated suit purely to vacate the source column — legal, but
-      not actually lengthening any run. Emptying a column is now only
-      preferred as a tiebreak WHEN it also extends a same-suit run,
-      not a qualifying reason on its own.
-   2. CRITICAL BUG: completing a run left the newly-exposed card in
-      that column stuck face-down and unselectable forever — the old
-      processCompletedRuns() spliced the run out but never called
-      flipNewTopIfNeeded() on that column afterward, unlike a normal
-      player move. Fixed as part of the sweep below.
-   3. Completed runs now collapse together (gathering the spread run
-      into one stack, like scooping cards together by hand) and THEN
-      fly as a unit down to their foundation slot, instead of just
-      instantly appearing there. processCompletedRuns() split into
-      detectCompletedRuns() (pure, so the run's real on-screen
-      position can still be measured) and sweepCompletedRuns() (does
-      the actual mutation + the collapse/fly animation).
-   4. New "Find Next" toggle + button: select a card (or a card inside
-      a run) first, then tap it to highlight every column that
-      selection could actually land on right now — same
-      canMoveWithWiden legality every real move uses, so it can't ever
-      suggest an illegal spot.
+   Five fixes from another play test:
+   1. Hint (and Find Next) still had a real oscillation source: a move
+      counted as "productive" just for landing on a matching suit,
+      without checking whether it actually made things better —
+      peeling e.g. the 4,3,2 off a 7,6,5,4,3,2 run to set it on some
+      OTHER 5 only forms a 4-card run, shorter than the 6-card run it
+      came from, even though it's perfectly legal and suit-matched.
+      Both now use a shared isProductiveTableauMove() that only counts
+      a move as real progress if the WHOLE coherent run relocates, or
+      the resulting run at the destination ends up longer than the run
+      it was part of before.
+   2. Genuine bug, not just tuning: detectCompletedRuns() never
+      checked faceUp — a still-hidden card can coincidentally sit in a
+      valid King-to-Ace same-suit sequential position purely by luck
+      of the initial shuffle (not even rare with 8 copies of a rank in
+      a 1-suit game), and it was getting swept into the foundation as
+      "completed" despite never being legitimately revealed or played
+      there. Thoughtful mode is what exposed it — it rendered the
+      hidden King visibly, and the sweep fired on it anyway. Fixed.
+   3. Dropping part of a run onto an EMPTY column always grabbed the
+      WHOLE coherent run regardless of which card was actually tapped
+      or dragged — since an empty column accepts anything, every
+      index was equally "legal" there, so the widen-to-the-run's-head
+      logic (added for normal targets) always won, making it
+      impossible to split a run to free up an empty column. Widening
+      is now skipped specifically for empty-column drops; the exact
+      card tapped/dragged is honored instead, same as it always was
+      for non-empty targets before widening existed.
+   4. Background image (images/Spider.webp) + dark-gradient legibility
+      treatment on html,body, same pattern as FreeCell's own
+      background — separate from Spider-crest.webp, which stays as
+      the dedicated (smaller, cropped) crest art.
 -->
 <!--
   New game built on the shared engine.js + styles.css, following the
@@ -73,6 +80,21 @@
 <link rel="preload" as="image" href="images/Spider-crest.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
+  /* Spider-only background: swaps the shared black/vignette body
+     background (see html,body in styles.css) for this preloaded
+     photo, just for this game — same treatment FreeCell uses for its
+     own background. The dark gradient sits between the photo and
+     everything else so the header/bottom bar/table stay legible
+     regardless of how bright the photo is; the wood frame + green felt
+     (.table-frame / .table-felt) are separate elements on top of this
+     and are untouched — this only affects the margins around them. */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Spider.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
   /* Real crest artwork (a spider perched on the ace of diamonds),
      layered over the shared brass-gradient circle the same way
      Klondike layers its ace-of-spades crest — except sized with
@@ -328,7 +350,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.2';
+const PAGE_VERSION = '1.3';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -434,6 +456,18 @@ function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
 // math Spider doesn't have.
 function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
   if(fromType!=='tableau') return canMoveExact(fromType, fromKey, fromIndex, toType, toKey) ? fromIndex : -1;
+  // Empty columns accept literally any card, so EVERY index from the
+  // run's true start down to fromIndex is equally "legal" there —
+  // there's no specific target rank to widen toward the way there is
+  // for a normal card. Widening here would always grab the WHOLE
+  // coherent run regardless of which card was actually tapped/dragged,
+  // making it impossible to split a run by dropping only part of it
+  // into an empty column — this locked runs together and specifically
+  // broke filling an empty column just to free up the draw pile.
+  // Honor the exact card that was tapped/dragged instead.
+  if(toType==='tableau' && state.tableau[toKey].length===0){
+    return canMoveExact(fromType, fromKey, fromIndex, toType, toKey) ? fromIndex : -1;
+  }
   for(let i=0; i<=fromIndex; i++){
     if(canMoveExact(fromType, fromKey, i, toType, toKey)) return i;
   }
@@ -482,6 +516,15 @@ function detectCompletedRuns(){
     const pile = state.tableau[c];
     if(pile.length<13) continue;
     const top13 = pile.slice(pile.length-13);
+    // A still-face-down card can coincidentally sit in a King-to-Ace,
+    // same-suit, sequential position purely by luck of the initial
+    // shuffle (with 8 copies of every rank in a 1-suit game, that's
+    // not even rare) — without this check, that card would get swept
+    // into the foundation as "completed" despite never actually being
+    // revealed or legitimately played there. Thoughtful mode is what
+    // exposed this: it rendered a hidden King visibly, and the sweep
+    // still fired on it because nothing here ever looked at faceUp.
+    if(!top13.every(cd=>cd.faceUp)) continue;
     if(top13[0].rank!=='K' || top13[12].rank!=='A') continue;
     let ok = true;
     for(let i=0;i<12;i++){
@@ -677,13 +720,48 @@ function dealFromStock(){
    moves — the game isn't actually stuck just because nothing SMART is
    available, only when nothing legal is.
    ========================================================= */
-// Real progress only if it lands on a matching suit, continuing an
-// actual run toward a future K-A completion — not just satisfying the
-// bare rank rule against a different suit.
-function extendsSameSuitRun(card, destPile){
-  if(destPile.length===0) return false; // starting fresh isn't "extending" anything
+// Length of the coherent same-suit sequential run in `pile` that
+// CONTAINS index `idx` — walks backward from idx while the cards
+// above stay same-suit sequential, then measures from that true start
+// through to the pile's end. This is what "the current run" means
+// below: not just the cards being moved, but the full run they were
+// originally part of, including whatever's left behind in the source.
+function coherentRunLength(pile, idx){
+  let start = idx;
+  while(start>0){
+    const a = pile[start-1], b = pile[start];
+    if(!a.faceUp) break;
+    if(!(a.suit===b.suit && E.rankValue(a.rank)===E.rankValue(b.rank)+1)) break;
+    start--;
+  }
+  return pile.length - start;
+}
+// Is moving pile.slice(i) from column c onto column t (already
+// confirmed legal via canMoveExact) actually productive, as opposed
+// to merely legal? Two cases count:
+//   (a) The ENTIRE coherent run containing index i moves together —
+//       nothing gets left behind, so nothing is fragmented, regardless
+//       of what's waiting at the destination.
+//   (b) The resulting run at the destination ends up LONGER than the
+//       coherent run these cards were originally part of — genuine
+//       progress, even if only part of that run moves.
+// Anything else — e.g. peeling part of a run off to reattach it
+// elsewhere at no net gain — is legal but not actually progress, and
+// is exactly what let Hint suggest moving a run away and then straight
+// back: e.g. taking the 4,3,2 off a 7,6,5,4,3,2 run to set it on some
+// other 5 only forms a 4-card run, which is SHORTER than the 6-card
+// run it came from, even though every individual step was legal.
+function isProductiveTableauMove(c, i, t){
+  const pile = state.tableau[c];
+  const movingLen = pile.length - i;
+  const sourceRunLen = coherentRunLength(pile, i);
+  if(movingLen===sourceRunLen) return true; // (a) the whole run moves — always fine
+  const destPile = state.tableau[t];
+  if(destPile.length===0) return false; // partial run onto an empty column fragments the source for no gain
   const top = destPile[destPile.length-1];
-  return top.faceUp && card.suit===top.suit;
+  if(!top.faceUp || top.suit!==pile[i].suit) return false; // different suit doesn't build toward anything
+  const destRunLen = coherentRunLength(destPile, destPile.length-1);
+  return (movingLen + destRunLen) > sourceRunLen; // (b) genuinely longer than what it came from
 }
 function findProductiveMove(){
   // 1. Reveals a hidden card underneath — always genuine, permanent
@@ -699,14 +777,10 @@ function findProductiveMove(){
       }
     }
   }
-  // 2. Extends an existing same-suit run — real progress toward a
-  //    completable sequence, as opposed to a rank-legal but
-  //    mismatched-suit landing that doesn't build toward anything.
-  //    Emptying a column outright is preferred WHEN it also does this
-  //    (best of both), but no longer counts on its own — that's what
-  //    was letting Hint suggest relocating a whole column onto some
-  //    unrelated suit purely to vacate it, which isn't actually
-  //    lengthening any run and is often just as reversible.
+  // 2. Moves the whole coherent run, or genuinely lengthens the run at
+  //    the destination — see isProductiveTableauMove above. Emptying
+  //    the source column is preferred when available (strictly
+  //    better), otherwise any qualifying move will do.
   let bestNonEmptying = null;
   for(let c=0;c<10;c++){
     const pile = state.tableau[c];
@@ -715,7 +789,7 @@ function findProductiveMove(){
       for(let t=0;t<10;t++){
         if(t===c) continue;
         if(!canMoveExact('tableau', c, i, 'tableau', t)) continue;
-        if(!extendsSameSuitRun(pile[i], state.tableau[t])) continue;
+        if(!isProductiveTableauMove(c, i, t)) continue;
         const move = {type:'tableau-tableau', fromKey:c, index:i, to:t};
         if(i===0) return move; // also empties the source column — take it immediately, strictly better
         if(!bestNonEmptying) bestNonEmptying = move;
@@ -1127,15 +1201,22 @@ document.getElementById('btn-deal').addEventListener('click', ()=>{ E.clearSelec
 document.getElementById('btn-findnext').addEventListener('click', ()=>{
   const sel = E.getSelected();
   if(!sel){ E.showToast(toastEl, 'Select a card (or a card in a run) first.'); return; }
+  const srcKey = Number(sel.pileKey);
   const targets = [];
   for(let t=0;t<10;t++){
-    if(String(t)===String(sel.pileKey)) continue;
-    if(canMoveWithWiden(sel.pileType, sel.pileKey, sel.index, 'tableau', t) < 0) continue;
+    if(t===srcKey) continue;
+    const widenedIdx = canMoveWithWiden(sel.pileType, sel.pileKey, sel.index, 'tableau', t);
+    if(widenedIdx < 0) continue;
+    // Same standard as Hint: only a spot worth highlighting if the
+    // whole run moves there, or the resulting run there ends up
+    // LONGER than the run these cards came from — not just any
+    // legal-but-non-improving relocation.
+    if(!isProductiveTableauMove(srcKey, widenedIdx, t)) continue;
     const pile = state.tableau[t];
     const el = pile.length ? findCardEl('tableau', t, pile.length-1) : document.querySelector('.tcol[data-index="'+t+'"]');
     if(el) targets.push(el);
   }
-  if(!targets.length){ E.showToast(toastEl, 'No legal spot for that card right now.'); return; }
+  if(!targets.length){ E.showToast(toastEl, 'No spot that actually helps that card/run right now.'); return; }
   E.pulseAll(targets, 1000);
 });
 
