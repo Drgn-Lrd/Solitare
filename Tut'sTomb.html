@@ -2,28 +2,31 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.5
+    Version 1.6
 
-   Fixed real bugs found in the last playtest round, mostly geometry:
-   (1) Snake artwork had its head on the trailing edge relative to
-   travel direction (obstacles move right-to-left) — mirrored the
-   drawing within its own viewBox so the head now leads. (2) Big-jump
-   over the pit reset its transform to (0,0) exactly where the pit
-   itself sat, so after arcing forward it visually snapped straight
-   back into the hole — the pit now sits slightly behind his true
-   landing spot, so (0,0) at animation-end is genuinely past it, not
-   on it. Same fix applied to the whip-swing arc. (3) Whip-swing rope
-   redone to actually match "generate from the adventurer at 45°,
-   swing over the pit, return" — starts leaned back toward him, swings
-   through vertical over the pit, then fades out near his landing side
-   instead of hanging at a fixed, disconnected point. (4) The test
-   window's chest/treasure cinematic had no cleanup step at all — it
-   would stay on screen forever after playing once; now hides itself
-   the same way the real win screen does. (5) Split the test rig's
-   randomized "Jump — Snake/Scorpion" button into two explicit buttons
-   and added a busy-guard against rapid re-clicking, since a random
-   pick plus overlapping triggers was the likely source of the
-   message/obstacle mismatch that looked like a tracking bug.
+   (1) Pit animations (big-jump/whip-swing) still read wrong — root
+   cause was mixing fixed-pixel horizontal transforms with the
+   percentage-based track positions, which can't stay consistent
+   across screen widths. Rewrote both as pure vertical/rotation; the
+   outer #adventurer left-slide (already percentage-correct) handles
+   all real horizontal travel, and the pit now closes/fades BEFORE he
+   lands rather than sitting under him. (2) Blade step-back reused the
+   reshuffle stumble's exact wobble instead of a single static
+   lean-and-hold, which read as passive drifting rather than an active
+   dodge. (3) Popup test window was overflowing/scrollbar'd because of
+   a transform:scale() hack — scaled paint bounds still count toward
+   the scrollable area even though layout width doesn't change.
+   Replaced with real enlarged CSS sizes and a tighter window, no
+   scaling trick. (4) Added a toast line between the track and the
+   button row so trigger messages are actually readable (the popup
+   wasn't loading the external styles.css .hint-toast styling at all,
+   so this needed its own small CSS, not just wiring toastEl). (5)
+   Snake redrawn brighter — silver outline pass + red dashed stripe
+   overlay on the black base — to read clearly against a dark track.
+   (6) Crest image split to its own file, images/Tut'sTomb-crest.webp,
+   freeing images/Tut'sTomb.webp for a new full background photo
+   (same html,body dark-overlay treatment as FreeCell.html); index.html
+   updated to match.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -62,6 +65,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Tut's Tomb</title>
 <link rel="preload" as="image" href="images/Tut'sTomb.webp">
+<link rel="preload" as="image" href="images/Tut'sTomb-crest.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
   /* =========================================================
@@ -83,17 +87,26 @@
     --panel-line: #5c430a;
   }
 
+  /* Tut's Tomb background: swaps the shared black/vignette body
+     background (see html,body in styles.css) for this preloaded
+     photo, same treatment as FreeCell's — a dark overlay gradient
+     over the photo so the felt/wood table (its own elements, on top,
+     untouched) stays readable, only affecting the margins around it. */
   html, body {
-    background: radial-gradient(ellipse at 50% -10%, #2c2013, #0a0704 65%);
+    background-image: linear-gradient(rgba(10,7,4,.6), rgba(10,7,4,.75)), url('images/Tut\'sTomb.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
   }
 
-  /* Crest: the whole badge image, scaled DOWN (not cropped) so nothing
+  /* Crest: the dedicated badge art (separate file from the background
+     photo above) — whole image scaled DOWN (not cropped) so nothing
      is lost off the edges — the surrounding ring is filled with the
      same teal the artwork already uses, so the seam is invisible
      rather than looking like a cut-out. */
   .brand .crest {
     background-color: #008081;
-    background-image: url("images/Tut'sTomb.webp");
+    background-image: url("images/Tut'sTomb-crest.webp");
     background-size: 72%;
     background-position: center;
     background-repeat: no-repeat;
@@ -218,25 +231,30 @@
   /* Step back — a blade swinging past in front of him. */
   @keyframes stepbackAnim {
     0%, 100% { transform: translateX(0) rotate(0deg); }
-    35%      { transform: translateX(-15px) rotate(-9deg); }
-    65%      { transform: translateX(-15px) rotate(-9deg); }
+    20%      { transform: translateX(-4px) rotate(-6deg); }
+    40%      { transform: translateX(3px) rotate(4deg); }
+    60%      { transform: translateX(-3px) rotate(-3deg); }
+    80%      { transform: translateX(2px) rotate(2deg); }
   }
   /* Big jump — clearing a ground pit on foot. Has a forward arc (not
      pure vertical) and a shorter duration so it plays WHILE he's still
      sliding to position, instead of finishing after he's already
      arrived and just bouncing in place on top of the pit. */
   @keyframes bigJumpAnim {
-    0%   { transform: translate(-14px,0) rotate(0deg); }
-    45%  { transform: translate(-4px,-32px) rotate(-6deg); }
-    100% { transform: translate(0,0) rotate(0deg); }
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50%      { transform: translateY(-34px) rotate(-6deg); }
   }
-  /* Whip-swing — the bonus: grabs the rope (now hanging ahead of him,
-     on the side he swings toward) and arcs across the pit. */
+  /* Whip-swing — the bonus: swings on the rope over the pit. Purely
+     vertical lift + rotation, same reasoning as bigJumpAnim below —
+     the real horizontal crossing is the outer #adventurer left-slide
+     (percentage-based, correct at any screen size); a fixed-pixel
+     translateX here can't stay consistent with that, so this only
+     adds lift/tilt on top of it instead of fighting it. */
   @keyframes whipSwingAnim {
-    0%   { transform: translate(-14px,0) rotate(-15deg); }
-    40%  { transform: translate(-4px,-30px) rotate(20deg); }
-    75%  { transform: translate(4px,-8px) rotate(-6deg); }
-    100% { transform: translate(0,0) rotate(0deg); }
+    0%   { transform: translateY(0) rotate(0deg); }
+    35%  { transform: translateY(-30px) rotate(22deg); }
+    65%  { transform: translateY(-12px) rotate(-16deg); }
+    100% { transform: translateY(0) rotate(0deg); }
   }
   /* Reshuffle stumble — a brief backward wobble, not a real rollback. */
   @keyframes stumbleAnim {
@@ -250,8 +268,8 @@
   #adventurer-inner.jump      { animation: jumpAnim 0.9s ease; }
   #adventurer-inner.duck      { animation: duckAnim 1s ease; }
   #adventurer-inner.stepback  { animation: stepbackAnim 1s ease; }
-  #adventurer-inner.bigjump   { animation: bigJumpAnim 0.9s ease; }
-  #adventurer-inner.whipswing { animation: whipSwingAnim 1.3s ease-in-out; }
+  #adventurer-inner.bigjump   { animation: bigJumpAnim 0.85s ease; }
+  #adventurer-inner.whipswing { animation: whipSwingAnim 1.1s ease-in-out; }
   #adventurer-inner.stumble   { animation: stumbleAnim 1.8s ease-in-out; }
 
   .obstacle {
@@ -317,7 +335,7 @@
     top: 0; height: 40px; width: 2px;
     background: linear-gradient(180deg, #5c430a, #2a1a0a);
     transform-origin: top center;
-    animation: ropeSwing 1.3s ease-in-out;
+    animation: ropeSwing 1.1s ease-in-out;
     z-index: 2;
   }
   @keyframes ropeSwing {
@@ -581,7 +599,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.5';
+const PAGE_VERSION = '1.6';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -597,14 +615,19 @@ const ROW_CLEAR_THRESHOLDS = [7, 13, 18, 22, 25, 27];
 // artwork is drawn head-right then mirrored via an inner <g> flip —
 // putting the head on the LEFT, leading the direction of travel,
 // without touching the shared .obstacle container's own centering
-// transform.
+// transform. Three stacked strokes on the same path: a wide silver
+// pass for a thin visible outline, the black base tube, then a red
+// dashed overlay creating alternating red/black stripes — brighter
+// and higher-contrast against a dark track than a flat black shape.
+const SVG_SNAKE_PATH = "M4,22 C14,8 26,8 34,22 C42,36 54,36 62,22 C70,9 82,9 90,20 C95,25 100,20 104,15";
 const SVG_SNAKE = `<svg viewBox="0 0 120 40" width="1.8em" height="0.6em" style="vertical-align:middle;">
   <g transform="translate(120,0) scale(-1,1)">
-    <path d="M4,22 C14,8 26,8 34,22 C42,36 54,36 62,22 C70,9 82,9 90,20 C95,25 100,20 104,15"
-          fill="none" stroke="#0a0a0a" stroke-width="9" stroke-linecap="round"/>
-    <ellipse cx="106" cy="14" rx="7" ry="5.5" fill="#0a0a0a"/>
-    <circle cx="108" cy="12" r="1.1" fill="#fff"/>
-    <path d="M112,13 L118,10 M112,15 L118,17" stroke="#0a0a0a" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="${SVG_SNAKE_PATH}" fill="none" stroke="#d9d9d9" stroke-width="12" stroke-linecap="round"/>
+    <path d="${SVG_SNAKE_PATH}" fill="none" stroke="#0a0a0a" stroke-width="9" stroke-linecap="round"/>
+    <path d="${SVG_SNAKE_PATH}" fill="none" stroke="#e0201f" stroke-width="9" stroke-linecap="round" stroke-dasharray="9 9"/>
+    <ellipse cx="106" cy="14" rx="7.5" ry="6" fill="#0a0a0a" stroke="#d9d9d9" stroke-width="1.3"/>
+    <circle cx="108" cy="12" r="1.3" fill="#ffe14d"/>
+    <path d="M112,13 L118,10 M112,15 L118,17" stroke="#e0201f" stroke-width="1.6" stroke-linecap="round"/>
   </g>
 </svg>`;
 
@@ -812,41 +835,37 @@ function spawnBlade(ctx, obstacle, targetLeft){
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
 function spawnPit(ctx, obstacle, targetLeft){
-  // The pit sits slightly BEHIND his landing spot (targetLeft), not
-  // exactly on it — he's meant to clear it and land on solid ground
-  // at targetLeft. This also fixes the reaction animation: its
-  // transform correctly settles back to (0,0)=targetLeft at the end,
-  // which is now genuinely past the hole instead of on top of it.
-  const pitLeft = targetLeft - 6;
+  // Pit sits exactly at his landing spot — all real horizontal travel
+  // is the outer #adventurer left-slide (percentage-based, correct at
+  // any screen width). What sells "cleared it" instead of "landed on
+  // it" is TIMING: the pit closes up and fades before he actually
+  // lands, so by the time he's down the ground there is solid again.
   const pit = ctx.track.ownerDocument.createElement('div');
   pit.className = 'pit-trap';
-  pit.style.left = pitLeft + '%';
+  pit.style.left = targetLeft + '%';
   ctx.track.appendChild(pit);
   requestAnimationFrame(()=> requestAnimationFrame(()=> pit.classList.add('show')));
 
   if(obstacle.reaction === 'whipswing'){
-    // Whip anchors near his landing spot (the far side of the pit),
-    // starting leaned back toward him at ~45° — as if he's just cast
-    // it up to a ceiling beam — swings through vertical (over the
-    // pit) and settles/fades out near his landing side, reading as
-    // "thrown out, swung across, reeled back in" rather than a static
-    // rope he has to reach.
+    // Whip anchors near his landing spot, starting leaned back toward
+    // him at ~45° — as if he's just cast it up to a ceiling beam —
+    // swings through vertical (over the pit) and fades out, reading
+    // as "thrown out, swung across, reeled back in."
     const rope = ctx.track.ownerDocument.createElement('div');
     rope.className = 'whip-rope';
     rope.style.left = targetLeft + '%';
     ctx.track.appendChild(rope);
-    setTimeout(()=> rope.remove(), 1500);
-    setTimeout(()=> playReaction(ctx, obstacle.reaction, 1300), 80);
+    setTimeout(()=> rope.remove(), 1300);
+    setTimeout(()=> playReaction(ctx, obstacle.reaction, 1100), 20);
   } else {
-    // Big jump fires almost immediately (rather than after a 300ms
-    // delay) so its horizontal arc plays WHILE he's still sliding to
-    // targetLeft — previously the slide finished first and the jump
-    // just bounced him up and down in place at the pit, looking like
-    // he was landing on it instead of clearing it.
-    setTimeout(()=> playReaction(ctx, obstacle.reaction, 900), 80);
+    // Fires almost immediately so the vertical arc plays WHILE he's
+    // still sliding to targetLeft, peaking mid-crossing and landing
+    // right as the slide finishes — not after it.
+    setTimeout(()=> playReaction(ctx, obstacle.reaction, 850), 20);
   }
 
-  setTimeout(()=>{ pit.classList.remove('show'); setTimeout(()=> pit.remove(), 500); }, 1300);
+  setTimeout(()=> pit.classList.remove('show'), 650);
+  setTimeout(()=> pit.remove(), 1150);
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
 function spawnTraveling(ctx, obstacle, targetLeft){
@@ -1101,7 +1120,7 @@ function getSharedStyleText(){
   return styleEl ? styleEl.textContent : '';
 }
 function openAnimTestWindow(){
-  const w = window.open('', 'tutstomb_anim_test', 'width=1000,height=580');
+  const w = window.open('', 'tutstomb_anim_test', 'width=700,height=640');
   if(!w){
     E.showToast(document.getElementById('hint-toast'), 'Pop-up blocked — allow pop-ups to open the test rig.');
     return;
@@ -1109,22 +1128,41 @@ function openAnimTestWindow(){
   const sharedCss = getSharedStyleText();
   const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Animation Test Rig — Tut\'s Tomb</title><style>'
     + sharedCss
-    + '\nhtml,body{margin:0;background:#0a0704;color:#f0d9a0;font-family:Georgia,\'Times New Roman\',serif;}'
-    + 'body{display:flex;flex-direction:column;align-items:center;padding:24px;gap:18px;}'
-    + 'h2{margin:0;font-size:20px;letter-spacing:0.5px;color:var(--brass-light,#f8e5a0);}'
-    + '#rig-stage{width:900px;max-width:94vw;transform:scale(1.5);transform-origin:center top;margin-top:20px;margin-bottom:70px;}'
-    + '#adventure-track{position:relative;}'
+    // Everything below is popup-only layout/sizing. No transform:scale
+    // hack (it visually overflowed the window and forced a scrollbar
+    // since scaled paint bounds still count toward scrollable area) —
+    // instead these directly override the shared ID/class rules above
+    // at larger sizes, same cascade specificity, later wins.
+    + '\nhtml,body{margin:0;overflow-x:hidden;background:#0a0704;color:#f0d9a0;font-family:Georgia,\'Times New Roman\',serif;}'
+    + 'body{display:flex;flex-direction:column;align-items:center;padding:18px 20px;gap:10px;}'
+    + 'h2{margin:0 0 4px;font-size:18px;letter-spacing:0.5px;color:var(--brass-light,#f8e5a0);}'
+    + '#rig-stage{width:100%;max-width:640px;}'
+    + '#adventure-track{position:relative;height:100px;}'
+    + '#adventure-fill{height:16px;bottom:5px;}'
+    + '#adventurer{font-size:60px;bottom:11px;}'
+    + '#chest{font-size:54px;bottom:14px;}'
+    + '.dust-puff{width:14px;height:14px;}'
+    + '.obstacle{font-size:40px;bottom:11px;}'
+    + '.obstacle.high{top:7px;}'
+    + '.blade-rig{height:90px;}'
+    + '.blade-rig .rod{height:58px;}'
+    + '.blade-rig .blade{width:32px;height:50px;top:50px;left:-16px;}'
+    + '.pit-trap{width:65px;height:25px;}'
+    + '.whip-rope{height:72px;}'
     + '#center-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);z-index:5;}'
     + '#center-line::after{content:"center";position:absolute;top:-16px;left:4px;font-size:9px;color:rgba(255,255,255,0.5);}'
-    + '.controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:760px;}'
-    + '.controls button{font-family:inherit;font-size:13px;padding:8px 14px;border-radius:8px;border:1px solid var(--wood-3,#5c430a);background:var(--panel,#2a1e12);color:var(--brass-light,#f8e5a0);cursor:pointer;}'
+    + '#rig-toast{width:100%;max-width:640px;min-height:20px;font-size:14px;text-align:center;color:var(--brass-light,#f8e5a0);opacity:0;transition:opacity .3s ease;}'
+    + '#rig-toast.show{opacity:1;}'
+    + '.controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;max-width:640px;}'
+    + '.controls button{font-family:inherit;font-size:12.5px;padding:7px 11px;border-radius:8px;border:1px solid var(--wood-3,#5c430a);background:var(--panel,#2a1e12);color:var(--brass-light,#f8e5a0);cursor:pointer;}'
     + '.controls button:hover{background:var(--wood-3,#5c430a);}'
     + '#chest-stage{display:none;}'
-    + '#chest-stage.show{display:flex;gap:30px;align-items:flex-end;font-size:6rem;margin-top:10px;}'
+    + '#chest-stage.show{display:flex;gap:30px;align-items:flex-end;font-size:5rem;margin-top:6px;}'
     + '</style></head><body>'
     + '<h2>Tut\'s Tomb — Animation Test Rig</h2>'
     + '<div id="rig-stage"><div id="adventure-track"><div id="center-line"></div><div id="adventure-fill"></div>'
     + '<div id="adventurer"><div id="adventurer-inner"></div></div><div id="chest"></div></div></div>'
+    + '<div id="rig-toast"></div>'
     + '<div class="controls">'
     + '<button data-act="run">Run Step</button>'
     + '<button data-act="duck">Duck — Boulder</button>'
@@ -1146,7 +1184,7 @@ function openAnimTestWindow(){
     + 'var fill = document.getElementById("adventure-fill");'
     + 'inner.innerHTML = assets.SVG_ADVENTURER;'
     + 'var pos = 46;'
-    + 'var ctx = { track: track, inner: inner, adventurerEl: adv, toastEl: null };'
+    + 'var ctx = { track: track, inner: inner, adventurerEl: adv, toastEl: document.getElementById("rig-toast") };'
     + 'function setPos(p){ pos = p; adv.style.left = p + "%"; fill.style.width = p + "%"; }'
     + 'setPos(46);'
     + 'var chestStage = document.getElementById("chest-stage");'
