@@ -2,13 +2,33 @@
 <!--
     Spider.html
     Written by: Johnathon Largent
-    Version 1.1
+    Version 1.2
 
-   Draw pile deals now animate in instead of all 10 cards just
-   appearing instantly — each card flies from the draw pile to its
-   column, staggered one after another (see animateDealFly), the same
-   idea as FreeCell's supermove fly-through: the real state change
-   happens immediately, this is purely a cosmetic flight on top of it.
+   Four fixes/additions from an actual play test:
+   1. Hint still had a source of non-productive suggestions: its
+      "empties a column" check never required the destination to
+      match suit, so it could recommend relocating a run onto an
+      unrelated suit purely to vacate the source column — legal, but
+      not actually lengthening any run. Emptying a column is now only
+      preferred as a tiebreak WHEN it also extends a same-suit run,
+      not a qualifying reason on its own.
+   2. CRITICAL BUG: completing a run left the newly-exposed card in
+      that column stuck face-down and unselectable forever — the old
+      processCompletedRuns() spliced the run out but never called
+      flipNewTopIfNeeded() on that column afterward, unlike a normal
+      player move. Fixed as part of the sweep below.
+   3. Completed runs now collapse together (gathering the spread run
+      into one stack, like scooping cards together by hand) and THEN
+      fly as a unit down to their foundation slot, instead of just
+      instantly appearing there. processCompletedRuns() split into
+      detectCompletedRuns() (pure, so the run's real on-screen
+      position can still be measured) and sweepCompletedRuns() (does
+      the actual mutation + the collapse/fly animation).
+   4. New "Find Next" toggle + button: select a card (or a card inside
+      a run) first, then tap it to highlight every column that
+      selection could actually land on right now — same
+      canMoveWithWiden legality every real move uses, so it can't ever
+      suggest an illegal spot.
 -->
 <!--
   New game built on the shared engine.js + styles.css, following the
@@ -33,7 +53,7 @@
     - No manual foundation drops: completing a full King-to-Ace
       same-suit run anywhere in a column is detected automatically
       after every move/deal and swept off to the next open foundation
-      slot on its own (see processCompletedRuns).
+      slot on its own (see detectCompletedRuns / sweepCompletedRuns).
     - The "Suits" difficulty slider (1-4, default 1) controls how many
       distinct suits the two-deck, 104-card shoe is built from — 1 is
       the classic easiest variant (all Spades), 4 is the classic
@@ -183,6 +203,7 @@
     <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
     <button class="bottombtn" id="btn-deal" title="Deal a new row from the draw pile"><span class="bicon">⇩</span><span class="blabel">Deal</span></button>
+    <button class="bottombtn" id="btn-findnext" title="Highlight every legal spot for the selected card" style="display:none"><span class="bicon">⌖</span><span class="blabel">Find Next</span></button>
   </div>
   <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
@@ -274,6 +295,13 @@
       </div>
       <div class="fieldnote">Shows face-down tableau cards, dimmed, for planning ahead — they still can't be touched.</div>
     </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Find Next</span>
+        <label class="switch"><input type="checkbox" id="tog-findnext"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Adds a button next to Undo/Hint/Deal — select a card (or one of the cards in a run) first, then tap it to highlight every column that run could legally land on right now.</div>
+    </div>
 
     <div class="field">
       <label>Testing</label>
@@ -299,7 +327,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.1';
+const PAGE_VERSION = '1.2';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -317,6 +345,7 @@ const state = {
   backStyle: 'back_10.webp',
   suitCount: 1, // difficulty slider, 1-4, default 1 (classic easiest)
   thoughtful: false,
+  findNextEnabled: false,
   stock: [],
   tableau: [[],[],[],[],[],[],[],[],[],[]],
   foundations: [[],[],[],[],[],[],[],[]],
@@ -325,7 +354,7 @@ const state = {
   timerHandle: null,
   cascadePlayed: false
 };
-const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp', suitCount:1, thoughtful:false };
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp', suitCount:1, thoughtful:false, findNextEnabled:false };
 const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 const toastEl = document.getElementById('hint-toast');
 
@@ -417,9 +446,8 @@ function tryMove(fromType, fromKey, fromIndex, toType, toKey){
   fromPile.splice(fromIndex, movingCards.length);
   state.tableau[toKey].push(...movingCards);
   flipNewTopIfNeeded(Number(fromKey));
-  const completed = processCompletedRuns();
-  renderAll();
-  announceCompletedRuns(completed);
+  renderAll(); // settles the actual move; if it also completed a run, that run is still fully visible in the tableau right now
+  sweepCompletedRuns(detectCompletedRuns());
   return true;
 }
 function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
@@ -436,18 +464,19 @@ function flipNewTopIfNeeded(col){
 }
 
 /* =========================================================
-   COMPLETED-RUN DETECTION
+   COMPLETED-RUN DETECTION + SWEEP
    Runs after every move and every stock deal: any column whose top 13
    cards form a full King-to-Ace same-suit sequence gets that run
    pulled off automatically into the next open foundation slot. Stored
    reversed (Ace-first) so the King — the last card pushed — ends up
    as the visible top card, matching the classic completed-pile look.
-   Pure state mutation only; returns which slot(s) just filled so the
-   caller can pulse/toast about it AFTER renderAll() has redrawn the
-   board (so the foundation slot's new card actually exists to pulse).
+   Split into a pure detector (no mutation, safe to call against
+   whatever's currently rendered) and a sweeper (mutates + animates),
+   so the sweep can grab each run's real on-screen card positions
+   BEFORE removing them — needed for the collapse/fly animation below.
    ========================================================= */
-function processCompletedRuns(){
-  const completedSlots = [];
+function detectCompletedRuns(){
+  const found = [];
   for(let c=0;c<10;c++){
     const pile = state.tableau[c];
     if(pile.length<13) continue;
@@ -458,20 +487,105 @@ function processCompletedRuns(){
       const a=top13[i], b=top13[i+1];
       if(!(a.suit===b.suit && E.rankValue(a.rank)===E.rankValue(b.rank)+1)){ ok=false; break; }
     }
-    if(!ok) continue;
-    const slot = state.foundations.findIndex(f=>f.length===0);
-    if(slot<0) continue; // shouldn't happen (max 8 completions ever possible) — leave it in place if it somehow does
-    pile.splice(pile.length-13, 13);
-    state.foundations[slot] = top13.slice().reverse();
-    addScore(100);
-    completedSlots.push(slot);
+    if(ok) found.push({ col: c, cards: top13 });
   }
-  return completedSlots;
+  return found;
 }
-function announceCompletedRuns(completedSlots){
-  if(!completedSlots.length) return;
-  completedSlots.forEach(slot=> E.pulse(document.getElementById('f-'+slot)));
-  E.showToast(toastEl, completedSlots.length>1 ? 'Suits completed!' : 'Suit completed!');
+function sweepCompletedRuns(found){
+  if(!found.length) return;
+  found.forEach(({col, cards})=>{
+    const slot = state.foundations.findIndex(f=>f.length===0);
+    if(slot<0) return; // shouldn't happen — max 8 completions ever possible
+    // Grab each of the 13 cards' REAL on-screen position while they're
+    // still genuinely sitting in the tableau (this render hasn't
+    // changed yet) — the animation needs real geometry, not guesses.
+    const rects = cards.map(c=>{
+      const el = document.querySelector('.card[data-id="'+c.id+'"]');
+      return el ? el.getBoundingClientRect() : null;
+    });
+    const pile = state.tableau[col];
+    pile.splice(pile.length-13, 13);
+    // CRITICAL: flips the card newly exposed by pulling this run off —
+    // without this, whatever was left under a completed run stayed
+    // face-down AND unselectable forever, effectively locking up that
+    // column for the rest of the game.
+    flipNewTopIfNeeded(col);
+    state.foundations[slot] = cards.slice().reverse();
+    addScore(100);
+    renderAll();
+    animateRunCollapseAndFly(cards, rects, slot);
+  });
+  E.showToast(toastEl, found.length>1 ? 'Runs completed!' : 'Run completed!');
+}
+// Cosmetic-only, same "state changes first, animation is purely on
+// top" approach as animateDealFly: by the time this runs, renderAll()
+// has already moved the run's King into its real foundation slot, so
+// this hides that one real element, builds 13 fresh clones at the
+// run's captured tableau positions, animates them collapsing together
+// into a single stack (like gathering a spread run by hand before
+// lifting it), then flies that stack down to the slot as a unit —
+// instead of the run just popping into the foundation instantly.
+const RUN_COLLAPSE_MS = 220, RUN_FLY_MS = 260;
+function animateRunCollapseAndFly(cards, sourceRects, slotIndex){
+  const slotEl = document.getElementById('f-'+slotIndex);
+  if(!slotEl) return;
+  const destRect = slotEl.getBoundingClientRect();
+  // After the reverse-storage, the King (cards[0], the first of the
+  // captured K..A slice) is the one card actually rendered in the
+  // foundation slot — hide that real element while the animated
+  // clones stand in for the whole run.
+  const destEl = document.querySelector('.card[data-id="'+cards[0].id+'"]');
+  if(destEl) destEl.style.visibility = 'hidden';
+
+  const collapseRect = sourceRects[sourceRects.length-1] || sourceRects.find(Boolean);
+  if(!collapseRect){ if(destEl) destEl.style.visibility=''; return; } // nothing usable to animate from — just leave the real card visible
+
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:900;';
+  document.body.appendChild(layer);
+
+  const clones = [];
+  cards.forEach((card, i)=>{
+    const rect = sourceRects[i];
+    if(!rect) return;
+    const clone = document.createElement('div');
+    clone.className = 'card';
+    clone.style.position = 'fixed';
+    clone.style.width = rect.width+'px';
+    clone.style.height = rect.height+'px';
+    clone.style.left = rect.left+'px';
+    clone.style.top = rect.top+'px';
+    clone.style.zIndex = 900+i;
+    clone.appendChild(E.buildFaceEl(card, false));
+    layer.appendChild(clone);
+    clones.push(clone);
+  });
+  if(!clones.length){ layer.remove(); if(destEl) destEl.style.visibility=''; return; }
+
+  clones.forEach(clone=>{
+    clone.animate([
+      { left: clone.style.left, top: clone.style.top },
+      { left: collapseRect.left+'px', top: collapseRect.top+'px' }
+    ], { duration: RUN_COLLAPSE_MS, easing: 'ease-in', fill: 'forwards' });
+  });
+
+  setTimeout(()=>{
+    let remaining = clones.length;
+    clones.forEach(clone=>{
+      const anim = clone.animate([
+        { left: collapseRect.left+'px', top: collapseRect.top+'px' },
+        { left: destRect.left+'px', top: destRect.top+'px' }
+      ], { duration: RUN_FLY_MS, easing: 'ease-out', fill: 'forwards' });
+      anim.onfinish = ()=>{
+        clone.remove();
+        remaining--;
+        if(remaining<=0){
+          layer.remove();
+          if(destEl) destEl.style.visibility = '';
+        }
+      };
+    });
+  }, RUN_COLLAPSE_MS);
 }
 
 /* =========================================================
@@ -540,10 +654,9 @@ function dealFromStock(){
     state.tableau[c].push(card);
     dealt.push(card);
   }
-  const completed = processCompletedRuns();
   renderAll();
   animateDealFly(dealt, sourceRect);
-  announceCompletedRuns(completed);
+  sweepCompletedRuns(detectCompletedRuns());
 }
 
 /* =========================================================
@@ -585,21 +698,15 @@ function findProductiveMove(){
       }
     }
   }
-  // 2. Empties a column outright — a genuinely valuable strategic gain
-  //    even without revealing anything (an empty column takes any
-  //    card). Skipped when the destination is ALSO empty — that's just
-  //    swapping which column is empty, not a net gain.
-  for(let c=0;c<10;c++){
-    const pile = state.tableau[c];
-    if(pile.length===0 || !pile[0].faceUp) continue;
-    for(let t=0;t<10;t++){
-      if(t===c || state.tableau[t].length===0) continue;
-      if(canMoveExact('tableau', c, 0, 'tableau', t)) return {type:'tableau-tableau', fromKey:c, index:0, to:t};
-    }
-  }
-  // 3. Extends an existing same-suit run — real progress toward a
+  // 2. Extends an existing same-suit run — real progress toward a
   //    completable sequence, as opposed to a rank-legal but
   //    mismatched-suit landing that doesn't build toward anything.
+  //    Emptying a column outright is preferred WHEN it also does this
+  //    (best of both), but no longer counts on its own — that's what
+  //    was letting Hint suggest relocating a whole column onto some
+  //    unrelated suit purely to vacate it, which isn't actually
+  //    lengthening any run and is often just as reversible.
+  let bestNonEmptying = null;
   for(let c=0;c<10;c++){
     const pile = state.tableau[c];
     for(let i=0;i<pile.length;i++){
@@ -607,11 +714,14 @@ function findProductiveMove(){
       for(let t=0;t<10;t++){
         if(t===c) continue;
         if(!canMoveExact('tableau', c, i, 'tableau', t)) continue;
-        if(extendsSameSuitRun(pile[i], state.tableau[t])) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
+        if(!extendsSameSuitRun(pile[i], state.tableau[t])) continue;
+        const move = {type:'tableau-tableau', fromKey:c, index:i, to:t};
+        if(i===0) return move; // also empties the source column — take it immediately, strictly better
+        if(!bestNonEmptying) bestNonEmptying = move;
       }
     }
   }
-  return null;
+  return bestNonEmptying;
 }
 // Used only to decide the genuine "No More Moves" stuck state — counts
 // ANY legal move, including the merely-cosmetic ones findProductiveMove
@@ -786,7 +896,7 @@ function checkWin(){
 function launchCascade(){
   const cards = [];
   // Foundation slots are stored Ace-first/King-last (see
-  // processCompletedRuns), so index 12 is each slot's King — launching
+  // sweepCompletedRuns), so index 12 is each slot's King — launching
   // from i=12 down to 0 sends Kings flying first, same "top card
   // first" feel as Klondike/FreeCell's own cascades.
   for(let i=12;i>=0;i--){
@@ -930,20 +1040,28 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraSnapshot: ()=>({ suitCount: pendingSettings.suitCount, thoughtful: pendingSettings.thoughtful }),
+  extraSnapshot: ()=>({ suitCount: pendingSettings.suitCount, thoughtful: pendingSettings.thoughtful, findNextEnabled: pendingSettings.findNextEnabled }),
   extraRestore: (snap)=>{
     pendingSettings.suitCount = snap.suitCount; refreshSuitSlider();
     pendingSettings.thoughtful = snap.thoughtful; state.thoughtful = snap.thoughtful;
     document.getElementById('tog-thoughtful').checked = snap.thoughtful;
+    pendingSettings.findNextEnabled = snap.findNextEnabled; state.findNextEnabled = snap.findNextEnabled;
+    refreshFindNextToggle();
     renderAll();
   },
   extraOnOpen: ()=>{
     pendingSettings.suitCount = state.suitCount; refreshSuitSlider();
     pendingSettings.thoughtful = state.thoughtful;
     document.getElementById('tog-thoughtful').checked = state.thoughtful;
+    pendingSettings.findNextEnabled = state.findNextEnabled;
+    refreshFindNextToggle();
     refreshVersionInfo();
   }
 });
+function refreshFindNextToggle(){
+  document.getElementById('tog-findnext').checked = pendingSettings.findNextEnabled;
+  document.getElementById('btn-findnext').style.display = state.findNextEnabled ? 'flex' : 'none';
+}
 function refreshVersionInfo(){
   const stylesVersion = E.getStylesheetVersion() || 'unknown';
   document.getElementById('version-info').textContent =
@@ -961,6 +1079,11 @@ document.getElementById('tog-thoughtful').addEventListener('change', (e)=>{
   pendingSettings.thoughtful = e.target.checked;
   state.thoughtful = e.target.checked;
   renderAll();
+});
+document.getElementById('tog-findnext').addEventListener('change', (e)=>{
+  pendingSettings.findNextEnabled = e.target.checked;
+  state.findNextEnabled = e.target.checked;
+  document.getElementById('btn-findnext').style.display = state.findNextEnabled ? 'flex' : 'none';
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
@@ -991,6 +1114,29 @@ document.getElementById('win-newgame').addEventListener('click', ()=>{
 document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
 document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
 document.getElementById('btn-deal').addEventListener('click', ()=>{ E.clearSelection(); dealFromStock(); });
+// Deliberately does NOT clear the selection first (unlike every other
+// button here) — this needs whatever's currently selected to still be
+// selected. Legality is checked with the same canMoveWithWiden real
+// game rules everything else uses, so it can never highlight a spot
+// that wouldn't actually be a legal drop. The lookup is by the same
+// data-id/data-pile/data-key/data-index attributes every card always
+// carries regardless of Thoughtful mode, so a thoughtful-revealed
+// card is found and highlighted exactly the same as a genuinely
+// face-up one — no special-casing needed for that.
+document.getElementById('btn-findnext').addEventListener('click', ()=>{
+  const sel = E.getSelected();
+  if(!sel){ E.showToast(toastEl, 'Select a card (or a card in a run) first.'); return; }
+  const targets = [];
+  for(let t=0;t<10;t++){
+    if(String(t)===String(sel.pileKey)) continue;
+    if(canMoveWithWiden(sel.pileType, sel.pileKey, sel.index, 'tableau', t) < 0) continue;
+    const pile = state.tableau[t];
+    const el = pile.length ? findCardEl('tableau', t, pile.length-1) : document.querySelector('.tcol[data-index="'+t+'"]');
+    if(el) targets.push(el);
+  }
+  if(!targets.length){ E.showToast(toastEl, 'No legal spot for that card right now.'); return; }
+  E.pulseAll(targets, 1000);
+});
 
 const confirmOverlay = document.getElementById('confirm-overlay');
 document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
