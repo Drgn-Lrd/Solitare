@@ -2,19 +2,19 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 5.0
+    Version 5.2
 
-   Added the Mahjong tile (Mahjong.html) — playable, marked Testing
-   like FreeCell/Spider/Tut's Tomb until signed off. Same treatment as
-   every other real game: a dedicated images/Mahjong.webp background
-   photo + preload link, and a small hand-positioned mini-board
-   preview (plain ivory .mc.mtile blocks in a stepped-layer shape,
-   same idea as Tut's Tomb's pyramid preview, just without card art
-   since Mahjong tiles aren't playing cards). Bumped to 5.0 under this
-   file's own versioning rule: X is the current count of active
-   (playable/testing) games — was 4 (Klondike/FreeCell/Spider/Tut's
-   Tomb), now 5 — and X only changes when a game is added to or
-   dropped from that count.
+   Mahjong's mini preview shape was still wrong: the 4-row taper
+   (7/5/3/1 tiles per row) read as a triangular card pyramid, not an
+   actual mahjong board — real mahjong layouts are diamond-shaped
+   (widest in the middle, narrowing toward both the top AND bottom),
+   not a triangle narrowing to one point. Replaced it with an actual
+   diamond silhouette (row widths 1/3/5/7/5/3/1, vertically overlapped
+   so the taller-than-wide tile art doesn't stretch the icon), plus a
+   small 5-tile raised cap sitting over the center like the real
+   layout's stacked middle. Still the same random-tile-art .mc.mahjong-
+   face pieces from the previous pass, just arranged correctly this
+   time.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -26,9 +26,9 @@
   from cards/ via the script at the bottom — same assets the games
   themselves use, so nothing goes stale or needs a separate asset set.
   Card BACKS stay simple CSS stripes, one distinct color per game.
-  Mahjong's mini tiles deliberately use their own .mc.mtile class
-  instead of .mc.face, so that script leaves them as plain ivory
-  blocks rather than dropping a random playing-card image onto them.
+  Mahjong's mini tiles use their own .mc.mahjong-face class (a second,
+  separate randomization loop at the bottom pulling from tiles/
+  instead of cards/) so the two asset sets never cross.
 
   FreeCell + every in-dev tile also gets a real photo background from
   /images (Golf.png, TriPeaks.png, Spider.png, Pyramid.png, FreeCell.png,
@@ -37,11 +37,10 @@
   legible regardless of the photo. Klondike stays plain felt on purpose
   ("keep it as is").
 
-  Tiles for Klondike/FreeCell/Spider/Tut's Tomb/Mahjong link out to
-  their real files (Klondike is approved and live; FreeCell, Spider,
-  Tut's Tomb, and Mahjong are playable but still marked Testing until
-  signed off). TriPeaks and Golf are marked IN DEV and stay inert (no
-  navigation) until built.
+  Tiles for Klondike/FreeCell/Spider link out to their real files and
+  are approved/live (Play Now). Tut's Tomb and Mahjong are playable
+  but still marked Testing until signed off. TriPeaks and Golf are
+  marked IN DEV and stay inert (no navigation) until built.
 -->
 <html lang="en">
 <head>
@@ -205,12 +204,12 @@
     background: repeating-linear-gradient(45deg, #12406f 0 3px, #0d3358 3px 6px);
     border:1px solid rgba(232,200,115,.4);
   }
-  /* Mahjong's mini tiles: plain ivory, same box as .mc.face but
-     WITHOUT the "face" class, so the randomized-card-art script at
-     the bottom (which targets .mc.face specifically) leaves these
-     alone — a random playing-card image would be the wrong game's
-     art on a mahjong tile. */
-  .mc.mtile{ background: var(--ivory); border:1px solid rgba(0,0,0,.15); }
+  /* Mahjong's mini tiles: own class (not .mc.face) so the card-art
+     loop at the bottom leaves them alone — they get their OWN
+     randomization loop pulling from tiles/ instead of cards/, same
+     ivory box + image containment as .mc.face otherwise. */
+  .mc.mahjong-face{ background: var(--ivory); border:1px solid rgba(0,0,0,.15); position:relative; overflow:hidden; }
+  .mc.mahjong-face img{ width:100%; height:100%; object-fit:contain; display:block; padding:8%; box-sizing:border-box; }
   .mc.back-freecell{ background: repeating-linear-gradient(45deg, #146b62 0 3px, #0e4a44 3px 6px); }
   .mc.back-tripeaks{ background: repeating-linear-gradient(45deg, #4a2f6b 0 3px, #351f4d 3px 6px); }
   .mc.back-golf{ background: repeating-linear-gradient(45deg, #2f6b3a 0 3px, #1f4d28 3px 6px); }
@@ -265,6 +264,7 @@
      positioning into normal flow. This 3-class rule outranks both and
      restores absolute positioning without touching any coordinates. */
   .mc.face.mc-abs{ position:absolute; }
+  .mc.mahjong-face.mc-abs{ position:absolute; }
 </style>
 </head>
 <body>
@@ -312,7 +312,7 @@
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-freecell"></div>
-          <div class="tile-head"><h2>FreeCell</h2><span class="status-pill testing">Testing</span></div>
+          <div class="tile-head"><h2>FreeCell</h2><span class="status-pill play">Play Now</span></div>
           <div class="mini-board">
             <div class="mc-row" style="justify-content:center; align-items:center; gap:5px;">
               <div class="mc-row" style="gap:3px;">
@@ -344,7 +344,7 @@
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-spider"></div>
-          <div class="tile-head"><h2>Spider</h2><span class="status-pill testing">Testing</span></div>
+          <div class="tile-head"><h2>Spider</h2><span class="status-pill play">Play Now</span></div>
           <div class="mini-board">
             <div class="mc-cols">
               <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
@@ -435,25 +435,37 @@
           <div class="tile-bg-art art-mahjong"></div>
           <div class="tile-head"><h2>Mahjong</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
-            <div class="pyramid-wrap" style="width:128px; height:35px;">
-              <div class="mc mtile mc-abs" style="left:0px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:16px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:32px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:48px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:64px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:80px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:96px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:112px; top:14px;"></div>
-              <div class="mc mtile mc-abs" style="left:16px; top:7px;"></div>
-              <div class="mc mtile mc-abs" style="left:32px; top:7px;"></div>
-              <div class="mc mtile mc-abs" style="left:48px; top:7px;"></div>
-              <div class="mc mtile mc-abs" style="left:64px; top:7px;"></div>
-              <div class="mc mtile mc-abs" style="left:80px; top:7px;"></div>
-              <div class="mc mtile mc-abs" style="left:96px; top:7px;"></div>
-              <div class="mc mtile mc-abs" style="left:32px; top:0px;"></div>
-              <div class="mc mtile mc-abs" style="left:48px; top:0px;"></div>
-              <div class="mc mtile mc-abs" style="left:64px; top:0px;"></div>
-              <div class="mc mtile mc-abs" style="left:80px; top:0px;"></div>
+            <div class="pyramid-wrap" style="width:112px; height:93px;">
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:0px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:32px; top:12px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:12px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:64px; top:12px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:16px; top:24px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:32px; top:24px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:24px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:64px; top:24px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:80px; top:24px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:0px; top:36px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:16px; top:36px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:32px; top:36px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:36px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:64px; top:36px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:80px; top:36px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:96px; top:36px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:16px; top:48px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:32px; top:48px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:48px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:64px; top:48px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:80px; top:48px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:32px; top:60px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:60px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:64px; top:60px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:72px;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:15px; z-index:5;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:32px; top:27px; z-index:5;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:27px; z-index:5;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:64px; top:27px; z-index:5;"></div>
+              <div class="mc mahjong-face mc-abs" style="left:48px; top:39px; z-index:5;"></div>
             </div>
           </div>
         </div>
@@ -558,6 +570,36 @@
   document.querySelectorAll('.mc.face').forEach(el=>{
     const img = document.createElement('img');
     img.src = randomCardFile();
+    img.alt = '';
+    img.draggable = false;
+    img.addEventListener('error', ()=> img.remove(), { once:true });
+    el.appendChild(img);
+  });
+})();
+
+// Same idea, second pass, for Mahjong's mini tiles: fills every
+// .mc.mahjong-face with a real tile-face image randomized fresh on
+// each reload, pulling from tiles/ (the same 42 SVGs Mahjong.html
+// itself uses — 9 Dots, 9 Bamboo, 9 Characters, 4 Winds, 3 Dragons,
+// 4 Flowers, 4 Seasons) instead of cards/. Kept as its own loop/class
+// rather than folding into .mc.face so the two asset sets never cross.
+(function(){
+  const MAHJONG_KINDS = [
+    'dot_1','dot_2','dot_3','dot_4','dot_5','dot_6','dot_7','dot_8','dot_9',
+    'bam_1','bam_2','bam_3','bam_4','bam_5','bam_6','bam_7','bam_8','bam_9',
+    'char_1','char_2','char_3','char_4','char_5','char_6','char_7','char_8','char_9',
+    'wind_E','wind_S','wind_W','wind_N',
+    'dragon_red','dragon_green','dragon_white',
+    'flower_1','flower_2','flower_3','flower_4',
+    'season_1','season_2','season_3','season_4'
+  ];
+  function randomTileFile(){
+    const k = MAHJONG_KINDS[Math.floor(Math.random()*MAHJONG_KINDS.length)];
+    return 'tiles/'+k+'.svg';
+  }
+  document.querySelectorAll('.mc.mahjong-face').forEach(el=>{
+    const img = document.createElement('img');
+    img.src = randomTileFile();
     img.alt = '';
     img.draggable = false;
     img.addEventListener('error', ()=> img.remove(), { once:true });
