@@ -2,6 +2,14 @@
 <!--
     Spider.html
     Written by: Johnathon Largent
+    Version 0.3
+
+   Added Thoughtful mode, same idea and same toggle as Klondike's:
+   shows every face-down tableau card's real face, dimmed, so you can
+   plan ahead — those cards stay untouchable (pointer-events blocked)
+   and the draw pile is unaffected either way, since it only ever
+   shows a generic back regardless.
+
     Version 0.2
 
    Layout now matches how real Spider is traditionally laid out
@@ -248,6 +256,13 @@
         <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
       </div>
     </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Thoughtful</span>
+        <label class="switch"><input type="checkbox" id="tog-thoughtful"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Shows face-down tableau cards, dimmed, for planning ahead — they still can't be touched.</div>
+    </div>
 
     <div class="field">
       <label>Testing</label>
@@ -290,6 +305,7 @@ const state = {
   showScore: false,
   backStyle: 'back_10.webp',
   suitCount: 1, // difficulty slider, 1-4, default 1 (classic easiest)
+  thoughtful: false,
   stock: [],
   tableau: [[],[],[],[],[],[],[],[],[],[]],
   foundations: [[],[],[],[],[],[],[],[]],
@@ -298,7 +314,7 @@ const state = {
   timerHandle: null,
   cascadePlayed: false
 };
-const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp', suitCount:1 };
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp', suitCount:1, thoughtful:false };
 const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 const toastEl = document.getElementById('hint-toast');
 
@@ -602,7 +618,13 @@ function renderTableau(){
     col.querySelectorAll('.card').forEach(e=>e.remove());
     const pile = state.tableau[c];
     pile.forEach((card, i)=>{
-      const el = makeCardEl(card, 'tableau', c, i, i<pile.length-1);
+      let renderCard = card, revealing = false;
+      if(!card.faceUp && state.thoughtful){
+        renderCard = { ...card, faceUp: true }; // rendering-only — the real card object stays face-down
+        revealing = true;
+      }
+      const el = makeCardEl(renderCard, 'tableau', c, i, i<pile.length-1);
+      if(revealing) el.classList.add('thoughtful');
       el.style.top = (i*metrics.overlap)+'px';
       col.appendChild(el);
     });
@@ -778,9 +800,19 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraSnapshot: ()=>({ suitCount: pendingSettings.suitCount }),
-  extraRestore: (snap)=>{ pendingSettings.suitCount = snap.suitCount; refreshSuitSlider(); },
-  extraOnOpen: ()=>{ pendingSettings.suitCount = state.suitCount; refreshSuitSlider(); refreshVersionInfo(); }
+  extraSnapshot: ()=>({ suitCount: pendingSettings.suitCount, thoughtful: pendingSettings.thoughtful }),
+  extraRestore: (snap)=>{
+    pendingSettings.suitCount = snap.suitCount; refreshSuitSlider();
+    pendingSettings.thoughtful = snap.thoughtful; state.thoughtful = snap.thoughtful;
+    document.getElementById('tog-thoughtful').checked = snap.thoughtful;
+    renderAll();
+  },
+  extraOnOpen: ()=>{
+    pendingSettings.suitCount = state.suitCount; refreshSuitSlider();
+    pendingSettings.thoughtful = state.thoughtful;
+    document.getElementById('tog-thoughtful').checked = state.thoughtful;
+    refreshVersionInfo();
+  }
 });
 function refreshVersionInfo(){
   const stylesVersion = E.getStylesheetVersion() || 'unknown';
@@ -794,6 +826,11 @@ function refreshSuitSlider(){
 document.getElementById('suit-slider').addEventListener('input', (e)=>{
   pendingSettings.suitCount = parseInt(e.target.value, 10);
   document.getElementById('suit-slider-val').textContent = pendingSettings.suitCount;
+});
+document.getElementById('tog-thoughtful').addEventListener('change', (e)=>{
+  pendingSettings.thoughtful = e.target.checked;
+  state.thoughtful = e.target.checked;
+  renderAll();
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
