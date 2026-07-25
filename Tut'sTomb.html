@@ -2,28 +2,26 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.11
+    Version 1.12
 
-   (1) Real bug in the test rig: every obstacle button reused the
-   frozen `pos` variable without ever calling setPos(), so only "Run
-   Step" actually moved him — every obstacle was being tested with him
-   standing still, invalidating the tests. All obstacle buttons now
-   advance position first, mirroring how triggerAdventurerProgress
-   always moves-and-spawns together in the real game. (2) Pit sizing:
-   only width should scale for the wide/whip pit, not height — the
-   height bump made it look like a circular void ("naked singularity")
-   instead of a ground gap. (3) Pit clearance: offset was a guessed
-   percentage that couldn't relate to the pit's actual pixel width
-   across different screen sizes. Now computed from the track's real
-   rendered width (ctx.track.offsetWidth) so the pit's right edge is
-   guaranteed a real margin before his landing spot, not just
-   approximately. (4) Blade dodge fired at 620ms, but the blade's
-   first close pass through vertical happens ~400ms into its swing —
-   he was dodging after, not before. Trigger moved to 150ms. (5)
-   Boulder/snake/scorpion: retimed to trigger later (was arriving
-   before duck's actual proximity), and now travel a couple
-   body-lengths PAST him before fading instead of stopping and
-   vanishing right beside him.
+   (1) Found the real bug behind the pit "spawning on his feet": the
+   clearance calculation only accounted for the pit's own half-width
+   plus a small fixed margin — it never subtracted the adventurer's
+   own rendered width (arms included, wider than his feet) at all,
+   so the pit's edge sat right at his position with barely any real
+   gap. Now factors in ctx.adventurerEl.offsetWidth on both the
+   approach and landing side. (2) The jump/swing arc used a fixed
+   pixel peak that couldn't scale with the now-variable gap size —
+   replaced with a --jump-dist CSS custom property computed per-spawn
+   from the real gap (pit width + his width + margins), so the arc
+   always visually spans however big the actual gap is. (3) Per
+   request, it's fine for the whip-swing pit's clearance to need more
+   room than a standard step — restricted picking it to the first 60%
+   of the track (pickObstacle now takes `cleared`) so there's always
+   guaranteed space behind him for it, rather than needing to
+   compress/redistribute checkpoint spacing. (4) Blade dodge backward
+   shift bumped from 4 to 12 percentage points — 4 was too subtle to
+   read as a real retreat regardless of correct timing/rotation.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -246,7 +244,7 @@
      lands mid-crossing instead of after he's already arrived. */
   @keyframes bigJumpAnim {
     0%   { transform: translate(0,0) rotate(0deg); }
-    50%  { transform: translate(40px,-36px) rotate(-8deg); }
+    50%  { transform: translate(var(--jump-dist, 40px),-36px) rotate(-8deg); }
     100% { transform: translate(0,0) rotate(0deg); }
   }
   /* Whip-swing — the bonus: swings on the rope over the pit. Same
@@ -256,8 +254,8 @@
      independent fixed point on the track). */
   @keyframes whipSwingAnim {
     0%   { transform: translate(0,0) rotate(0deg); }
-    45%  { transform: translate(24px,-26px) rotate(14deg); }
-    80%  { transform: translate(34px,-4px) rotate(-6deg); }
+    45%  { transform: translate(calc(var(--jump-dist, 34px) * 0.7),-26px) rotate(14deg); }
+    80%  { transform: translate(var(--jump-dist, 34px),-4px) rotate(-6deg); }
     100% { transform: translate(0,0) rotate(0deg); }
   }
   /* Reshuffle stumble — a brief backward wobble, not a real rollback. */
@@ -622,7 +620,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.11';
+const PAGE_VERSION = '1.12';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -667,9 +665,13 @@ const OBSTACLES = [
   { type: 'scorpion', render:'emoji', icon: '🦂',     high: false, reaction: 'jump',     msg: 'Hopped clear of a scorpion!' },
   { type: 'pit',      render:null,    icon: null,                  reaction: 'bigjump',  msg: 'Jumped a crumbling pit!' }
 ];
-function pickObstacle(){
+function pickObstacle(cleared){
   const base = OBSTACLES[Math.floor(Math.random()*OBSTACLES.length)];
-  if(base.type === 'pit' && Math.random() < 0.4){
+  // The whip-swing pit is wide and needs real room behind his landing
+  // spot to clear (see spawnPit's clearance math) — restricted to the
+  // first 60% of the track so there's always enough space behind him
+  // for it, rather than risking the pit crowding the very start.
+  if(base.type === 'pit' && Math.random() < 0.4 && trackLeftPct(cleared) <= 60){
     return { type:'pit', reaction:'whipswing', msg:'Swung across the pit on his whip!' };
   }
   return base;
@@ -876,7 +878,7 @@ function spawnBlade(ctx, obstacle, targetLeft){
   // vertical happens ~400ms into its 1.6s swing, so the dodge needs
   // to already be underway well before that, not starting after it.
   const adv = ctx.adventurerEl;
-  const back = Math.max(2, targetLeft - 4);
+  const back = Math.max(2, targetLeft - 12);
   const restoreTransition = adv.style.transition;
   setTimeout(()=>{
     adv.style.transition = 'left 0.22s ease-out';
@@ -894,21 +896,33 @@ function spawnBlade(ctx, obstacle, targetLeft){
 function spawnPit(ctx, obstacle, targetLeft){
   const isWhip = obstacle.reaction === 'whipswing';
   const pitWidthPx = isWhip ? 108 : 36;
-  // The pit's left/right edges are computed from the track's ACTUAL
-  // rendered width (not a guessed percentage) so its right edge is
-  // guaranteed to sit a real margin before targetLeft regardless of
-  // screen size — a fixed percentage offset can't do that, since pit
-  // width is in px and offset was in %, two units with no fixed
-  // relationship across different track widths.
+  // The pit's edges are computed from the track's ACTUAL rendered
+  // width AND his own actual rendered width — not just the pit's own
+  // half-width. His arms reach wider than his feet (that's the visual
+  // extent that matters here, not just his feet's footprint), so the
+  // pit needs to clear his OWN full body width on the near side too,
+  // or it just spawns on top of him. Both edges use this same
+  // clearance so he clears the pit with his arm, not his feet, on
+  // both the approach and the landing side.
   const trackW = ctx.track.offsetWidth || 900;
-  const marginPx = 16;
-  const offsetPct = ((pitWidthPx / 2 + marginPx) / trackW) * 100;
+  const advW = ctx.adventurerEl.offsetWidth || 40;
+  const marginPx = 14;
+  const clearancePx = advW / 2 + marginPx;
+  const offsetPct = ((pitWidthPx / 2 + clearancePx) / trackW) * 100;
   const pitLeft = targetLeft - offsetPct;
   const pit = ctx.track.ownerDocument.createElement('div');
   pit.className = 'pit-trap' + (isWhip ? ' wide' : '');
   pit.style.left = pitLeft + '%';
   ctx.track.appendChild(pit);
   requestAnimationFrame(()=> requestAnimationFrame(()=> pit.classList.add('show')));
+
+  // The jump/swing arc's horizontal reach is set to the REAL computed
+  // gap (pit width + clearance on both sides) via a CSS custom
+  // property, so it always visually spans whatever gap resulted from
+  // the clearance math above — a fixed px arc couldn't do that once
+  // the gap size varies with pit width and his own measured size.
+  const gapPx = Math.round(pitWidthPx + clearancePx * 2);
+  ctx.inner.style.setProperty('--jump-dist', gapPx + 'px');
 
   if(isWhip){
     // Rope is a DOM CHILD of ctx.inner (his own element), not the
@@ -993,7 +1007,7 @@ function triggerAdventurerProgress(cleared){
   updateCheckpoints();
 
   if(ROW_CLEAR_THRESHOLDS.includes(cleared)){
-    spawnObstacle(mainCtx, pickObstacle(), targetLeft);
+    spawnObstacle(mainCtx, pickObstacle(cleared), targetLeft);
   } else {
     playReaction(mainCtx, 'running', 600);
   }
