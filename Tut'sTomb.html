@@ -2,23 +2,17 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.7
+    Version 1.8
 
-   Last round's "pure vertical, no horizontal" fix for the pit/blade
-   reactions was an overcorrection — it solved a theoretical
-   cross-screen-size consistency concern that doesn't actually matter
-   for a small local flourish animation, and in exchange made every
-   reaction look like bouncing in place. Reverted: horizontal
-   movement restored to jump/duck/stepback/big-jump/whip-swing, layered
-   on top of the real percentage-based position-slide rather than
-   replacing it. Blade step-back now moves a real ~30px backstep
-   instead of the too-subtle stumble-style wobble I'd swapped it to.
-   Whip-swing rope rebuilt properly: it's now appended as a DOM CHILD
-   of the adventurer's own element (not a sibling on the track), so it
-   automatically inherits his position and reaction transforms and
-   stays genuinely tethered to his hand throughout the swing — the
-   previous version was still just an independently-positioned rope on
-   a fixed spot he happened to swing near.
+   Two corrections: (1) The blade step-back reaction I'd liked and
+   asked to be kept was overwritten with a different animation shape
+   entirely instead of being augmented — restored the original
+   stumble-style wobble's exact rhythm/timing/rotation, just shifted
+   backward by one wobble-unit (~4px) throughout, so it reads as an
+   active dodge without discarding the motion that already looked
+   right. (2) Blade trap redrawn as an actual mezzaluna — a wide
+   crescent rocker-blade SVG with a steel gradient and highlight line —
+   instead of the narrow pointed-dagger clip-path shape it was using.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -228,10 +222,12 @@
      path, not a subtle in-place sway (too small a movement was the
      actual bug — he wasn't moving far enough to be out of the way). */
   @keyframes stepbackAnim {
-    0%   { transform: translateX(0) rotate(0deg); }
-    30%  { transform: translateX(-30px) rotate(-12deg); }
-    60%  { transform: translateX(-30px) rotate(-12deg); }
-    100% { transform: translateX(0) rotate(0deg); }
+    0%   { transform: translateX(0)   rotate(0deg); }
+    20%  { transform: translateX(-8px) rotate(-6deg); }
+    40%  { transform: translateX(-1px) rotate(4deg); }
+    60%  { transform: translateX(-7px) rotate(-3deg); }
+    80%  { transform: translateX(-2px) rotate(2deg); }
+    100% { transform: translateX(0)   rotate(0deg); }
   }
   /* Big jump — clearing a ground pit on foot. Forward-and-up arc on
      top of the real travel (the outer #adventurer left-slide), timed
@@ -298,11 +294,9 @@
     width: 2px; height: 32px;
     background: linear-gradient(180deg, #3a2a16, #111);
   }
-  .blade-rig .blade {
-    position: absolute; top: 28px; left: -9px;
-    width: 18px; height: 28px;
-    background: linear-gradient(135deg, #f2f2f2, #9a9a9a 55%, #555);
-    clip-path: polygon(50% 0%, 100% 32%, 62% 100%, 38% 100%, 0% 32%);
+  .blade-rig .blade-art {
+    position: absolute; top: 28px; left: -30px;
+    width: 60px; height: 34px;
     filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));
   }
   @keyframes bladeSwing {
@@ -604,7 +598,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.7';
+const PAGE_VERSION = '1.8';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -829,11 +823,22 @@ function spawnDust(ctx, leftPct){
   ctx.track.appendChild(dust);
   setTimeout(()=> dust.remove(), 850);
 }
+const SVG_MEZZALUNA = `<div class="blade-art"><svg viewBox="0 0 60 34" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bladeSteel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5f5f5"/>
+      <stop offset="55%" stop-color="#aaacae"/>
+      <stop offset="100%" stop-color="#55585c"/>
+    </linearGradient>
+  </defs>
+  <path d="M2,8 Q30,42 58,8 Q30,20 2,8 Z" fill="url(#bladeSteel)" stroke="#222" stroke-width="1.2"/>
+  <path d="M6,9 Q30,17 54,9" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1"/>
+</svg></div>`;
 function spawnBlade(ctx, obstacle, targetLeft){
   const rig = ctx.track.ownerDocument.createElement('div');
   rig.className = 'blade-rig';
   rig.style.left = targetLeft + '%';
-  rig.innerHTML = '<div class="rod"></div><div class="blade"></div>';
+  rig.innerHTML = '<div class="rod"></div>' + SVG_MEZZALUNA;
   ctx.track.appendChild(rig);
   setTimeout(()=> rig.remove(), 1700);
   setTimeout(()=> playReaction(ctx, obstacle.reaction, 1050), 620);
@@ -1150,7 +1155,7 @@ function openAnimTestWindow(){
     + '.obstacle.high{top:7px;}'
     + '.blade-rig{height:90px;}'
     + '.blade-rig .rod{height:58px;}'
-    + '.blade-rig .blade{width:32px;height:50px;top:50px;left:-16px;}'
+    + '.blade-rig .blade-art{width:64px;height:36px;top:50px;left:-32px;}'
     + '.pit-trap{width:65px;height:25px;}'
     + '.whip-rope-tethered{height:72px;}'
     + '#center-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);z-index:5;}'
