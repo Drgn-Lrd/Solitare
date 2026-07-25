@@ -13,14 +13,12 @@
     background-attachment: fixed;
   }
 
-  /* Responsive base size that shrinks if viewport is tight */
   :root {
     --tile-w: clamp(34px, 4.2vw, 56px);
     --tile-h: calc(var(--tile-w) * 1.35); 
     --tile-depth: calc(var(--tile-w) * 0.2);
   }
 
-  /* Table-felt acts as the bounding container */
   .table-felt {
     position: relative;
     overflow: hidden;
@@ -29,7 +27,6 @@
     justify-content: center;
   }
 
-  /* Scalable inner board container to guarantee it never breaches boundaries */
   .mahjong-scale-wrapper {
     position: relative;
     width: 800px;
@@ -70,6 +67,7 @@
     margin-top: calc(var(--tile-h) * -0.5);
   }
 
+  /* Your Solitaire suite's signature green selection ring */
   .tile.selected {
     transform: translateY(-4px) translateX(4px); 
     box-shadow: 
@@ -99,23 +97,34 @@
     cursor: default;
   }
 
-  .tile-img {
-    width: 85%;
-    height: 85%;
-    object-fit: contain;
+  /* Clean, highly readable text fallback styling */
+  .tile-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-family: Georgia, serif;
     pointer-events: none;
   }
-
-  /* Fallback text style when image files are missing */
-  .tile-fallback {
-    font-size: calc(var(--tile-w) * 0.45);
+  .tile-fallback .t-top {
+    font-size: calc(var(--tile-w) * 0.22);
+    font-weight: bold;
+    color: var(--burgundy);
+    line-height: 1;
+  }
+  .tile-fallback .t-main {
+    font-size: calc(var(--tile-w) * 0.38);
     font-weight: bold;
     color: var(--navy);
-    text-align: center;
-    pointer-events: none;
+    line-height: 1.2;
   }
-  #board.theme-Black .tile-fallback {
-    color: #e7f2ea;
+  #board.theme-Black .tile-fallback .t-main {
+    color: var(--ivory);
+  }
+  #board.theme-Black .tile-fallback .t-top {
+    color: #e24b4a;
   }
 
   .theme-swatch {
@@ -124,14 +133,13 @@
     align-items: center;
     justify-content: center;
     padding: 8px;
+    font-weight: bold;
+    font-size: 12px;
+    color: var(--navy);
   }
   .theme-swatch[data-val="Black"] {
     background: #2a2b2e;
-  }
-  .theme-swatch img {
-    width: 100%;
-    height: auto;
-    object-fit: contain;
+    color: var(--ivory);
   }
 </style>
 </head>
@@ -207,12 +215,8 @@
     <div class="field">
       <label>Tile Theme</label>
       <div class="backpicker" id="theme-picker">
-        <div class="backswatch theme-swatch active" data-val="White">
-          <img src="MahjongTiles/White/Chun.webp" alt="White Tiles" onerror="this.style.display='none'">
-        </div>
-        <div class="backswatch theme-swatch" data-val="Black">
-          <img src="MahjongTiles/Black/Chun.webp" alt="Black Tiles" onerror="this.style.display='none'">
-        </div>
+        <div class="backswatch theme-swatch active" data-val="White">White Tiles</div>
+        <div class="backswatch theme-swatch" data-val="Black">Dark Tiles</div>
       </div>
     </div>
 
