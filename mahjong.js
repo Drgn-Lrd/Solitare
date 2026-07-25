@@ -8,6 +8,23 @@ const RANKS = ['1','2','3','4','5','6','7','8','9'];
 const HONORS = ['Wind-N', 'Wind-S', 'Wind-E', 'Wind-W', 'Dragon-R', 'Dragon-G', 'Dragon-W'];
 const BONUS = ['Flower-1', 'Flower-2', 'Flower-3', 'Flower-4', 'Season-1', 'Season-2', 'Season-3', 'Season-4'];
 
+let currentTheme = 'White'; // Tracks the active tile theme ('White' or 'Black')
+
+// Translates internal English IDs to FluffyStuff's Romaji filenames
+const FLUFFY_STUFF_MAP = {
+    'Circle-1':'Pin1', 'Circle-2':'Pin2', 'Circle-3':'Pin3', 'Circle-4':'Pin4', 'Circle-5':'Pin5', 'Circle-6':'Pin6', 'Circle-7':'Pin7', 'Circle-8':'Pin8', 'Circle-9':'Pin9',
+    'Bamboo-1':'Sou1', 'Bamboo-2':'Sou2', 'Bamboo-3':'Sou3', 'Bamboo-4':'Sou4', 'Bamboo-5':'Sou5', 'Bamboo-6':'Sou6', 'Bamboo-7':'Sou7', 'Bamboo-8':'Sou8', 'Bamboo-9':'Sou9',
+    'Character-1':'Man1', 'Character-2':'Man2', 'Character-3':'Man3', 'Character-4':'Man4', 'Character-5':'Man5', 'Character-6':'Man6', 'Character-7':'Man7', 'Character-8':'Man8', 'Character-9':'Man9',
+    'Wind-E':'Ton', 'Wind-S':'Nan', 'Wind-W':'Sha', 'Wind-N':'Pei',
+    'Dragon-R':'Chun', 'Dragon-G':'Hatsu', 'Dragon-W':'Haku'
+};
+
+// Fallback Unicode characters since FluffyStuff does not include Bonus tiles
+const UNICODE_BONUS = {
+    'Flower-1':'🀢', 'Flower-2':'🀣', 'Flower-3':'🀤', 'Flower-4':'🀥',
+    'Season-1':'🀦', 'Season-2':'🀧', 'Season-3':'🀨', 'Season-4':'🀩'
+};
+
 function buildMahjongDeck() {
     let deck = [];
     for (let i = 0; i < 4; i++) {
@@ -28,16 +45,15 @@ function shuffleArray(arr) {
     return arr;
 }
 
-// Generates the image path based on the ID. 
-// Requires a folder named "mahjong-tiles" in the root directory.
 function getTileImagePath(id) {
-    return `mahjong-tiles/${id}.webp`;
+    if (FLUFFY_STUFF_MAP[id]) {
+        return `MahjongTiles/${currentTheme}/${FLUFFY_STUFF_MAP[id]}.webp`;
+    }
+    return null;
 }
 
 /* =========================================================
    LAYOUTS (3D Coordinates)
-   Classic layouts require exactly 144 tiles. X and Y represent 
-   grid units (1 unit = 1 tile width/height).
    ========================================================= */
 const LAYOUTS = {
     'turtle': generateTurtleLayout(),
@@ -49,35 +65,35 @@ function generateTurtleLayout() {
     let id = 0;
     const add = (x, y, z) => layout.push({ posId: id++, x, y, z });
 
-    // Layer 0 (Bottom) - 87 tiles
+    // Layer 0 (Bottom)
     for (let x = 1; x <= 12; x++) add(x, 0, 0);
     for (let x = 3; x <= 10; x++) add(x, 1, 0);
     for (let x = 2; x <= 11; x++) add(x, 2, 0);
     for (let x = 1; x <= 12; x++) add(x, 3, 0);
-    add(0, 3.5, 0);  // Far left wing
-    add(13, 3.5, 0); // Far right wing (inner)
-    add(14, 3.5, 0); // Far right wing (outer)
+    add(0, 3.5, 0); 
+    add(13, 3.5, 0); 
+    add(14, 3.5, 0); 
     for (let x = 1; x <= 12; x++) add(x, 4, 0);
     for (let x = 2; x <= 11; x++) add(x, 5, 0);
     for (let x = 3; x <= 10; x++) add(x, 6, 0);
     for (let x = 1; x <= 12; x++) add(x, 7, 0);
 
-    // Layer 1 - 36 tiles
+    // Layer 1
     for (let y = 1; y <= 6; y++) {
         for (let x = 4; x <= 9; x++) add(x, y, 1);
     }
 
-    // Layer 2 - 16 tiles
+    // Layer 2
     for (let y = 2; y <= 5; y++) {
         for (let x = 5; x <= 8; x++) add(x, y, 2);
     }
 
-    // Layer 3 - 4 tiles
+    // Layer 3
     for (let y = 3; y <= 4; y++) {
         for (let x = 6; x <= 7; x++) add(x, y, 3);
     }
 
-    // Layer 4 (Top) - 1 tile
+    // Layer 4 (Top)
     add(6.5, 3.5, 4);
 
     return layout;
@@ -88,15 +104,12 @@ function generatePyramidLayout() {
     let id = 0;
     const add = (x, y, z) => layout.push({ posId: id++, x, y, z });
 
-    // Layer 0 - 80 tiles
     for(let y = 0; y <= 7; y++) {
         for(let x = 2.5; x <= 11.5; x++) add(x, y, 0);
     }
-    // Layer 1 - 48 tiles
     for(let y = 1; y <= 6; y++) {
         for(let x = 3.5; x <= 10.5; x++) add(x, y, 1);
     }
-    // Layer 2 - 16 tiles
     for(let y = 2; y <= 5; y++) {
         for(let x = 5.5; x <= 8.5; x++) add(x, y, 2);
     }
@@ -135,18 +148,25 @@ function startNewGame() {
         
         tile.element.className = 'tile';
         
-        const img = document.createElement('img');
-        img.className = 'tile-img';
-        img.src = getTileImagePath(tile.id);
-        img.alt = tile.id; 
-        tile.element.appendChild(img);
+        if (FLUFFY_STUFF_MAP[tile.id]) {
+            const img = document.createElement('img');
+            img.className = 'tile-img';
+            img.src = getTileImagePath(tile.id);
+            img.alt = tile.id; 
+            tile.element.appendChild(img);
+        } else if (UNICODE_BONUS[tile.id]) {
+            const tileSymbol = document.createElement('div');
+            tileSymbol.className = 'tile-symbol';
+            tileSymbol.innerText = UNICODE_BONUS[tile.id];
+            tileSymbol.style.fontSize = 'calc(var(--tile-w) * 0.9)';
+            tileSymbol.style.lineHeight = '1';
+            tileSymbol.style.pointerEvents = 'none';
+            tileSymbol.style.color = (tile.id.startsWith('Flower')) ? '#e24b4a' : '#2f7a53';
+            tile.element.appendChild(tileSymbol);
+        }
         
-        // Dynamic responsive scaling mapped to CSS variables. 
-        // Subtract 7 on X and 3.5 on Y to perfectly center a 14-unit wide, 7-unit tall layout.
         tile.element.style.left = `calc(50% + (var(--tile-w) * ${tile.x - 7}))`; 
         tile.element.style.top = `calc(50% + (var(--tile-h) * ${tile.y - 3.5}))`;
-        
-        // Z-index sorting so 3D shadows render correctly
         tile.element.style.zIndex = Math.floor(tile.z * 1000 + tile.y * 10 + tile.x);
 
         tile.element.onclick = () => handleTileClick(tile);
@@ -182,7 +202,6 @@ function handleTileClick(tile) {
     }
 }
 
-// Special Mahjong matching rule: Seasons match Seasons, Flowers match Flowers.
 function isMatch(tileA, tileB) {
     if (tileA.type === 'Flower' && tileB.type === 'Flower') return true;
     if (tileA.type === 'Season' && tileB.type === 'Season') return true;
@@ -197,13 +216,10 @@ function isTileFree(target) {
     currentTiles.forEach(t => {
         if (!t.active || t.posId === target.posId) return;
 
-        // Top Block: A tile exists on a higher Z-layer directly overlapping target's footprint.
-        // Uses < 0.99 instead of < 1 to account for floating point coordinates in half-steps.
         if (t.z > target.z && Math.abs(t.x - target.x) < 0.99 && Math.abs(t.y - target.y) < 0.99) {
             blockedTop = true;
         }
 
-        // Left/Right Block: A tile exists on the same Z-layer, overlaps vertically, and touches the side.
         if (t.z === target.z && Math.abs(t.y - target.y) < 0.99) {
             if (t.x < target.x && target.x - t.x < 1.1) blockedLeft = true;
             if (t.x > target.x && t.x - target.x < 1.1) blockedRight = true;
@@ -222,8 +238,36 @@ function shuffleBoard() {
     activeTiles.forEach((tile, i) => {
         tile.id = activeData[i].id;
         tile.type = activeData[i].type;
-        tile.element.querySelector('img').src = getTileImagePath(tile.id);
-        tile.element.querySelector('img').alt = tile.id;
+        
+        if (FLUFFY_STUFF_MAP[tile.id]) {
+            const img = tile.element.querySelector('img');
+            if (img) {
+                img.src = getTileImagePath(tile.id);
+                img.alt = tile.id;
+            } else {
+                tile.element.innerHTML = '';
+                const newImg = document.createElement('img');
+                newImg.className = 'tile-img';
+                newImg.src = getTileImagePath(tile.id);
+                newImg.alt = tile.id; 
+                tile.element.appendChild(newImg);
+            }
+        } else if (UNICODE_BONUS[tile.id]) {
+            const sym = tile.element.querySelector('.tile-symbol');
+            if (sym) {
+                sym.innerText = UNICODE_BONUS[tile.id];
+            } else {
+                tile.element.innerHTML = '';
+                const newSym = document.createElement('div');
+                newSym.className = 'tile-symbol';
+                newSym.innerText = UNICODE_BONUS[tile.id];
+                newSym.style.fontSize = 'calc(var(--tile-w) * 0.9)';
+                newSym.style.lineHeight = '1';
+                newSym.style.pointerEvents = 'none';
+                newSym.style.color = (tile.id.startsWith('Flower')) ? '#e24b4a' : '#2f7a53';
+                tile.element.appendChild(newSym);
+            }
+        }
     });
     
     if(selectedTile) {
@@ -249,6 +293,37 @@ function updateBoardState() {
     document.getElementById('tiles-left').innerText = activeCount;
     document.getElementById('matches-made').innerText = matches;
 }
+
+/* =========================================================
+   THEME SWITCHING
+   ========================================================= */
+function applyTheme(themeVal) {
+    currentTheme = themeVal;
+    
+    const board = document.getElementById('board');
+    if (themeVal === 'Black') {
+        board.classList.add('theme-Black');
+    } else {
+        board.classList.remove('theme-Black');
+    }
+
+    currentTiles.forEach(tile => {
+        if (tile.active && FLUFFY_STUFF_MAP[tile.id]) {
+            const img = tile.element.querySelector('img');
+            if (img) img.src = getTileImagePath(tile.id);
+        }
+    });
+    
+    document.querySelectorAll('.theme-swatch').forEach(sw => {
+        sw.classList.toggle('active', sw.dataset.val === themeVal);
+    });
+}
+
+document.querySelectorAll('.theme-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+        applyTheme(sw.dataset.val);
+    });
+});
 
 /* =========================================================
    UI MODAL WIRING 
