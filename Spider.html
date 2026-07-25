@@ -2,6 +2,17 @@
 <!--
     Spider.html
     Written by: Johnathon Largent
+    Version 0.4
+
+   Real crest artwork (Spider-crest.webp) replaces the placeholder
+   spider emoji glyph — sized with background-size:contain rather
+   than a fixed percentage, since the source art isn't square, so it
+   scales as large as possible with zero cropping regardless of its
+   own aspect ratio. Home button now points at "./" instead of
+   "index.html" — this had never actually been switched over despite
+   looking like it should have been; every subsequent version handed
+   over was still built from the original unedited copy.
+
     Version 0.3
 
    Added Thoughtful mode, same idea and same toggle as Klondike's:
@@ -65,13 +76,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Spider</title>
+<link rel="preload" as="image" href="images/Spider-crest.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
-  /* Spider has no dedicated crest artwork yet — a plain spider glyph
-     on the shared brass circle, same lightweight approach Yukon uses
-     for its snowflake, rather than inventing an image asset that
-     doesn't exist. */
-  .brand .crest{ font-size:30px; }
+  /* Real crest artwork (a spider perched on the ace of diamonds),
+     layered over the shared brass-gradient circle the same way
+     Klondike layers its ace-of-spades crest — except sized with
+     background-size:contain instead of a fixed percentage, since
+     Spider-crest.webp isn't square (239x256) and contain guarantees
+     the whole image stays visible inside the circle at its largest
+     possible size, with zero cropping, regardless of that aspect
+     ratio. The uncovered sliver of brass around the edges reads as a
+     medallion rim rather than a gap. */
+  .brand .crest{
+    background-image: url('images/Spider-crest.webp'), radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, #8a6a26 100%);
+    background-size: contain, cover;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
+  }
 
   /* Small numeric badge overlaid on the stock pile showing how many
      more 10-card deals are left (ceil(stock.length/10)) — the stock
@@ -125,11 +147,11 @@
 
 <header>
   <div class="brand">
-    <div class="crest" aria-hidden="true">&#128375;</div>
+    <div class="crest" aria-hidden="true"></div>
     <div class="brand-text">
       <h1>Spider</h1>
       <div class="brand-actions">
-        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
       </div>
     </div>
