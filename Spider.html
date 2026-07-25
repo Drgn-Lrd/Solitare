@@ -2,131 +2,48 @@
 <!--
     Spider.html
     Written by: Johnathon Largent
-    Version 1.0
+    Version 1.1
 
-   First full release — promoted out of 0.x after a real play test
-   confirmed the layout, Thoughtful mode, and the widen fix all work
-   as intended. Also fixed PAGE_VERSION itself: the constant below was
-   still hardcoded to '0.1' this whole time even as this changelog
-   moved through 0.2-0.6, so the About panel in Settings has been
-   silently showing the wrong version since the first edit after
-   initial build. Now reads 1.0, and will actually track future edits.
+   Draw pile deals now animate in instead of all 10 cards just
+   appearing instantly — each card flies from the draw pile to its
+   column, staggered one after another (see animateDealFly), the same
+   idea as FreeCell's supermove fly-through: the real state change
+   happens immediately, this is purely a cosmetic flight on top of it.
+-->
+<!--
+  New game built on the shared engine.js + styles.css, following the
+  same split every other game in the suite uses: this file only owns
+  what's actually specific to Spider (10 tableau columns, a 50-card
+  draw pile dealt 10-at-a-time instead of free cells or a waste pile,
+  8 generic foundation slots instead of 4 per-suit ones, and the rules
+  for both), while drag/drop, click-to-move, undo, settings shell,
+  hint pulse/toast, win cascade, and screen-fit sizing all come from
+  engine.js untouched.
 
-    Version 0.6
-
-   Two fixes from an actual play test:
-   1. The bottom row (foundation fan + draw pile) used to sit right
-      below the tableau with a fixed small gap, leaving all the
-      leftover vertical space (often most of the screen, early in a
-      game when columns are still short) wasted below it. table-felt
-      is now a flex column and .bottom-row uses margin-top:auto
-      instead of a fixed gap, so it's genuinely pinned to the felt's
-      bottom edge — same "anchored to the corners" feel as the hub
-      page's mini-board preview. Also quieted the empty foundation
-      fan's repeated "K" placeholder mark — with all 8 slots empty at
-      once it was showing on every slot simultaneously (reading as a
-      smeared "KKKKKKKK"); now only the frontmost slot shows it.
-   2. canMoveWithWiden now actually widens (it never did before,
-      despite the comment claiming it didn't need to) — tapping or
-      dragging anywhere inside a valid same-suit run other than its
-      exact top card only grabbed the shorter sub-run starting there,
-      so e.g. tapping the 4 or 5 of a 6-5-4 run wouldn't bring the 6
-      along even though the whole run is one legal group and the
-      target needs a 6. It now checks from the pile's start upward and
-      prefers the widest run that's still a legal move for wherever
-      you're dropping it — same idea FreeCell's own widening uses.
-      Note: the drag/selection highlight still only visually lifts
-      cards from the exact tapped position (that part lives in the
-      shared engine.js, not this file) — the extra card(s) above it
-      snap into place at the destination on drop/tap-complete rather
-      than visibly traveling there. Functionally correct, just not
-      animated for that specific case yet.
-
-    Version 0.5
-
-   Fixed Hint suggesting non-productive back-and-forth moves. The old
-   scanner's fallback treated ANY legal tableau move as worth
-   suggesting, but canPlaceOnTableau ignores suit — so plenty of
-   "legal" moves just relocate a card onto a different-suit card that
-   happens to be one rank higher, which is cosmetic, not progress, and
-   often trivially reversible (whatever gets newly exposed at the
-   source is frequently legal to receive the card right back). Hint
-   now only ever suggests a move that reveals a hidden card, empties a
-   column outright, or extends an existing SAME-SUIT run — genuine
-   progress toward a completable K-A sequence. The permissive "any
-   legal move at all" check still exists (as hasAnyLegalMove) but is
-   now used only to decide the real "No More Moves" stuck state, not
-   to pick what Hint recommends.
-
-    Version 0.4
-
-   Real crest artwork (Spider-crest.webp) replaces the placeholder
-   spider emoji glyph — sized with background-size:contain rather
-   than a fixed percentage, since the source art isn't square, so it
-   scales as large as possible with zero cropping regardless of its
-   own aspect ratio. Home button now points at "./" instead of
-   "index.html" — this had never actually been switched over despite
-   looking like it should have been; every subsequent version handed
-   over was still built from the original unedited copy.
-
-    Version 0.3
-
-   Added Thoughtful mode, same idea and same toggle as Klondike's:
-   shows every face-down tableau card's real face, dimmed, so you can
-   plan ahead — those cards stay untouchable (pointer-events blocked)
-   and the draw pile is unaffected either way, since it only ever
-   shows a generic back regardless.
-
-    Version 0.2
-
-   Layout now matches how real Spider is traditionally laid out
-   instead of reusing Klondike/FreeCell's top-row arrangement: the
-   draw pile moved from a top-row slot down to the bottom-right
-   corner, and the 8 completed-run slots moved to the bottom-left as
-   a sideways-overlapping fan (see .foundations-fan) instead of 8
-   evenly-spaced boxes — Spider doesn't really have "foundations" the
-   way other games do, just a place completed runs get swept off to,
-   so a loose fanned pile reads truer to the real game than a formal
-   row of slots. User-facing text now says "draw pile" instead of
-   "stock" too (Spider is one of the few solitaire variants where that
-   really is the traditional name for it) — internal code/state still
-   calls it stock, only what the player sees changed.
-
-    Version 0.1
-
-   First build. New game built on the shared engine.js + styles.css,
-   following the same split every other game in the suite uses: this
-   file only owns what's actually specific to Spider (10 tableau
-   columns, a 50-card stock dealt 10-at-a-time instead of free cells or
-   a waste pile, 8 generic foundation slots instead of 4 per-suit ones,
-   and the rules for both), while drag/drop, click-to-move, undo,
-   settings shell, hint pulse/toast, win cascade, and screen-fit sizing
-   all come from engine.js untouched.
-
-   Spider-specific rules, different from every other game here:
-     - An empty column accepts ANY card (like FreeCell), but otherwise
-       a card can be placed on ANY card exactly one rank higher,
-       regardless of suit or color (unlike Klondike/FreeCell's
-       alternating-color requirement).
-     - Only a run of cards that's all the SAME SUIT and sequential can
-       be picked up and moved together — a mixed-suit sequence that's
-       merely rank-legal to look at can still only move one card at a
-       time. There's no free-cell-style cap on how long a same-suit run
-       can be (no supermove-size formula needed at all).
-     - No manual foundation drops: completing a full King-to-Ace
-       same-suit run anywhere in a column is detected automatically
-       after every move/deal and swept off to the next open foundation
-       slot on its own (see processCompletedRuns).
-     - The "Suits" difficulty slider (1-4, default 1) controls how many
-       distinct suits the two-deck, 104-card shoe is built from — 1 is
-       the classic easiest variant (all Spades), 4 is the classic
-       hardest (all four suits) — via buildSpiderDeck's set-cycling
-       below. 2 and 3 are supported the same way even though only 1/2/4
-       are the traditional named variants.
-     - Dealing a new row from the stock (10 cards, one face-up onto
-       each column) is blocked while any column is empty, per the
-       standard rule — same as classic Spider.
-   ========================================================= -->
+  Spider-specific rules, different from every other game here:
+    - An empty column accepts ANY card (like FreeCell), but otherwise
+      a card can be placed on ANY card exactly one rank higher,
+      regardless of suit or color (unlike Klondike/FreeCell's
+      alternating-color requirement).
+    - Only a run of cards that's all the SAME SUIT and sequential can
+      be picked up and moved together — a mixed-suit sequence that's
+      merely rank-legal to look at can still only move one card at a
+      time. There's no free-cell-style cap on how long a same-suit run
+      can be (no supermove-size formula needed at all).
+    - No manual foundation drops: completing a full King-to-Ace
+      same-suit run anywhere in a column is detected automatically
+      after every move/deal and swept off to the next open foundation
+      slot on its own (see processCompletedRuns).
+    - The "Suits" difficulty slider (1-4, default 1) controls how many
+      distinct suits the two-deck, 104-card shoe is built from — 1 is
+      the classic easiest variant (all Spades), 4 is the classic
+      hardest (all four suits) — via buildSpiderDeck's set-cycling
+      below. 2 and 3 are supported the same way even though only 1/2/4
+      are the traditional named variants.
+    - Dealing a new row from the draw pile (10 cards, one face-up onto
+      each column) is blocked while any column is empty, per the
+      standard rule — same as classic Spider.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -382,7 +299,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.0';
+const PAGE_VERSION = '1.1';
 const SUITS = E.SUITS, RANKS = E.RANKS;
 
 /* =========================================================
@@ -562,17 +479,70 @@ function announceCompletedRuns(completedSlots){
    Deals one card face-up onto each of the 10 columns — the standard
    rule blocks this while any column is empty, same as classic Spider.
    ========================================================= */
+// Cosmetic-only, same idea as FreeCell's animateSupermoveFly: the real
+// state change (and renderAll) already happened before this runs, so
+// this can never affect game logic — it just hides each freshly-dealt
+// card for a moment and flies a clone of it from the draw pile to
+// where it actually landed, staggered one after another instead of
+// all 10 just appearing at once. `dealt` is the array of real card
+// objects that were just pushed (in column order); `sourceRect` is the
+// draw pile's own position, captured BEFORE the deal (querying it
+// after would find an empty/changed pile).
+const DEAL_STAGGER = 70, DEAL_FLIGHT_MS = 220;
+function animateDealFly(dealt, sourceRect){
+  if(!sourceRect || !dealt.length) return;
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:900;';
+  document.body.appendChild(layer);
+  let remaining = dealt.length;
+  function finishOne(){
+    remaining--;
+    if(remaining<=0) layer.remove();
+  }
+  dealt.forEach((card, i)=>{
+    const destEl = document.querySelector('.card[data-id="'+card.id+'"]');
+    if(!destEl){ finishOne(); return; } // e.g. this exact card got swept into a completed run before it ever got drawn
+    const toRect = destEl.getBoundingClientRect();
+    destEl.style.visibility = 'hidden';
+    setTimeout(()=>{
+      const clone = destEl.cloneNode(true);
+      clone.style.position = 'fixed';
+      clone.style.visibility = 'visible';
+      clone.style.margin = '0';
+      clone.style.zIndex = 901;
+      clone.style.left = sourceRect.left+'px';
+      clone.style.top = sourceRect.top+'px';
+      clone.style.width = sourceRect.width+'px';
+      clone.style.height = sourceRect.height+'px';
+      layer.appendChild(clone);
+      const anim = clone.animate([
+        { left: sourceRect.left+'px', top: sourceRect.top+'px' },
+        { left: toRect.left+'px', top: toRect.top+'px' }
+      ], { duration: DEAL_FLIGHT_MS, easing: 'ease-out', fill: 'forwards' });
+      anim.onfinish = ()=>{
+        clone.remove();
+        destEl.style.visibility = '';
+        finishOne();
+      };
+    }, i*DEAL_STAGGER);
+  });
+}
 function dealFromStock(){
   if(state.stock.length===0){ E.showToast(toastEl, 'No cards left in the draw pile.'); return; }
   if(state.tableau.some(col=>col.length===0)){ E.showToast(toastEl, 'Fill every empty column before dealing.'); return; }
+  const stockEl = document.getElementById('pile-stock');
+  const sourceRect = stockEl ? stockEl.getBoundingClientRect() : null;
   undo.push();
+  const dealt = [];
   for(let c=0;c<10;c++){
     const card = state.stock.pop();
     card.faceUp = true;
     state.tableau[c].push(card);
+    dealt.push(card);
   }
   const completed = processCompletedRuns();
   renderAll();
+  animateDealFly(dealt, sourceRect);
   announceCompletedRuns(completed);
 }
 
