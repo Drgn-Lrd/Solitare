@@ -2,27 +2,17 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.14
+    Version 1.15
 
-   Two changes: (1) Replaced the separate popup test window entirely
-   with an inline test panel (Settings → "Show Test Controls") that
-   adds buttons directly under the real adventure track. It's wired
-   straight to mainCtx — the exact same functions, DOM, and CSS the
-   real game uses, not a second copy with its own stylesheet overrides
-   that can (and did, repeatedly) drift out of sync. A "Zoom Track"
-   button is a pure CSS transform:scale on the track for closer
-   inspection — that doesn't touch offsetWidth/offsetHeight, so it
-   can't reintroduce the kind of size-mismatch bug the popup's overrides
-   caused. Also fixed a real bug along the way: testOpenChest() had
-   been calling handleWin() directly, which would have set the real
-   cascadePlayed flag and popped the actual winmask during an ongoing
-   game — extracted the cinematic into its own playChestCinematic()
-   function so the preview and the real win share one implementation
-   without the state side effects. (2) Pits are permanent now, so undo
-   needs to explicitly remove any that belong to a reverted move —
-   added pitLog, tagging each pit with the "cleared" count it was
-   created at, and the undo restore callback removes any pit whose tag
-   is past the newly-restored progress.
+   Test panel's Reset Position now: (1) removes only the pits test
+   buttons themselves created (tracked in a separate testPitLog, kept
+   apart from the real game's pitLog so actual gameplay pits are never
+   touched), and (2) returns him to wherever real game progress says
+   he should actually be (trackLeftPct against state.cardsRemaining),
+   not a fixed 46% — so pressing it undoes exactly what test-button
+   presses did and nothing else, leaving any real progress/pits
+   exactly as they were before testing started. spawnPit/spawnObstacle
+   now return the created element so callers can track it.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -690,7 +680,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.14';
+const PAGE_VERSION = '1.15';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -1039,6 +1029,7 @@ function spawnPit(ctx, obstacle, targetLeft, cleared){
     setTimeout(()=> pit.remove(), 1150);
   }
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
+  return pit;
 }
 function spawnTraveling(ctx, obstacle, targetLeft){
   const el = ctx.track.ownerDocument.createElement('div');
@@ -1064,7 +1055,7 @@ function spawnTraveling(ctx, obstacle, targetLeft){
 function spawnObstacle(ctx, obstacle, targetLeft, cleared){
   if(obstacle.type === 'blade') return spawnBlade(ctx, obstacle, targetLeft);
   if(obstacle.type === 'pit') return spawnPit(ctx, obstacle, targetLeft, cleared);
-  spawnTraveling(ctx, obstacle, targetLeft);
+  return spawnTraveling(ctx, obstacle, targetLeft);
 }
 // Classic Pyramid rules don't allow reshuffling the stock at all —
 // this game deliberately relaxes that, but gives it a visual cost: a
@@ -1289,6 +1280,7 @@ function spawnSparkles(container, count){
    ========================================================= */
 const testCtx = { ...mainCtx, toastEl: document.getElementById('test-toast') };
 let testBusy = false;
+let testPitLog = []; // pits created BY test-panel button presses, tracked separately from real pitLog
 function runTest(fn, holdMs){
   if(testBusy) return;
   testBusy = true;
@@ -1306,13 +1298,30 @@ function testAdvance(obstacle){
   document.getElementById('adventure-fill').style.width = p + '%';
   document.getElementById('chest').classList.toggle('near', p > 75);
   if(obstacle){
-    spawnObstacle(testCtx, obstacle, p); // no `cleared` passed — not a real move, nothing for undo to track
+    // No `cleared` passed — this isn't a real move, so spawnPit won't
+    // log it into the real pitLog (nothing for the game's own undo to
+    // track). If it made a pit, track it here instead so Reset can
+    // remove just the test-made ones.
+    const result = spawnObstacle(testCtx, obstacle, p);
+    if(obstacle.type === 'pit' && result) testPitLog.push(result);
   } else {
     playReaction(testCtx, 'running', 600);
   }
 }
 function testOpenChest(){
   playChestCinematic(); // same sequence as a real win, no game-state side effects
+}
+function testResetPosition(){
+  // Removes only the pits test buttons added — any pit from actual
+  // gameplay (tracked in the real pitLog, not this one) is untouched —
+  // and takes him back to where real game progress says he should be,
+  // undoing whatever the test buttons did to his position.
+  testPitLog.forEach(el=> el.remove());
+  testPitLog = [];
+  const realPct = trackLeftPct(28 - state.cardsRemaining);
+  document.getElementById('adventurer').style.left = realPct + '%';
+  document.getElementById('adventure-fill').style.width = realPct + '%';
+  document.getElementById('chest').classList.toggle('near', realPct > 75);
 }
 document.querySelectorAll('.test-controls button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -1325,7 +1334,7 @@ document.querySelectorAll('.test-controls button').forEach(btn=>{
     else if(act==='bigjump'){ runTest(()=> testAdvance(getObstacle('pit', false)), 1400); }
     else if(act==='whipswing'){ runTest(()=> testAdvance(getObstacle('pit', true)), 1600); }
     else if(act==='reshuffle'){ runTest(()=> playReshufflePenalty(testCtx, testCurrentPct), 1900); }
-    else if(act==='reset'){ document.getElementById('adventurer').style.left = '46%'; document.getElementById('adventure-fill').style.width = '46%'; }
+    else if(act==='reset'){ testResetPosition(); }
     else if(act==='chest'){ testOpenChest(); }
     else if(act==='zoom'){
       document.getElementById('adventure-track').classList.toggle('zoomed');
@@ -1599,6 +1608,7 @@ function newGame(){
   updateCheckpoints();
   document.querySelectorAll('#adventure-track .pit-trap').forEach(el=> el.remove());
   pitLog = [];
+  testPitLog = [];
 
   document.getElementById('winmask').classList.remove('show');
   E.applyHudVisibility(state);
