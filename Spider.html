@@ -2,6 +2,21 @@
 <!--
     Spider.html
     Written by: Johnathon Largent
+    Version 0.2
+
+   Layout now matches how real Spider is traditionally laid out
+   instead of reusing Klondike/FreeCell's top-row arrangement: the
+   draw pile moved from a top-row slot down to the bottom-right
+   corner, and the 8 completed-run slots moved to the bottom-left as
+   a sideways-overlapping fan (see .foundations-fan) instead of 8
+   evenly-spaced boxes — Spider doesn't really have "foundations" the
+   way other games do, just a place completed runs get swept off to,
+   so a loose fanned pile reads truer to the real game than a formal
+   row of slots. User-facing text now says "draw pile" instead of
+   "stock" too (Spider is one of the few solitaire variants where that
+   really is the traditional name for it) — internal code/state still
+   calls it stock, only what the player sees changed.
+
     Version 0.1
 
    First build. New game built on the shared engine.js + styles.css,
@@ -66,6 +81,36 @@
     box-shadow: 0 2px 4px rgba(0,0,0,.4); pointer-events:none;
     padding:0 4px;
   }
+
+  /* Bottom row (draw pile bottom-right, completed-run fan bottom-left)
+     instead of the shared .top-row every other game uses — real Spider
+     traditionally puts the draw pile in the bottom-right corner, not
+     up top. Same spacing amount .top-row uses, just as margin-TOP
+     since this row now comes second in the DOM instead of first. */
+  .bottom-row{ justify-content:space-between; align-items:flex-end; margin-top: clamp(10px,2vw,20px); }
+
+  /* Completed suits fan out sideways, overlapping — real Spider has no
+     per-suit "foundation" concept the way Klondike/FreeCell do, just a
+     spot completed runs get swept off to, so this reads as a loose
+     fanned pile (only a sliver of each earlier completion peeking out
+     to the left of the next) rather than 8 separate formal slots.
+     Each slot is positioned via plain nth-child rules below rather
+     than JS, since there are always exactly 8 of them. */
+  .foundations-fan{
+    position: relative;
+    width: calc(var(--card-w) + var(--card-w) * 0.22 * 7);
+    height: var(--card-h);
+    flex-shrink: 0;
+  }
+  .foundations-fan .pile.slot{ position:absolute; top:0; }
+  .foundations-fan .pile.slot:nth-child(1){ left:0; }
+  .foundations-fan .pile.slot:nth-child(2){ left:calc(var(--card-w)*0.22*1); }
+  .foundations-fan .pile.slot:nth-child(3){ left:calc(var(--card-w)*0.22*2); }
+  .foundations-fan .pile.slot:nth-child(4){ left:calc(var(--card-w)*0.22*3); }
+  .foundations-fan .pile.slot:nth-child(5){ left:calc(var(--card-w)*0.22*4); }
+  .foundations-fan .pile.slot:nth-child(6){ left:calc(var(--card-w)*0.22*5); }
+  .foundations-fan .pile.slot:nth-child(7){ left:calc(var(--card-w)*0.22*6); }
+  .foundations-fan .pile.slot:nth-child(8){ left:calc(var(--card-w)*0.22*7); }
 </style>
 </head>
 <body>
@@ -76,7 +121,7 @@
     <div class="brand-text">
       <h1>Spider</h1>
       <div class="brand-actions">
-        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
       </div>
     </div>
@@ -87,23 +132,26 @@
   </div>
 </header>
 
-<!-- Stock (left) + 8 completed-run foundation slots (right) up top,
-     10 tableau columns below — 54 cards dealt to the tableau (4
-     columns of 6, 6 columns of 5, only the last of each face-up), the
-     remaining 50 held back in the stock for later 10-card deals. -->
+<!-- 10 tableau columns fill most of the board — 54 cards dealt to the
+     tableau (4 columns of 6, 6 columns of 5, only the last of each
+     face-up), the remaining 50 held back in the draw pile. Below that,
+     the traditional Spider arrangement: the 8 completed-run slots
+     fanned out bottom-left, the draw pile bottom-right — not a
+     top-row like the other games, since Spider doesn't put either of
+     these up top in the real game. -->
 <div class="stage">
   <div class="table-frame">
     <div class="table-felt">
-      <div class="row top-row">
+      <div class="row tableau-row" id="tableau"></div>
+      <div class="row bottom-row">
+        <div class="foundations-fan" id="foundations-row"></div>
         <div class="stockwaste" id="stock-group">
-          <div class="pile slot" id="pile-stock" data-type="stock">
+          <div class="pile slot" id="pile-stock" data-type="stock" title="Draw pile">
             <div class="slot-mark">↺</div>
             <div class="stock-badge" id="stock-badge" style="display:none;"></div>
           </div>
         </div>
-        <div class="foundations" id="foundations-row"></div>
       </div>
-      <div class="row tableau-row" id="tableau"></div>
     </div>
   </div>
 </div>
@@ -115,7 +163,7 @@
   <div class="bottombar-actions">
     <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
-    <button class="bottombtn" id="btn-deal" title="Deal a new row from the stock"><span class="bicon">⇩</span><span class="blabel">Deal</span></button>
+    <button class="bottombtn" id="btn-deal" title="Deal a new row from the draw pile"><span class="bicon">⇩</span><span class="blabel">Deal</span></button>
   </div>
   <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
 </div>
@@ -153,11 +201,11 @@
     <h3>How to Play</h3>
     <div class="sub">Spider Solitaire</div>
     <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
-      <li>Two decks (104 cards) are in play. 54 are dealt across 10 tableau columns (only the top card of each face-up); the other 50 sit in the stock.</li>
+      <li>Two decks (104 cards) are in play. 54 are dealt across 10 tableau columns (only the top card of each face-up); the other 50 sit in the draw pile.</li>
       <li>Build tableau columns DOWN one rank at a time — <b>any suit</b> can sit on any other, unlike Klondike. An empty column accepts any card.</li>
       <li>Only a run that's the <b>same suit</b> and perfectly sequential can be dragged as a group. A mixed-suit sequence still looks tidy on the table, but you can only move one card of it at a time.</li>
       <li>Build a complete King-to-Ace run of one suit anywhere in a column and it clears itself off to a foundation slot automatically — no need to drag it there.</li>
-      <li>Tap the stock (or the <b>Deal</b> button) to deal one new face-up card onto every column — only when no column is empty.</li>
+      <li>Tap the draw pile (or the <b>Deal</b> button) to deal one new face-up card onto every column — only when no column is empty.</li>
       <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make.</li>
       <li>Settings lets you choose how many suits (1-4) the deck is built from — 1 suit is the easiest classic variant, 4 is the hardest.</li>
     </ul>
@@ -392,7 +440,7 @@ function announceCompletedRuns(completedSlots){
    rule blocks this while any column is empty, same as classic Spider.
    ========================================================= */
 function dealFromStock(){
-  if(state.stock.length===0){ E.showToast(toastEl, 'No cards left in the stock.'); return; }
+  if(state.stock.length===0){ E.showToast(toastEl, 'No cards left in the draw pile.'); return; }
   if(state.tableau.some(col=>col.length===0)){ E.showToast(toastEl, 'Fill every empty column before dealing.'); return; }
   undo.push();
   for(let c=0;c<10;c++){
@@ -460,7 +508,7 @@ function showHint(){
       E.pulse(findCardEl('tableau', move.fromKey, move.index));
       break;
     case 'deal':
-      E.showToast(toastEl, 'Deal a new row from the stock.');
+      E.showToast(toastEl, 'Deal a new row from the draw pile.');
       E.pulse(document.getElementById('pile-stock'));
       break;
   }
@@ -504,12 +552,11 @@ function renderAll(){
   ensureFoundations();
   E.fitBoard({
     columns: 10,
-    // Top row = 1 stock pile + 8 foundation slots = 9 card-widths,
-    // with 8 total gaps (7 within the foundation group + 1 between
-    // the stock and foundation groups) — see the comment on
-    // fitBoard's extraRows in engine.js for why this needs spelling
-    // out separately from the tableau's own column count.
-    extraRows: [{ units: 9, gaps: 8 }],
+    // No extraRows needed here — unlike the old top-row layout, the
+    // bottom row's fanned foundations (~2.5 card-widths, overlapping)
+    // plus the draw pile take up far less width than the 10-column
+    // tableau above them, so the tableau is always the binding
+    // constraint on card size.
     getMaxStackDepth: ()=> Math.max(6, ...state.tableau.map(c=>c.length)),
     minStackForFit: 6
   });
@@ -804,7 +851,6 @@ window.addEventListener('resize', ()=>{
   resizeTimer = setTimeout(()=>{
     E.fitBoard({
       columns: 10,
-      extraRows: [{ units: 9, gaps: 8 }],
       getMaxStackDepth: ()=> Math.max(6, ...state.tableau.map(c=>c.length)),
       minStackForFit: 6
     });
