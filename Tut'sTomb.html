@@ -62,7 +62,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Tut's Tomb</title>
 <link rel="preload" as="image" href="images/Tut'sTomb.webp">
-<link rel="preload" as="image" href="images/Tut'sTomb-crest.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
   /* =========================================================
@@ -85,10 +84,7 @@
   }
 
   html, body {
-    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Tut'sTomb.webp');
-    background-size: cover;
-    background-position: center;
-    background-attachment: fixed;
+    background: radial-gradient(ellipse at 50% -10%, #2c2013, #0a0704 65%);
   }
 
   /* Crest: the whole badge image, scaled DOWN (not cropped) so nothing
@@ -97,7 +93,7 @@
      rather than looking like a cut-out. */
   .brand .crest {
     background-color: #008081;
-    background-image: url("images/Tut'sTomb-crest.webp");
+    background-image: url("images/Tut'sTomb.webp");
     background-size: 72%;
     background-position: center;
     background-repeat: no-repeat;
