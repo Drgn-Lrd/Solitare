@@ -2,30 +2,36 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.3
+    Version 1.4
 
-   Another round of fixes: (1) Added a Settings → Testing → "Open
-   Animation Test Window" button that pops a same-origin window,
-   zoomed in on the track with the adventurer parked at the center
-   line, with buttons to fire every obstacle reaction and the chest
-   cinematic on demand — it reuses this file's own live SVG/CSS
-   constants rather than a hand-copied duplicate, so it can't drift
-   out of sync. (2) Adventurer's jacket is now black leather (was a
-   tan/gold gradient that read as a park-ranger uniform), whip is a
-   clearer yellow-tan, hat stays brown. (3) The winnable-deal solver
-   had a real bug: it checked deck[0..27] as "the pyramid" and
-   deck[28..51] as "the stock", but newGame() actually deals the
-   pyramid from deck[24..51] (popped from the end) and deck[0..23] as
-   the stock — a completely different pair of card sets than what was
-   being validated. It also modeled the stock as a freely-accessible
-   multiset by rank rather than the fixed, one-card-at-a-time sequence
-   it actually is. Rewritten to mirror newGame()'s exact dealing order
-   and simulate the real deterministic, cyclically-repeating draw
-   sequence — including Kings buried in the stock resolving correctly
-   without needing to "be in the draw pile" at deal time. (4) Hint no
-   longer says "draw a card" when nothing left anywhere in the stock
-   or buried waste could ever complete a match against what's
-   currently exposed.
+   Playtest round on the obstacle animations themselves, mostly fixing
+   real bugs rather than tuning: (1) The animation-trigger functions
+   (spawnObstacle, playReaction, spawnDust, etc.) were hand-duplicated
+   between this file and the popup test window, which is exactly how
+   they'd already drifted apart — refactored into one shared,
+   ctx-parameterized copy that the popup now calls directly off
+   window.opener, so there's nothing left to keep in sync by hand.
+   (2) Big-jump (the pit obstacle) had no horizontal motion and fired
+   300ms after the position-slide had already finished, so by the time
+   he "jumped" he'd already arrived at the pit and was just bouncing
+   vertically in place on top of it — added a forward arc and fires
+   near-immediately so the leap plays WHILE he's still crossing. (3)
+   The whip-swing rope was anchored behind him, on the opposite side
+   from the direction he actually swings — moved it ahead of the pit,
+   on his swing-toward side. (4) Boulder previously traveled the same
+   low ground path as the snake/scorpion, reading as a head-on
+   collision rather than something to duck under — it now falls/travels
+   near the top of the track. (5) Replaced the snake emoji (rendered
+   inconsistently tall across fonts) with a custom low, wide SVG,
+   head-forward with a two-loop body. (6) Treasure now emerges from
+   the actual center of the chest's light-burst glow instead of
+   sitting beside the chest as a separate flex column — also fixed a
+   real bug where the treasure/treasure-wrap DOM references were
+   grabbed before those elements existed yet (always null). (7) Added
+   a brief backward "stumble" when the waste reshuffles back into the
+   stock — flavor-only, cardsRemaining is untouched — since classic
+   Pyramid rules don't allow reshuffling at all and this game
+   deliberately relaxes that.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -223,24 +229,39 @@
     35%      { transform: translateX(-15px) rotate(-9deg); }
     65%      { transform: translateX(-15px) rotate(-9deg); }
   }
-  /* Big jump — clearing a ground pit on foot. */
+  /* Big jump — clearing a ground pit on foot. Has a forward arc (not
+     pure vertical) and a shorter duration so it plays WHILE he's still
+     sliding to position, instead of finishing after he's already
+     arrived and just bouncing in place on top of the pit. */
   @keyframes bigJumpAnim {
-    0%, 100% { transform: translateY(0) rotate(0deg); }
-    50%      { transform: translateY(-34px) rotate(-8deg); }
+    0%   { transform: translate(0,0) rotate(0deg); }
+    40%  { transform: translate(16px,-32px) rotate(-8deg); }
+    70%  { transform: translate(24px,-8px) rotate(5deg); }
+    100% { transform: translate(0,0) rotate(0deg); }
   }
-  /* Whip-swing — the bonus: grabs a high point and arcs across the pit. */
+  /* Whip-swing — the bonus: grabs the rope (now hanging ahead of him,
+     on the side he swings toward) and arcs across the pit. */
   @keyframes whipSwingAnim {
     0%   { transform: translate(0,0) rotate(0deg); }
-    35%  { transform: translate(14px,-26px) rotate(18deg); }
-    65%  { transform: translate(30px,-8px) rotate(-8deg); }
+    40%  { transform: translate(22px,-30px) rotate(20deg); }
+    70%  { transform: translate(34px,-8px) rotate(-8deg); }
     100% { transform: translate(0,0) rotate(0deg); }
+  }
+  /* Reshuffle stumble — a brief backward wobble, not a real rollback. */
+  @keyframes stumbleAnim {
+    0%, 100% { transform: translateX(0) rotate(0deg); }
+    20%      { transform: translateX(-4px) rotate(-6deg); }
+    40%      { transform: translateX(3px) rotate(4deg); }
+    60%      { transform: translateX(-3px) rotate(-3deg); }
+    80%      { transform: translateX(2px) rotate(2deg); }
   }
   #adventurer-inner.running   { animation: runBob 0.8s ease-in-out; }
   #adventurer-inner.jump      { animation: jumpAnim 0.9s ease; }
   #adventurer-inner.duck      { animation: duckAnim 1s ease; }
   #adventurer-inner.stepback  { animation: stepbackAnim 1s ease; }
-  #adventurer-inner.bigjump   { animation: bigJumpAnim 1.3s ease; }
+  #adventurer-inner.bigjump   { animation: bigJumpAnim 0.9s ease; }
   #adventurer-inner.whipswing { animation: whipSwingAnim 1.3s ease-in-out; }
+  #adventurer-inner.stumble   { animation: stumbleAnim 1.8s ease-in-out; }
 
   .obstacle {
     position: absolute;
@@ -250,6 +271,11 @@
     filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));
     transform: translateX(-50%);
   }
+  /* Boulder falls from above rather than rolling in at ground/head
+     level — previously it traveled the same low path as the ground
+     creatures, which read as a head-on collision, not something to
+     duck under. */
+  .obstacle.high { bottom: auto; top: 4px; }
 
   /* Swinging blade trap — hangs and arcs in place rather than
      traveling down the path. */
@@ -380,7 +406,11 @@
   }
   #chest-rig.open #chest-glow { opacity: 1; width: 240px; height: 200px; }
 
-  #treasure-wrap { position: relative; }
+  #treasure-wrap {
+    position: absolute; left: 50%; bottom: 70px;
+    transform: translateX(-50%);
+    z-index: 3;
+  }
   #treasure-reveal {
     font-size: 0;
     opacity: 0;
@@ -461,7 +491,6 @@
 
 <div id="cinematic-overlay">
   <div id="cinematic-hero"></div>
-  <div id="treasure-wrap"><div id="treasure-reveal"></div></div>
 </div>
 
 <div class="winmask" id="winmask">
@@ -570,15 +599,31 @@ const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 // here — clearing it is the win, handled separately by handleWin().
 const ROW_CLEAR_THRESHOLDS = [7, 13, 18, 22, 25, 27];
 
+// Custom snake art — the emoji glyph rendered too tall/inconsistent
+// across fonts to read as "jump over." Wide and short on purpose
+// (viewBox 120x40) so it's visually a low, hop-able hazard, head
+// leading in the direction of travel (right — obstacles travel
+// right-to-left toward him) with a two-loop S-curve body.
+const SVG_SNAKE = `<svg viewBox="0 0 120 40" width="1.8em" height="0.6em" style="vertical-align:middle;">
+  <path d="M4,22 C14,8 26,8 34,22 C42,36 54,36 62,22 C70,9 82,9 90,20 C95,25 100,20 104,15"
+        fill="none" stroke="#0a0a0a" stroke-width="9" stroke-linecap="round"/>
+  <ellipse cx="106" cy="14" rx="7" ry="5.5" fill="#0a0a0a"/>
+  <circle cx="108" cy="12" r="1.1" fill="#fff"/>
+  <path d="M112,13 L118,10 M112,15 L118,17" stroke="#0a0a0a" stroke-width="1.4" stroke-linecap="round"/>
+</svg>`;
+
 // Each obstacle has its own reaction so "dodging" reads as several
 // different things happening, not one generic hop. 'pit' has a chance
-// to upgrade to the bonus whip-swing (see pickObstacle).
+// to upgrade to the bonus whip-swing (see pickObstacle). 'boulder' is
+// flagged 'high' — it travels near the TOP of the track (falling from
+// above), not at ground level, so ducking under it actually makes
+// sense instead of reading as a head-on collision.
 const OBSTACLES = [
-  { type: 'boulder',  icon: '🪨', reaction: 'duck',     msg: 'Ducked a falling boulder!' },
-  { type: 'blade',    icon: null, reaction: 'stepback', msg: 'Dodged a swinging blade trap!' },
-  { type: 'snake',    icon: '🐍', reaction: 'jump',     msg: 'Leapt over a coiled cobra!' },
-  { type: 'scorpion', icon: '🦂', reaction: 'jump',     msg: 'Hopped clear of a scorpion!' },
-  { type: 'pit',      icon: null, reaction: 'bigjump',  msg: 'Jumped a crumbling pit!' }
+  { type: 'boulder',  render:'emoji', icon: '🪨',     high: true,  reaction: 'duck',     msg: 'Ducked a falling boulder!' },
+  { type: 'blade',    render:null,    icon: null,                  reaction: 'stepback', msg: 'Dodged a swinging blade trap!' },
+  { type: 'snake',    render:'svg',   icon: SVG_SNAKE, high: false, reaction: 'jump',     msg: 'Leapt over a slithering cobra!' },
+  { type: 'scorpion', render:'emoji', icon: '🦂',     high: false, reaction: 'jump',     msg: 'Hopped clear of a scorpion!' },
+  { type: 'pit',      render:null,    icon: null,                  reaction: 'bigjump',  msg: 'Jumped a crumbling pit!' }
 ];
 function pickObstacle(){
   const base = OBSTACLES[Math.floor(Math.random()*OBSTACLES.length)];
@@ -586,6 +631,14 @@ function pickObstacle(){
     return { type:'pit', reaction:'whipswing', msg:'Swung across the pit on his whip!' };
   }
   return base;
+}
+// Deterministic lookup for the test rig — pick an exact obstacle by
+// type rather than the random gameplay selection above.
+function getObstacle(type, wantWhip){
+  if(type === 'pit' && wantWhip){
+    return { type:'pit', reaction:'whipswing', msg:'Swung across the pit on his whip!' };
+  }
+  return OBSTACLES.find(o=>o.type===type);
 }
 
 /* =========================================================
@@ -670,6 +723,7 @@ function buildChestRig(){
     + '<div id="chest-glow"></div>'
     + '<div id="chest-body-wrap">'+SVG_CHEST_BODY+'</div>'
     + '<div id="chest-lid-wrap">'+SVG_CHEST_LID+'</div>'
+    + '<div id="treasure-wrap"><div id="treasure-reveal"></div></div>'
     + '</div>';
 }
 
@@ -723,95 +777,126 @@ document.addEventListener('DOMContentLoaded', ()=>{
   buildCheckpoints();
 });
 
-function spawnDust(leftPct){
-  const track = document.getElementById('adventure-track');
-  const dust = document.createElement('div');
-  dust.className = 'dust-puff';
-  dust.style.left = leftPct + '%';
-  track.appendChild(dust);
-  setTimeout(()=> dust.remove(), 850);
-}
+// Single set of animation-trigger functions, shared by the real game
+// AND the popup test window (called via window.__tutsAnimAssets) —
+// parameterized on a small ctx object instead of hardcoded
+// document.getElementById calls, so there is exactly one copy of this
+// logic to keep in sync, not two that can quietly drift apart.
+const mainCtx = {
+  track: document.getElementById('adventure-track'),
+  inner: document.getElementById('adventurer-inner'),
+  adventurerEl: document.getElementById('adventurer'),
+  toastEl: document.getElementById('hint-toast')
+};
 
 function resetAdventurerAnim(inner){
-  inner.classList.remove('running','jump','duck','stepback','bigjump','whipswing');
+  inner.classList.remove('running','jump','duck','stepback','bigjump','whipswing','stumble');
   void inner.offsetWidth;
 }
-function playReaction(reaction, holdMs){
-  const inner = document.getElementById('adventurer-inner');
-  resetAdventurerAnim(inner);
-  inner.classList.add(reaction);
-  setTimeout(()=> inner.classList.remove(reaction), holdMs);
+function playReaction(ctx, reaction, holdMs){
+  resetAdventurerAnim(ctx.inner);
+  ctx.inner.classList.add(reaction);
+  setTimeout(()=> ctx.inner.classList.remove(reaction), holdMs);
 }
+function spawnDust(ctx, leftPct){
+  const dust = ctx.track.ownerDocument.createElement('div');
+  dust.className = 'dust-puff';
+  dust.style.left = leftPct + '%';
+  ctx.track.appendChild(dust);
+  setTimeout(()=> dust.remove(), 850);
+}
+function spawnBlade(ctx, obstacle, targetLeft){
+  const rig = ctx.track.ownerDocument.createElement('div');
+  rig.className = 'blade-rig';
+  rig.style.left = targetLeft + '%';
+  rig.innerHTML = '<div class="rod"></div><div class="blade"></div>';
+  ctx.track.appendChild(rig);
+  setTimeout(()=> rig.remove(), 1700);
+  setTimeout(()=> playReaction(ctx, obstacle.reaction, 1050), 620);
+  if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
+}
+function spawnPit(ctx, obstacle, targetLeft){
+  const pit = ctx.track.ownerDocument.createElement('div');
+  pit.className = 'pit-trap';
+  pit.style.left = targetLeft + '%';
+  ctx.track.appendChild(pit);
+  requestAnimationFrame(()=> requestAnimationFrame(()=> pit.classList.add('show')));
 
-function spawnObstacle(obstacle, targetLeft){
-  const track = document.getElementById('adventure-track');
-  const toastEl = document.getElementById('hint-toast');
-
-  if(obstacle.type === 'blade'){
-    const rig = document.createElement('div');
-    rig.className = 'blade-rig';
-    rig.style.left = targetLeft + '%';
-    rig.innerHTML = '<div class="rod"></div><div class="blade"></div>';
-    track.appendChild(rig);
-    setTimeout(()=> rig.remove(), 1700);
-    setTimeout(()=> playReaction(obstacle.reaction, 1050), 620);
-    E.showToast(toastEl, obstacle.msg);
-    return;
+  if(obstacle.reaction === 'whipswing'){
+    // Rope hangs AHEAD of the pit, on the side he's actually swinging
+    // TOWARD, so the arc reads as grabbing it and crossing — it was
+    // previously placed behind him, on the wrong side entirely.
+    const rope = ctx.track.ownerDocument.createElement('div');
+    rope.className = 'whip-rope';
+    rope.style.left = (targetLeft + 4) + '%';
+    ctx.track.appendChild(rope);
+    setTimeout(()=> rope.remove(), 1500);
+    setTimeout(()=> playReaction(ctx, obstacle.reaction, 1300), 150);
+  } else {
+    // Big jump fires almost immediately (rather than after a 300ms
+    // delay) so its horizontal arc plays WHILE he's still sliding to
+    // targetLeft — previously the slide finished first and the jump
+    // just bounced him up and down in place at the pit, looking like
+    // he was landing on it instead of clearing it.
+    setTimeout(()=> playReaction(ctx, obstacle.reaction, 900), 80);
   }
 
-  if(obstacle.type === 'pit'){
-    const pit = document.createElement('div');
-    pit.className = 'pit-trap';
-    pit.style.left = targetLeft + '%';
-    track.appendChild(pit);
-    requestAnimationFrame(()=> requestAnimationFrame(()=> pit.classList.add('show')));
-
-    if(obstacle.reaction === 'whipswing'){
-      const rope = document.createElement('div');
-      rope.className = 'whip-rope';
-      rope.style.left = (targetLeft - 6) + '%';
-      track.appendChild(rope);
-      setTimeout(()=> rope.remove(), 1500);
-    }
-
-    setTimeout(()=> playReaction(obstacle.reaction, 1350), 300);
-    setTimeout(()=>{ pit.classList.remove('show'); setTimeout(()=> pit.remove(), 500); }, 1700);
-    E.showToast(toastEl, obstacle.msg);
-    return;
-  }
-
-  // boulder / snake / scorpion — travels toward him along the path
-  const el = document.createElement('div');
-  el.className = 'obstacle';
-  el.textContent = obstacle.icon;
+  setTimeout(()=>{ pit.classList.remove('show'); setTimeout(()=> pit.remove(), 500); }, 1300);
+  if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
+}
+function spawnTraveling(ctx, obstacle, targetLeft){
+  const el = ctx.track.ownerDocument.createElement('div');
+  el.className = 'obstacle' + (obstacle.high ? ' high' : '');
+  if(obstacle.render === 'svg') el.innerHTML = obstacle.icon;
+  else el.textContent = obstacle.icon;
   el.style.left = (targetLeft + 22) + '%';
   el.style.transition = 'left 1.7s linear, opacity 0.3s ease-in 1.3s';
-  track.appendChild(el);
+  ctx.track.appendChild(el);
   requestAnimationFrame(()=> requestAnimationFrame(()=>{
     el.style.left = (targetLeft - 4) + '%';
     el.style.opacity = '0';
   }));
   setTimeout(()=> el.remove(), 2000);
-  setTimeout(()=> playReaction(obstacle.reaction, 950), 1000);
-  E.showToast(toastEl, obstacle.msg);
+  setTimeout(()=> playReaction(ctx, obstacle.reaction, 950), 1000);
+  if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
+}
+function spawnObstacle(ctx, obstacle, targetLeft){
+  if(obstacle.type === 'blade') return spawnBlade(ctx, obstacle, targetLeft);
+  if(obstacle.type === 'pit') return spawnPit(ctx, obstacle, targetLeft);
+  spawnTraveling(ctx, obstacle, targetLeft);
+}
+// Classic Pyramid rules don't allow reshuffling the stock at all —
+// this game deliberately relaxes that, but gives it a visual cost: a
+// brief backward stumble (not an actual progress rollback — cardsRemaining
+// is untouched) that eases back to his rightful spot once play resumes.
+function playReshufflePenalty(ctx, getCurPct){
+  const cur = getCurPct();
+  const back = Math.max(2, cur - 4);
+  spawnDust(ctx, cur);
+  ctx.adventurerEl.style.left = back + '%';
+  resetAdventurerAnim(ctx.inner);
+  ctx.inner.classList.add('stumble');
+  if(ctx.toastEl) E.showToast(ctx.toastEl, "Reshuffling isn't standard rules — a brief stumble!");
+  setTimeout(()=>{
+    ctx.inner.classList.remove('stumble');
+    ctx.adventurerEl.style.left = cur + '%';
+  }, 1800);
 }
 
 function triggerAdventurerProgress(cleared){
-  const adventurer = document.getElementById('adventurer');
-  const chest = document.getElementById('chest');
   const targetLeft = trackLeftPct(cleared);
   const priorLeft = trackLeftPct(cleared - 1);
 
-  spawnDust(priorLeft);
-  adventurer.style.left = targetLeft + '%';
+  spawnDust(mainCtx, priorLeft);
+  mainCtx.adventurerEl.style.left = targetLeft + '%';
   document.getElementById('adventure-fill').style.width = targetLeft + '%';
-  chest.classList.toggle('near', targetLeft > 75);
+  document.getElementById('chest').classList.toggle('near', targetLeft > 75);
   updateCheckpoints();
 
   if(ROW_CLEAR_THRESHOLDS.includes(cleared)){
-    spawnObstacle(pickObstacle(), targetLeft);
+    spawnObstacle(mainCtx, pickObstacle(), targetLeft);
   } else {
-    playReaction('running', 600);
+    playReaction(mainCtx, 'running', 600);
   }
 }
 
@@ -838,6 +923,7 @@ function drawFromStock(){
     state.waste = [];
     clearCardSelection();
     state.selected = null;
+    playReshufflePenalty(mainCtx, ()=> trackLeftPct(28 - state.cardsRemaining));
     renderAll();
     return;
   }
@@ -1001,7 +1087,10 @@ function spawnSparkles(container, count){
    there's nothing hand-duplicated to go stale. Only small trigger
    functions are written fresh for the popup's own DOM.
    ========================================================= */
-window.__tutsAnimAssets = { SVG_ADVENTURER, buildChestRig, TREASURES, spawnSparkles };
+window.__tutsAnimAssets = {
+  SVG_ADVENTURER, buildChestRig, TREASURES, spawnSparkles,
+  getObstacle, spawnObstacle, playReaction, spawnDust, playReshufflePenalty
+};
 function getSharedStyleText(){
   const styleEl = document.querySelector('head > style');
   return styleEl ? styleEl.textContent : '';
@@ -1038,37 +1127,44 @@ function openAnimTestWindow(){
     + '<button data-act="jump">Jump — Snake/Scorpion</button>'
     + '<button data-act="bigjump">Big Jump — Pit</button>'
     + '<button data-act="whipswing">Whip-Swing — Pit Bonus</button>'
+    + '<button data-act="reshuffle">Reshuffle Stumble</button>'
     + '<button data-act="chest">Open Chest Cinematic</button>'
     + '<button data-act="reset">Reset Position</button>'
     + '</div>'
     + '<div id="chest-stage"></div>'
     + '<script>(function(){'
     + 'var assets = window.opener.__tutsAnimAssets;'
+    + 'var track = document.getElementById("adventure-track");'
     + 'var adv = document.getElementById("adventurer");'
     + 'var inner = document.getElementById("adventurer-inner");'
     + 'var fill = document.getElementById("adventure-fill");'
-    + 'var track = document.getElementById("adventure-track");'
     + 'inner.innerHTML = assets.SVG_ADVENTURER;'
     + 'var pos = 46;'
-    + 'function resetAnim(){ inner.classList.remove("running","jump","duck","stepback","bigjump","whipswing"); void inner.offsetWidth; }'
-    + 'function play(reaction, holdMs){ resetAnim(); inner.classList.add(reaction); setTimeout(function(){ inner.classList.remove(reaction); }, holdMs); }'
+    + 'var ctx = { track: track, inner: inner, adventurerEl: adv, toastEl: null };'
     + 'function setPos(p){ pos = p; adv.style.left = p + "%"; fill.style.width = p + "%"; }'
     + 'setPos(46);'
-    + 'function spawnDust(p){ var d = document.createElement("div"); d.className = "dust-puff"; d.style.left = p + "%"; track.appendChild(d); setTimeout(function(){ d.remove(); }, 850); }'
-    + 'function spawnBlade(){ var rig = document.createElement("div"); rig.className = "blade-rig"; rig.style.left = pos + "%"; rig.innerHTML = \'<div class="rod"></div><div class="blade"></div>\'; track.appendChild(rig); setTimeout(function(){ rig.remove(); }, 1700); setTimeout(function(){ play("stepback", 1050); }, 620); }'
-    + 'function spawnFlying(icon, reaction, holdMs){ var el = document.createElement("div"); el.className = "obstacle"; el.textContent = icon; el.style.left = (pos+22) + "%"; el.style.transition = "left 1.7s linear, opacity 0.3s ease-in 1.3s"; track.appendChild(el); requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.style.left = (pos-4) + "%"; el.style.opacity = "0"; }); }); setTimeout(function(){ el.remove(); }, 2000); setTimeout(function(){ play(reaction, holdMs); }, 1000); }'
-    + 'function spawnPit(withWhip){ var pit = document.createElement("div"); pit.className = "pit-trap"; pit.style.left = pos + "%"; track.appendChild(pit); requestAnimationFrame(function(){ requestAnimationFrame(function(){ pit.classList.add("show"); }); }); if(withWhip){ var rope = document.createElement("div"); rope.className = "whip-rope"; rope.style.left = (pos-6) + "%"; track.appendChild(rope); setTimeout(function(){ rope.remove(); }, 1500); } setTimeout(function(){ play(withWhip ? "whipswing" : "bigjump", 1350); }, 300); setTimeout(function(){ pit.classList.remove("show"); setTimeout(function(){ pit.remove(); }, 500); }, 1700); }'
     + 'var chestStage = document.getElementById("chest-stage");'
-    + 'function openChestTest(){ chestStage.classList.add("show"); chestStage.innerHTML = assets.SVG_ADVENTURER + assets.buildChestRig() + \'<div id="treasure-wrap"><div id="treasure-reveal"></div></div>\'; requestAnimationFrame(function(){ requestAnimationFrame(function(){ document.getElementById("chest-rig").classList.add("open"); }); }); setTimeout(function(){ var t = document.getElementById("treasure-reveal"); t.innerHTML = assets.TREASURES[Math.floor(Math.random()*assets.TREASURES.length)]; chestStage.classList.add("show-treasure"); assets.spawnSparkles(document.getElementById("treasure-wrap"), 10); }, 1000); }'
+    + 'function openChestTest(){'
+    + '  chestStage.classList.add("show");'
+    + '  chestStage.innerHTML = assets.SVG_ADVENTURER + assets.buildChestRig();'
+    + '  requestAnimationFrame(function(){ requestAnimationFrame(function(){ document.getElementById("chest-rig").classList.add("open"); }); });'
+    + '  setTimeout(function(){'
+    + '    var t = document.getElementById("treasure-reveal");'
+    + '    t.innerHTML = assets.TREASURES[Math.floor(Math.random()*assets.TREASURES.length)];'
+    + '    chestStage.classList.add("show-treasure");'
+    + '    assets.spawnSparkles(document.getElementById("treasure-wrap"), 10);'
+    + '  }, 1000);'
+    + '}'
     + 'document.querySelectorAll(".controls button").forEach(function(btn){'
     + '  btn.addEventListener("click", function(){'
     + '    var act = btn.dataset.act;'
-    + '    if(act==="run"){ var p = Math.min(92, pos+6); spawnDust(pos); setPos(p); play("running", 600); }'
-    + '    else if(act==="duck"){ spawnFlying("\\uD83E\\uDEA8","duck",1000); }'
-    + '    else if(act==="stepback"){ spawnBlade(); }'
-    + '    else if(act==="jump"){ spawnFlying(Math.random()<0.5?"\\uD83D\\uDC0D":"\\uD83E\\uDD82","jump",950); }'
-    + '    else if(act==="bigjump"){ spawnPit(false); }'
-    + '    else if(act==="whipswing"){ spawnPit(true); }'
+    + '    if(act==="run"){ var p = Math.min(92, pos+6); assets.spawnDust(ctx, pos); setPos(p); assets.playReaction(ctx, "running", 600); }'
+    + '    else if(act==="duck"){ assets.spawnObstacle(ctx, assets.getObstacle("boulder"), pos); }'
+    + '    else if(act==="stepback"){ assets.spawnObstacle(ctx, assets.getObstacle("blade"), pos); }'
+    + '    else if(act==="jump"){ assets.spawnObstacle(ctx, assets.getObstacle(Math.random()<0.5?"snake":"scorpion"), pos); }'
+    + '    else if(act==="bigjump"){ assets.spawnObstacle(ctx, assets.getObstacle("pit", false), pos); }'
+    + '    else if(act==="whipswing"){ assets.spawnObstacle(ctx, assets.getObstacle("pit", true), pos); }'
+    + '    else if(act==="reshuffle"){ assets.playReshufflePenalty(ctx, function(){ return pos; }); }'
     + '    else if(act==="reset"){ setPos(46); }'
     + '    else if(act==="chest"){ openChestTest(); }'
     + '  });'
@@ -1087,8 +1183,6 @@ function handleWin(){
 
   const overlay = document.getElementById('cinematic-overlay');
   const hero = document.getElementById('cinematic-hero');
-  const treasure = document.getElementById('treasure-reveal');
-  const treasureWrap = document.getElementById('treasure-wrap');
 
   overlay.classList.add('active');
   setTimeout(()=> overlay.classList.add('fade-in'), 50);
@@ -1100,6 +1194,8 @@ function handleWin(){
     }));
 
     setTimeout(()=>{
+      const treasure = document.getElementById('treasure-reveal');
+      const treasureWrap = document.getElementById('treasure-wrap');
       treasure.innerHTML = TREASURES[Math.floor(Math.random()*TREASURES.length)];
       overlay.classList.add('show-treasure');
       spawnSparkles(treasureWrap, 10);
