@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mahjong Solitaire</title>
+  
+  <!-- Pulls in your existing Solitaire UI shell -->
+  <link rel="stylesheet" href="styles.css">
+  
+  <style>
+    /* Standard Mahjong tile proportions with 3D depth */
+    :root {
+      --tile-w: clamp(36px, 5vw, 65px);
+      --tile-h: calc(var(--tile-w) * 1.35); 
+      --tile-depth: calc(var(--tile-w) * 0.25); /* Thickness of the tile */
+    }
+
+    .mahjong-board {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 3D Tile Styling */
+    .tile {
+      position: absolute;
+      width: var(--tile-w);
+      height: var(--tile-h);
+      background: var(--ivory); 
+      border-radius: 4px;
+      box-shadow: 
+        -2px 0 0 0 #fff inset, 
+        calc(var(--tile-depth) * -1) var(--tile-depth) 0 0 #c7bca1, 
+        calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 6px rgba(0,0,0,0.5); 
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: calc(var(--tile-w) * 0.45);
+      color: var(--navy); 
+      border: 1px solid rgba(0,0,0,0.2);
+      transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.2s ease;
+      user-select: none;
+    }
+
+    /* Hover/Selection states mirroring your Solitaire mechanics */
+    .tile.selected {
+      transform: translateY(-4px) translateX(4px); 
+      box-shadow: 
+        0 0 0 3px #7ee6a8, 
+        calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 12px rgba(0,0,0,0.6);
+      z-index: 999 !important;
+    }
+
+    /* Dimmed state for tiles trapped under or between others */
+    .tile.blocked {
+      filter: brightness(0.75);
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-text">
+        <h1>Mahjong</h1>
+      </div>
+    </div>
+    <div class="hud">
+      <button class="textbtn newgame-btn" onclick="startNewGame('turtle')">New Game</button>
+      <button class="textbtn newgame-btn" onclick="startNewGame('pyramid')">Pyramid</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="table-frame">
+      <div class="table-felt">
+        <div class="mahjong-board" id="board"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottombar">
+    <div id="chip-score" class="chip">Tiles: <b id="tiles-left">144</b></div>
+    <div class="bottombar-actions">
+       <button class="bottombtn" onclick="shuffleBoard()">
+         <span class="blabel">SHUFFLE</span>
+       </button>
+    </div>
+    <div id="chip-time" class="chip">Matches: <b id="matches-made">0</b></div>
+  </div>
+
+  <!-- Custom game engine for Mahjong -->
+  <script src="mahjong.js"></script>
+</body>
+</html>
