@@ -2,18 +2,28 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.10
+    Version 1.11
 
-   Two corrections: (1) Misread the pit-sizing request last round —
-   shrunk the regular pit AND grew the whip pit, when it should only
-   have been the whip pit growing. Regular pit is back to its original
-   size; whip pit is now ~3x that (was ~2x) instead. (2) Pits are holes
-   in the ground, not transient obstacle animations — they now persist
-   permanently once spawned (only cleared by New Expedition), instead
-   of fading out shortly after he crosses them. The animation test
-   window is the one exception (ctx.persistPits stays unset there), so
-   repeated testing at roughly the same spot doesn't stack up pits
-   indefinitely.
+   (1) Real bug in the test rig: every obstacle button reused the
+   frozen `pos` variable without ever calling setPos(), so only "Run
+   Step" actually moved him — every obstacle was being tested with him
+   standing still, invalidating the tests. All obstacle buttons now
+   advance position first, mirroring how triggerAdventurerProgress
+   always moves-and-spawns together in the real game. (2) Pit sizing:
+   only width should scale for the wide/whip pit, not height — the
+   height bump made it look like a circular void ("naked singularity")
+   instead of a ground gap. (3) Pit clearance: offset was a guessed
+   percentage that couldn't relate to the pit's actual pixel width
+   across different screen sizes. Now computed from the track's real
+   rendered width (ctx.track.offsetWidth) so the pit's right edge is
+   guaranteed a real margin before his landing spot, not just
+   approximately. (4) Blade dodge fired at 620ms, but the blade's
+   first close pass through vertical happens ~400ms into its swing —
+   he was dodging after, not before. Trigger moved to 150ms. (5)
+   Boulder/snake/scorpion: retimed to trigger later (was arriving
+   before duck's actual proximity), and now travel a couple
+   body-lengths PAST him before fading instead of stopping and
+   vanishing right beside him.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -322,11 +332,12 @@
   }
   .pit-trap.show { opacity: 1; }
   /* The whip-swing pit is the one that got bigger, not the regular
-     one — roughly 3x the regular pit, wide enough that it reads as
-     needing the whip to cross rather than a hop. */
+     one — roughly 3x the regular pit's WIDTH only. It's a ground
+     gap, not a deep hole, so height stays the same as the regular
+     pit — scaling height too made it read as a circular void rather
+     than something you swing horizontally across. */
   .pit-trap.wide {
-    width: 108px; height: 42px;
-    box-shadow: inset 0 10px 12px rgba(0,0,0,0.85);
+    width: 108px;
   }
 
   /* Whip rope — appended as a DOM CHILD of #adventurer-inner (not a
@@ -611,7 +622,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.10';
+const PAGE_VERSION = '1.11';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -861,29 +872,38 @@ function spawnBlade(ctx, obstacle, targetLeft){
   // wobble alone (even shifted backward) never reads as "moving back"
   // as clearly as an actual position change does; this pairs a quick
   // real retreat with the rotation reaction so both happen together.
+  // Triggered EARLY (150ms) — the blade's first close pass through
+  // vertical happens ~400ms into its 1.6s swing, so the dodge needs
+  // to already be underway well before that, not starting after it.
   const adv = ctx.adventurerEl;
   const back = Math.max(2, targetLeft - 4);
   const restoreTransition = adv.style.transition;
   setTimeout(()=>{
-    adv.style.transition = 'left 0.3s ease-out';
+    adv.style.transition = 'left 0.22s ease-out';
     adv.style.left = back + '%';
-    playReaction(ctx, obstacle.reaction, 1050);
-  }, 620);
+    playReaction(ctx, obstacle.reaction, 1200);
+  }, 150);
   setTimeout(()=>{
     adv.style.transition = 'left 0.45s ease-in';
     adv.style.left = targetLeft + '%';
-  }, 1550);
-  setTimeout(()=>{ adv.style.transition = restoreTransition || ''; }, 2050);
+  }, 1350);
+  setTimeout(()=>{ adv.style.transition = restoreTransition || ''; }, 1850);
 
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
 function spawnPit(ctx, obstacle, targetLeft){
   const isWhip = obstacle.reaction === 'whipswing';
-  // The pit sits slightly BEHIND his landing spot, not on top of it —
-  // he needs a real gap in front of him to jump/swing across, ending
-  // up on solid ground past it. The whip pit is much wider (see CSS)
-  // and gets a bigger offset accordingly.
-  const pitLeft = targetLeft - (isWhip ? 9 : 3);
+  const pitWidthPx = isWhip ? 108 : 36;
+  // The pit's left/right edges are computed from the track's ACTUAL
+  // rendered width (not a guessed percentage) so its right edge is
+  // guaranteed to sit a real margin before targetLeft regardless of
+  // screen size — a fixed percentage offset can't do that, since pit
+  // width is in px and offset was in %, two units with no fixed
+  // relationship across different track widths.
+  const trackW = ctx.track.offsetWidth || 900;
+  const marginPx = 16;
+  const offsetPct = ((pitWidthPx / 2 + marginPx) / trackW) * 100;
+  const pitLeft = targetLeft - offsetPct;
   const pit = ctx.track.ownerDocument.createElement('div');
   pit.className = 'pit-trap' + (isWhip ? ' wide' : '');
   pit.style.left = pitLeft + '%';
@@ -923,15 +943,20 @@ function spawnTraveling(ctx, obstacle, targetLeft){
   el.className = 'obstacle' + (obstacle.high ? ' high' : '');
   if(obstacle.render === 'svg') el.innerHTML = obstacle.icon;
   else el.textContent = obstacle.icon;
-  el.style.left = (targetLeft + 22) + '%';
-  el.style.transition = 'left 1.7s linear, opacity 0.3s ease-in 1.3s';
+  // Travels a couple body-lengths PAST him before fading, rather than
+  // stopping and vanishing right beside him — enters at +24%, exits
+  // out past -14% (was -4%, barely past his own position at all).
+  el.style.left = (targetLeft + 24) + '%';
+  el.style.transition = 'left 2.5s linear, opacity 0.5s ease-in 2s';
   ctx.track.appendChild(el);
   requestAnimationFrame(()=> requestAnimationFrame(()=>{
-    el.style.left = (targetLeft - 4) + '%';
+    el.style.left = (targetLeft - 14) + '%';
     el.style.opacity = '0';
   }));
-  setTimeout(()=> el.remove(), 2000);
-  setTimeout(()=> playReaction(ctx, obstacle.reaction, 950), 1000);
+  setTimeout(()=> el.remove(), 2600);
+  // Crosses his exact position (targetLeft) around ~1.6s into its
+  // travel at this speed/distance — trigger + hold centered on that.
+  setTimeout(()=> playReaction(ctx, obstacle.reaction, 1000), 1150);
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
 function spawnObstacle(ctx, obstacle, targetLeft){
@@ -1198,7 +1223,7 @@ function openAnimTestWindow(){
     + '.blade-rig .rod{height:58px;}'
     + '.blade-rig .blade-art{width:64px;height:36px;top:50px;left:-32px;}'
     + '.pit-trap{width:65px;height:25px;}'
-    + '.pit-trap.wide{width:194px;height:76px;}'
+    + '.pit-trap.wide{width:194px;}'
     + '.whip-rope-tethered{height:72px;}'
     + '#center-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);z-index:5;}'
     + '#center-line::after{content:"center";position:absolute;top:-16px;left:4px;font-size:9px;color:rgba(255,255,255,0.5);}'
@@ -1238,6 +1263,17 @@ function openAnimTestWindow(){
     + 'var ctx = { track: track, inner: inner, adventurerEl: adv, toastEl: document.getElementById("rig-toast") };'
     + 'function setPos(p){ pos = p; adv.style.left = p + "%"; fill.style.width = p + "%"; }'
     + 'setPos(46);'
+    // Real gameplay always advances position AND spawns the obstacle
+    // together (see triggerAdventurerProgress) — the obstacle buttons
+    // here need to do the same, or he never actually moves during
+    // these tests and every reaction gets tested standing still.
+    + 'function advanceAndSpawn(obstacle){'
+    + '  var prior = pos;'
+    + '  var p = Math.min(92, pos + 6);'
+    + '  assets.spawnDust(ctx, prior);'
+    + '  setPos(p);'
+    + '  assets.spawnObstacle(ctx, obstacle, p);'
+    + '}'
     + 'var chestStage = document.getElementById("chest-stage");'
     + 'function openChestTest(){'
     + '  chestStage.classList.remove("show-treasure");'
@@ -1261,12 +1297,12 @@ function openAnimTestWindow(){
     + '  btn.addEventListener("click", function(){'
     + '    var act = btn.dataset.act;'
     + '    if(act==="run"){ runTest(function(){ var p = Math.min(92, pos+6); assets.spawnDust(ctx, pos); setPos(p); assets.playReaction(ctx, "running", 600); }, 700); }'
-    + '    else if(act==="duck"){ runTest(function(){ assets.spawnObstacle(ctx, assets.getObstacle("boulder"), pos); }, 2100); }'
-    + '    else if(act==="stepback"){ runTest(function(){ assets.spawnObstacle(ctx, assets.getObstacle("blade"), pos); }, 1800); }'
-    + '    else if(act==="jump-snake"){ runTest(function(){ assets.spawnObstacle(ctx, assets.getObstacle("snake"), pos); }, 2100); }'
-    + '    else if(act==="jump-scorpion"){ runTest(function(){ assets.spawnObstacle(ctx, assets.getObstacle("scorpion"), pos); }, 2100); }'
-    + '    else if(act==="bigjump"){ runTest(function(){ assets.spawnObstacle(ctx, assets.getObstacle("pit", false), pos); }, 1400); }'
-    + '    else if(act==="whipswing"){ runTest(function(){ assets.spawnObstacle(ctx, assets.getObstacle("pit", true), pos); }, 1600); }'
+    + '    else if(act==="duck"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("boulder")); }, 2700); }'
+    + '    else if(act==="stepback"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("blade")); }, 1900); }'
+    + '    else if(act==="jump-snake"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("snake")); }, 2700); }'
+    + '    else if(act==="jump-scorpion"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("scorpion")); }, 2700); }'
+    + '    else if(act==="bigjump"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("pit", false)); }, 1400); }'
+    + '    else if(act==="whipswing"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("pit", true)); }, 1600); }'
     + '    else if(act==="reshuffle"){ runTest(function(){ assets.playReshufflePenalty(ctx, function(){ return pos; }); }, 1900); }'
     + '    else if(act==="reset"){ setPos(46); }'
     + '    else if(act==="chest"){ openChestTest(); }'
