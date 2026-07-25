@@ -36,36 +36,71 @@ function getTileImagePath(id) {
 
 /* =========================================================
    LAYOUTS (3D Coordinates)
+   Classic layouts require exactly 144 tiles. X and Y represent 
+   grid units (1 unit = 1 tile width/height).
    ========================================================= */
 const LAYOUTS = {
-    'pyramid': generatePyramidLayout(),
-    'turtle': generateTurtleLayout()
+    'turtle': generateTurtleLayout(),
+    'pyramid': generatePyramidLayout()
 };
 
-function generatePyramidLayout() {
-    let layout = [];
+function generateTurtleLayout() {
+    const layout = [];
     let id = 0;
-    for (let z = 0; z < 4; z++) {
-        let size = 4 - z;
-        for (let y = 0; y < size; y++) {
-            for (let x = 0; x < size; x++) {
-                layout.push({ posId: id++, x: x * 2 + z, y: y * 2 + z, z: z });
-            }
-        }
+    const add = (x, y, z) => layout.push({ posId: id++, x, y, z });
+
+    // Layer 0 (Bottom) - 87 tiles
+    for (let x = 1; x <= 12; x++) add(x, 0, 0);
+    for (let x = 3; x <= 10; x++) add(x, 1, 0);
+    for (let x = 2; x <= 11; x++) add(x, 2, 0);
+    for (let x = 1; x <= 12; x++) add(x, 3, 0);
+    add(0, 3.5, 0);  // Far left wing
+    add(13, 3.5, 0); // Far right wing (inner)
+    add(14, 3.5, 0); // Far right wing (outer)
+    for (let x = 1; x <= 12; x++) add(x, 4, 0);
+    for (let x = 2; x <= 11; x++) add(x, 5, 0);
+    for (let x = 3; x <= 10; x++) add(x, 6, 0);
+    for (let x = 1; x <= 12; x++) add(x, 7, 0);
+
+    // Layer 1 - 36 tiles
+    for (let y = 1; y <= 6; y++) {
+        for (let x = 4; x <= 9; x++) add(x, y, 1);
     }
-    return layout; 
+
+    // Layer 2 - 16 tiles
+    for (let y = 2; y <= 5; y++) {
+        for (let x = 5; x <= 8; x++) add(x, y, 2);
+    }
+
+    // Layer 3 - 4 tiles
+    for (let y = 3; y <= 4; y++) {
+        for (let x = 6; x <= 7; x++) add(x, y, 3);
+    }
+
+    // Layer 4 (Top) - 1 tile
+    add(6.5, 3.5, 4);
+
+    return layout;
 }
 
-function generateTurtleLayout() {
-    let layout = [];
+function generatePyramidLayout() {
+    const layout = [];
     let id = 0;
-    for (let z = 0; z < 4; z++) {
-        for (let y = 0; y < 6 - z; y++) {
-            for (let x = 0; x < 6 - z; x++) {
-                if(id < 144) layout.push({ posId: id++, x: x * 2 + (z*0.5), y: y * 2 + (z*0.5), z: z });
-            }
-        }
+    const add = (x, y, z) => layout.push({ posId: id++, x, y, z });
+
+    // Layer 0 - 80 tiles
+    for(let y = 0; y <= 7; y++) {
+        for(let x = 2.5; x <= 11.5; x++) add(x, y, 0);
     }
+    // Layer 1 - 48 tiles
+    for(let y = 1; y <= 6; y++) {
+        for(let x = 3.5; x <= 10.5; x++) add(x, y, 1);
+    }
+    // Layer 2 - 16 tiles
+    for(let y = 2; y <= 5; y++) {
+        for(let x = 5.5; x <= 8.5; x++) add(x, y, 2);
+    }
+    
     return layout;
 }
 
@@ -77,7 +112,7 @@ let selectedTile = null;
 let matches = 0;
 
 function startNewGame() {
-    const layoutName = document.getElementById('layout-select').value;
+    const layoutName = document.getElementById('layout-select') ? document.getElementById('layout-select').value : 'turtle';
     const board = document.getElementById('board');
     board.innerHTML = '';
     
@@ -100,18 +135,19 @@ function startNewGame() {
         
         tile.element.className = 'tile';
         
-        // Add real tile image
         const img = document.createElement('img');
         img.className = 'tile-img';
         img.src = getTileImagePath(tile.id);
-        
-        // Fallback alt text in case the images are missing
         img.alt = tile.id; 
         tile.element.appendChild(img);
         
-        tile.element.style.left = `calc(50% + ${(tile.x - 5) * 25}px)`; 
-        tile.element.style.top = `calc(50% + ${(tile.y - 5) * 35}px)`;
-        tile.element.style.zIndex = tile.z * 10 + tile.y; 
+        // Dynamic responsive scaling mapped to CSS variables. 
+        // Subtract 7 on X and 3.5 on Y to perfectly center a 14-unit wide, 7-unit tall layout.
+        tile.element.style.left = `calc(50% + (var(--tile-w) * ${tile.x - 7}))`; 
+        tile.element.style.top = `calc(50% + (var(--tile-h) * ${tile.y - 3.5}))`;
+        
+        // Z-index sorting so 3D shadows render correctly
+        tile.element.style.zIndex = Math.floor(tile.z * 1000 + tile.y * 10 + tile.x);
 
         tile.element.onclick = () => handleTileClick(tile);
         board.appendChild(tile.element);
@@ -160,10 +196,17 @@ function isTileFree(target) {
 
     currentTiles.forEach(t => {
         if (!t.active || t.posId === target.posId) return;
-        if (t.z > target.z && Math.abs(t.x - target.x) < 2 && Math.abs(t.y - target.y) < 2) blockedTop = true;
-        if (t.z === target.z && Math.abs(t.y - target.y) < 1) {
-            if (t.x < target.x && target.x - t.x <= 2) blockedLeft = true;
-            if (t.x > target.x && t.x - target.x <= 2) blockedRight = true;
+
+        // Top Block: A tile exists on a higher Z-layer directly overlapping target's footprint.
+        // Uses < 0.99 instead of < 1 to account for floating point coordinates in half-steps.
+        if (t.z > target.z && Math.abs(t.x - target.x) < 0.99 && Math.abs(t.y - target.y) < 0.99) {
+            blockedTop = true;
+        }
+
+        // Left/Right Block: A tile exists on the same Z-layer, overlaps vertically, and touches the side.
+        if (t.z === target.z && Math.abs(t.y - target.y) < 0.99) {
+            if (t.x < target.x && target.x - t.x < 1.1) blockedLeft = true;
+            if (t.x > target.x && t.x - target.x < 1.1) blockedRight = true;
         }
     });
 
@@ -179,7 +222,6 @@ function shuffleBoard() {
     activeTiles.forEach((tile, i) => {
         tile.id = activeData[i].id;
         tile.type = activeData[i].type;
-        // Update image src
         tile.element.querySelector('img').src = getTileImagePath(tile.id);
         tile.element.querySelector('img').alt = tile.id;
     });
@@ -209,28 +251,37 @@ function updateBoardState() {
 }
 
 /* =========================================================
-   UI MODAL WIRING (Matches FreeCell.html pattern)
+   UI MODAL WIRING 
    ========================================================= */
 const confirmOverlay = document.getElementById('confirm-overlay');
-document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
-document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
-document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); startNewGame(); });
-confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+if (confirmOverlay) {
+    document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+    document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+    document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); startNewGame(); });
+    confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+} else {
+    document.getElementById('btn-newgame').addEventListener('click', startNewGame);
+}
 
 const helpOverlay = document.getElementById('help-overlay');
-document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
-document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
-helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+if (helpOverlay) {
+    document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+    document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+    helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+}
 
 const settingsOverlay = document.getElementById('settings-overlay');
-document.getElementById('btn-settings').addEventListener('click', ()=> settingsOverlay.classList.add('show'));
-document.getElementById('settings-cancel').addEventListener('click', ()=> settingsOverlay.classList.remove('show'));
-document.getElementById('settings-newgame').addEventListener('click', ()=>{
-    settingsOverlay.classList.remove('show');
-    startNewGame();
-});
-settingsOverlay.addEventListener('click', (e)=>{ if(e.target===settingsOverlay) settingsOverlay.classList.remove('show'); });
+if (settingsOverlay) {
+    document.getElementById('btn-settings').addEventListener('click', ()=> settingsOverlay.classList.add('show'));
+    document.getElementById('settings-cancel').addEventListener('click', ()=> settingsOverlay.classList.remove('show'));
+    document.getElementById('settings-newgame').addEventListener('click', ()=>{
+        settingsOverlay.classList.remove('show');
+        startNewGame();
+    });
+    settingsOverlay.addEventListener('click', (e)=>{ if(e.target===settingsOverlay) settingsOverlay.classList.remove('show'); });
+}
 
-document.getElementById('btn-shuffle').addEventListener('click', shuffleBoard);
+const btnShuffle = document.getElementById('btn-shuffle');
+if (btnShuffle) btnShuffle.addEventListener('click', shuffleBoard);
 
 window.onload = startNewGame;
