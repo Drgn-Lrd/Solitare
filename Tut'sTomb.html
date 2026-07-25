@@ -2,34 +2,30 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.2
+    Version 1.3
 
-   Round of playtest fixes: (1) fitBoard was using engine.js's default
-   0.183 tableau-overlap fraction to size cards, but the pyramid rows
-   actually overlap at 0.55 — that mismatch under-estimated the real
-   board height and oversized cards on wide/desktop screens, spilling
-   past the bottom bar (mobile "worked" only because width, not
-   height, was the binding constraint there). Now passes the real
-   0.55 overlap so height is estimated correctly on any screen. (2)
-   Crest now shows the whole badge image (scaled down, not cropped)
-   with a solid fill matching its own teal so it reads as one clean
-   medallion instead of corner-cropped art. (3) Adventurer sprite
-   redrawn with real gradients/shading (fedora, jacket, satchel, whip
-   coil) instead of flat blocks. (4) The gold "path" glow is now an
-   actual ground-level strip (not the old full-height bar, which also
-   was never being resized — its width was never updated after being
-   built, so it silently sat frozen at 2% the whole game). (5) The
-   arrow obstacle is replaced with a swinging blade that arcs in front
-   of him rather than traveling the path; added a ground-pit obstacle
-   (jump, or a bonus whip-swing across it). (6) All track animations
-   slowed down. (7) Fixed the real selection bug: E.clearSelection()
-   only clears DOM highlight state when engine.js's OWN internal
-   click-to-move selection is active, which this game never uses —
-   so it was always a no-op here, leaving mismatched pairs stuck
-   highlighted. Selection now clears via this file's own
-   clearCardSelection(). (8) Chest win cinematic rebuilt as a real
-   hinged lid (3D rotate) with a light burst and sparkle particles
-   around the treasure instead of a flat two-frame icon swap.
+   Another round of fixes: (1) Added a Settings → Testing → "Open
+   Animation Test Window" button that pops a same-origin window,
+   zoomed in on the track with the adventurer parked at the center
+   line, with buttons to fire every obstacle reaction and the chest
+   cinematic on demand — it reuses this file's own live SVG/CSS
+   constants rather than a hand-copied duplicate, so it can't drift
+   out of sync. (2) Adventurer's jacket is now black leather (was a
+   tan/gold gradient that read as a park-ranger uniform), whip is a
+   clearer yellow-tan, hat stays brown. (3) The winnable-deal solver
+   had a real bug: it checked deck[0..27] as "the pyramid" and
+   deck[28..51] as "the stock", but newGame() actually deals the
+   pyramid from deck[24..51] (popped from the end) and deck[0..23] as
+   the stock — a completely different pair of card sets than what was
+   being validated. It also modeled the stock as a freely-accessible
+   multiset by rank rather than the fixed, one-card-at-a-time sequence
+   it actually is. Rewritten to mirror newGame()'s exact dealing order
+   and simulate the real deterministic, cyclically-repeating draw
+   sequence — including Kings buried in the stock resolving correctly
+   without needing to "be in the draw pile" at deal time. (4) Hint no
+   longer says "draw a card" when nothing left anywhere in the stock
+   or buried waste could ever complete a match against what's
+   currently exposed.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -542,6 +538,12 @@
     </div>
 
     <div class="field">
+      <label>Testing</label>
+      <button class="textbtn" id="settings-anim-test" style="width:100%;">Open Animation Test Window</button>
+      <div class="fieldnote">Opens a separate window, zoomed in on the track, with buttons to trigger each obstacle reaction and the chest cinematic on demand.</div>
+    </div>
+
+    <div class="field">
       <label>About</label>
       <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
     </div>
@@ -593,25 +595,29 @@ function pickObstacle(){
 const SVG_ADVENTURER = `<svg viewBox="0 0 100 120" width="1em" height="1.2em" style="vertical-align:middle;">
   <defs>
     <linearGradient id="jacketGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#c9a24b"/>
-      <stop offset="100%" stop-color="#8b6b2e"/>
+      <stop offset="0%" stop-color="#3d3d3d"/>
+      <stop offset="100%" stop-color="#121212"/>
     </linearGradient>
     <linearGradient id="hatGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#7a5230"/>
+      <stop offset="0%" stop-color="#8a5a30"/>
       <stop offset="100%" stop-color="#4a2f18"/>
     </linearGradient>
+    <linearGradient id="whipGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8c458"/>
+      <stop offset="100%" stop-color="#b8892a"/>
+    </linearGradient>
   </defs>
-  <path d="M 68 78 a 9 9 0 1 1 0.1 0" fill="none" stroke="#5c430a" stroke-width="3"/>
-  <rect x="38" y="80" width="10" height="28" rx="4" fill="#4a3b2c"/>
-  <rect x="52" y="80" width="10" height="28" rx="4" fill="#3a2e21"/>
+  <path d="M 68 78 a 9 9 0 1 1 0.1 0" fill="none" stroke="url(#whipGrad)" stroke-width="4"/>
+  <rect x="38" y="80" width="10" height="28" rx="4" fill="#a9863f"/>
+  <rect x="52" y="80" width="10" height="28" rx="4" fill="#8f6f34"/>
   <rect x="36" y="104" width="14" height="8" rx="2" fill="#2a1e12"/>
   <rect x="50" y="104" width="14" height="8" rx="2" fill="#241a0d"/>
-  <path d="M 32 46 Q 50 36 68 46 L 66 84 Q 50 92 34 84 Z" fill="url(#jacketGrad)" stroke="#5c430a" stroke-width="1.5"/>
-  <path d="M 42 48 L 46 84" stroke="#5c430a" stroke-width="1.5" fill="none"/>
-  <path d="M 58 48 L 54 84" stroke="#5c430a" stroke-width="1.5" fill="none"/>
-  <rect x="34" y="68" width="34" height="6" fill="#3a2a16"/>
+  <path d="M 32 46 Q 50 36 68 46 L 66 84 Q 50 92 34 84 Z" fill="url(#jacketGrad)" stroke="#000" stroke-width="1.5"/>
+  <path d="M 42 48 L 46 84" stroke="#000" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <path d="M 58 48 L 54 84" stroke="#000" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <rect x="34" y="68" width="34" height="6" fill="#1a1a1a"/>
   <circle cx="50" cy="71" r="2.4" fill="#d4af37"/>
-  <path d="M 30 58 L 42 66 L 36 78 L 24 68 Z" fill="#5c430a" stroke="#2a1e12" stroke-width="1"/>
+  <path d="M 30 58 L 42 66 L 36 78 L 24 68 Z" fill="url(#whipGrad)" stroke="#6b4e18" stroke-width="1"/>
   <path d="M 32 50 Q 20 56 18 70" stroke="url(#jacketGrad)" stroke-width="8" fill="none" stroke-linecap="round"/>
   <path d="M 68 50 Q 80 54 78 66" stroke="url(#jacketGrad)" stroke-width="8" fill="none" stroke-linecap="round"/>
   <circle cx="50" cy="30" r="15" fill="#f0c19a"/>
@@ -987,6 +993,93 @@ function spawnSparkles(container, count){
     setTimeout(()=> s.remove(), 2000);
   }
 }
+/* =========================================================
+   ANIMATION TEST WINDOW
+   Opens a same-origin popup and hands it references to this file's
+   own SVG/asset constants and the CURRENT text of this page's <style>
+   block, so the rig can never drift out of sync with the real game —
+   there's nothing hand-duplicated to go stale. Only small trigger
+   functions are written fresh for the popup's own DOM.
+   ========================================================= */
+window.__tutsAnimAssets = { SVG_ADVENTURER, buildChestRig, TREASURES, spawnSparkles };
+function getSharedStyleText(){
+  const styleEl = document.querySelector('head > style');
+  return styleEl ? styleEl.textContent : '';
+}
+function openAnimTestWindow(){
+  const w = window.open('', 'tutstomb_anim_test', 'width=1000,height=580');
+  if(!w){
+    E.showToast(document.getElementById('hint-toast'), 'Pop-up blocked — allow pop-ups to open the test rig.');
+    return;
+  }
+  const sharedCss = getSharedStyleText();
+  const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Animation Test Rig — Tut\'s Tomb</title><style>'
+    + sharedCss
+    + '\nhtml,body{margin:0;background:#0a0704;color:#f0d9a0;font-family:Georgia,\'Times New Roman\',serif;}'
+    + 'body{display:flex;flex-direction:column;align-items:center;padding:24px;gap:18px;}'
+    + 'h2{margin:0;font-size:20px;letter-spacing:0.5px;color:var(--brass-light,#f8e5a0);}'
+    + '#rig-stage{width:900px;max-width:94vw;transform:scale(1.5);transform-origin:center top;margin-top:20px;margin-bottom:70px;}'
+    + '#adventure-track{position:relative;}'
+    + '#center-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);z-index:5;}'
+    + '#center-line::after{content:"center";position:absolute;top:-16px;left:4px;font-size:9px;color:rgba(255,255,255,0.5);}'
+    + '.controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:760px;}'
+    + '.controls button{font-family:inherit;font-size:13px;padding:8px 14px;border-radius:8px;border:1px solid var(--wood-3,#5c430a);background:var(--panel,#2a1e12);color:var(--brass-light,#f8e5a0);cursor:pointer;}'
+    + '.controls button:hover{background:var(--wood-3,#5c430a);}'
+    + '#chest-stage{display:none;}'
+    + '#chest-stage.show{display:flex;gap:30px;align-items:flex-end;font-size:6rem;margin-top:10px;}'
+    + '</style></head><body>'
+    + '<h2>Tut\'s Tomb — Animation Test Rig</h2>'
+    + '<div id="rig-stage"><div id="adventure-track"><div id="center-line"></div><div id="adventure-fill"></div>'
+    + '<div id="adventurer"><div id="adventurer-inner"></div></div><div id="chest"></div></div></div>'
+    + '<div class="controls">'
+    + '<button data-act="run">Run Step</button>'
+    + '<button data-act="duck">Duck — Boulder</button>'
+    + '<button data-act="stepback">Step Back — Blade</button>'
+    + '<button data-act="jump">Jump — Snake/Scorpion</button>'
+    + '<button data-act="bigjump">Big Jump — Pit</button>'
+    + '<button data-act="whipswing">Whip-Swing — Pit Bonus</button>'
+    + '<button data-act="chest">Open Chest Cinematic</button>'
+    + '<button data-act="reset">Reset Position</button>'
+    + '</div>'
+    + '<div id="chest-stage"></div>'
+    + '<script>(function(){'
+    + 'var assets = window.opener.__tutsAnimAssets;'
+    + 'var adv = document.getElementById("adventurer");'
+    + 'var inner = document.getElementById("adventurer-inner");'
+    + 'var fill = document.getElementById("adventure-fill");'
+    + 'var track = document.getElementById("adventure-track");'
+    + 'inner.innerHTML = assets.SVG_ADVENTURER;'
+    + 'var pos = 46;'
+    + 'function resetAnim(){ inner.classList.remove("running","jump","duck","stepback","bigjump","whipswing"); void inner.offsetWidth; }'
+    + 'function play(reaction, holdMs){ resetAnim(); inner.classList.add(reaction); setTimeout(function(){ inner.classList.remove(reaction); }, holdMs); }'
+    + 'function setPos(p){ pos = p; adv.style.left = p + "%"; fill.style.width = p + "%"; }'
+    + 'setPos(46);'
+    + 'function spawnDust(p){ var d = document.createElement("div"); d.className = "dust-puff"; d.style.left = p + "%"; track.appendChild(d); setTimeout(function(){ d.remove(); }, 850); }'
+    + 'function spawnBlade(){ var rig = document.createElement("div"); rig.className = "blade-rig"; rig.style.left = pos + "%"; rig.innerHTML = \'<div class="rod"></div><div class="blade"></div>\'; track.appendChild(rig); setTimeout(function(){ rig.remove(); }, 1700); setTimeout(function(){ play("stepback", 1050); }, 620); }'
+    + 'function spawnFlying(icon, reaction, holdMs){ var el = document.createElement("div"); el.className = "obstacle"; el.textContent = icon; el.style.left = (pos+22) + "%"; el.style.transition = "left 1.7s linear, opacity 0.3s ease-in 1.3s"; track.appendChild(el); requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.style.left = (pos-4) + "%"; el.style.opacity = "0"; }); }); setTimeout(function(){ el.remove(); }, 2000); setTimeout(function(){ play(reaction, holdMs); }, 1000); }'
+    + 'function spawnPit(withWhip){ var pit = document.createElement("div"); pit.className = "pit-trap"; pit.style.left = pos + "%"; track.appendChild(pit); requestAnimationFrame(function(){ requestAnimationFrame(function(){ pit.classList.add("show"); }); }); if(withWhip){ var rope = document.createElement("div"); rope.className = "whip-rope"; rope.style.left = (pos-6) + "%"; track.appendChild(rope); setTimeout(function(){ rope.remove(); }, 1500); } setTimeout(function(){ play(withWhip ? "whipswing" : "bigjump", 1350); }, 300); setTimeout(function(){ pit.classList.remove("show"); setTimeout(function(){ pit.remove(); }, 500); }, 1700); }'
+    + 'var chestStage = document.getElementById("chest-stage");'
+    + 'function openChestTest(){ chestStage.classList.add("show"); chestStage.innerHTML = assets.SVG_ADVENTURER + assets.buildChestRig() + \'<div id="treasure-wrap"><div id="treasure-reveal"></div></div>\'; requestAnimationFrame(function(){ requestAnimationFrame(function(){ document.getElementById("chest-rig").classList.add("open"); }); }); setTimeout(function(){ var t = document.getElementById("treasure-reveal"); t.innerHTML = assets.TREASURES[Math.floor(Math.random()*assets.TREASURES.length)]; chestStage.classList.add("show-treasure"); assets.spawnSparkles(document.getElementById("treasure-wrap"), 10); }, 1000); }'
+    + 'document.querySelectorAll(".controls button").forEach(function(btn){'
+    + '  btn.addEventListener("click", function(){'
+    + '    var act = btn.dataset.act;'
+    + '    if(act==="run"){ var p = Math.min(92, pos+6); spawnDust(pos); setPos(p); play("running", 600); }'
+    + '    else if(act==="duck"){ spawnFlying("\\uD83E\\uDEA8","duck",1000); }'
+    + '    else if(act==="stepback"){ spawnBlade(); }'
+    + '    else if(act==="jump"){ spawnFlying(Math.random()<0.5?"\\uD83D\\uDC0D":"\\uD83E\\uDD82","jump",950); }'
+    + '    else if(act==="bigjump"){ spawnPit(false); }'
+    + '    else if(act==="whipswing"){ spawnPit(true); }'
+    + '    else if(act==="reset"){ setPos(46); }'
+    + '    else if(act==="chest"){ openChestTest(); }'
+    + '  });'
+    + '});'
+    + '})();<\/script>'
+    + '</body></html>';
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 function handleWin(){
   clearInterval(state.timerHandle);
   if(state.cascadePlayed) return;
@@ -1064,7 +1157,8 @@ function showHint(){
     E.pulse(document.getElementById('pile-waste'));
     return;
   }
-  const available = state.pyramid.filter(p=>!p.removed && !isCovered(p.row,p.col)).map(p=>({val:E.rankValue(p.card.rank), el:p.el}));
+  const exposedPyramid = state.pyramid.filter(p=>!p.removed && !isCovered(p.row,p.col));
+  const available = exposedPyramid.map(p=>({val:E.rankValue(p.card.rank), el:p.el}));
   if(state.waste.length){
     available.push({ val:E.rankValue(state.waste[state.waste.length-1].rank), el:document.querySelector('#pile-waste .card') });
   }
@@ -1077,8 +1171,24 @@ function showHint(){
       }
     }
   }
-  E.showToast(toastEl, 'No matches found. Draw a card.');
-  E.pulse(document.getElementById('pile-stock'));
+
+  // Nothing playable right now — but only suggest drawing if some card
+  // still in the stock or buried in the waste (everything except the
+  // current top, already checked above) could ever complete a match
+  // against what's currently exposed. Otherwise "draw a card" is a
+  // false lead — the game DOES know the full contents of the deck.
+  const availableVals = exposedPyramid.map(p=>E.rankValue(p.card.rank));
+  const remainingCards = state.stock.concat(state.waste.slice(0, -1));
+  const couldHelp = remainingCards.some(c=>{
+    const v = E.rankValue(c.rank);
+    return v===13 || availableVals.some(av => av+v===13);
+  });
+  if(couldHelp){
+    E.showToast(toastEl, 'Draw a card — a match may be waiting in the stock.');
+    E.pulse(document.getElementById('pile-stock'));
+  } else {
+    E.showToast(toastEl, 'No available matches right now — clearing a card may uncover one, or try Undo.');
+  }
 }
 function syncTimerInterval(){
   clearInterval(state.timerHandle);
@@ -1089,28 +1199,41 @@ function syncTimerInterval(){
    WINNABLE DECK GENERATOR (DFS SOLVER + MEMOIZATION)
    ========================================================= */
 function generateWinnableDeck(){
-  for(let attempt=0; attempt<500; attempt++){
+  for(let attempt=0; attempt<400; attempt++){
     let deck = E.shuffle(E.buildDeck());
     if(isDeckWinnable(deck)) return deck;
   }
-  console.warn('Could not find guaranteed winnable deal in 500 tries. Falling back to random.');
+  console.warn('Could not find guaranteed winnable deal in 400 tries. Falling back to random.');
   return E.shuffle(E.buildDeck());
 }
+// Mirrors newGame()'s actual dealing EXACTLY: the pyramid is built by
+// popping from the end of the deck (deck[51] fills row0/col0 first,
+// down to deck[24] filling row6/col6 last), leaving deck[0..23] as the
+// stock — which itself draws end-first, and on recycle the waste
+// reverses right back into the same order, so the same 24-card
+// sequence repeats identically forever. Earlier versions of this
+// solver (a) checked the wrong slice of the deck entirely — a
+// leftover mismatch against how newGame() actually deals — and (b)
+// treated the stock as a freely-accessible pool of ranks instead of
+// a fixed sequence exposed one card at a time, so it was certifying
+// deals as winnable that weren't actually playable in order. This
+// version simulates the real fixed, cyclic sequence and only ever
+// treats the CURRENT waste-top card as usable, same as real play.
 function isDeckWinnable(deck){
-  let pVals = deck.slice(0,28).map(c=>E.rankValue(c.rank));
-  let initialStock = new Int8Array(14);
-  for(let i=28;i<52;i++) initialStock[E.rankValue(deck[i].rank)]++;
+  const pVals = deck.slice(24, 52).reverse().map(c=>E.rankValue(c.rank));
+  const drawOrder = deck.slice(0, 24).reverse().map(c=>E.rankValue(c.rank));
 
-  let memo = new Set();
+  const memo = new Set();
   let iterations = 0;
 
-  function solve(mask, stock){
+  function solve(mask, pointer, exposedVal){
     iterations++;
-    if(iterations > 80000) return false;
+    if(iterations > 150000) return false;
     if(mask === 0) return true;
 
-    let sig = mask + '-' + stock.join('');
+    const sig = mask + '|' + (pointer % 24) + '|' + exposedVal;
     if(memo.has(sig)) return false;
+    memo.add(sig); // mark before recursing — breaks the infinite draw/recycle cycles
 
     let avail = [];
     for(let r=0;r<7;r++){
@@ -1126,34 +1249,43 @@ function isDeckWinnable(deck){
         }
       }
     }
+
+    // Lone Kings sitting uncovered in the pyramid — always a free move.
     for(let i=0;i<avail.length;i++){
-      let idx = avail[i];
-      if(pVals[idx]===13){
-        if(solve(mask ^ (1<<idx), stock)) return true;
-        memo.add(sig);
-        return false;
+      if(pVals[avail[i]]===13){
+        if(solve(mask ^ (1<<avail[i]), pointer, exposedVal)) return true;
       }
     }
+    // The current waste-top card, if it's a King, clears by itself —
+    // it doesn't need to still be sitting in the stock to count.
+    if(exposedVal===13){
+      if(solve(mask, pointer, -1)) return true;
+    }
+    // Pairs of uncovered pyramid cards summing to 13.
     for(let i=0;i<avail.length;i++){
-      let idx1 = avail[i];
-      let v1 = pVals[idx1];
-      let needed = 13 - v1;
       for(let j=i+1;j<avail.length;j++){
-        let idx2 = avail[j];
-        if(pVals[idx2]===needed){
-          if(solve(mask ^ (1<<idx1) ^ (1<<idx2), stock)) return true;
+        if(pVals[avail[i]] + pVals[avail[j]] === 13){
+          if(solve(mask ^ (1<<avail[i]) ^ (1<<avail[j]), pointer, exposedVal)) return true;
         }
       }
-      if(stock[needed] > 0){
-        stock[needed]--;
-        if(solve(mask ^ (1<<idx1), stock)) return true;
-        stock[needed]++;
+    }
+    // The waste-top card paired with an uncovered pyramid card.
+    if(exposedVal >= 0){
+      for(let i=0;i<avail.length;i++){
+        if(pVals[avail[i]] + exposedVal === 13){
+          if(solve(mask ^ (1<<avail[i]), pointer, -1)) return true;
+        }
       }
     }
-    memo.add(sig);
+    // Draw the next card in the real, fixed cyclic sequence. The
+    // mark-before-recurse memoization above prevents this from ever
+    // looping forever on a mask that can't change.
+    if(solve(mask, pointer+1, drawOrder[pointer % 24])) return true;
+
     return false;
   }
-  return solve((1<<28)-1, initialStock);
+
+  return solve((1<<28)-1, 0, -1);
 }
 
 function newGame(){
@@ -1257,6 +1389,7 @@ const settingsShell = E.wireSettingsShell({
       "Tut'sTomb.html v" + PAGE_VERSION + ' · engine.js v' + E.ENGINE_VERSION + ' · styles.css v' + stylesVersion;
   }
 });
+document.getElementById('settings-anim-test').addEventListener('click', openAnimTestWindow);
 document.getElementById('tog-winnable').addEventListener('change', (e)=>{
   pendingSettings.forceWinnable = e.target.checked;
   state.forceWinnable = e.target.checked;
