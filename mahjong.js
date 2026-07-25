@@ -10,17 +10,13 @@ const BONUS = ['Flower-1', 'Flower-2', 'Flower-3', 'Flower-4', 'Season-1', 'Seas
 
 let currentTheme = 'White';
 
+// FluffyStuff mapping is kept ready for when you drop files in later
 const FLUFFY_STUFF_MAP = {
-    'Circle-1':'Pin1', 'Circle-2':'Pin2', 'Circle-3':'Pin3', 'Circle-4':'Pin4', 'Circle-5':'Pin5', 'Circle-6':'Pin6', 'Circle-7':'Pin7', 'Circle-8':'Pin8', 'Circle-9':'Pin9',
-    'Bamboo-1':'Sou1', 'Bamboo-2':'Sou2', 'Bamboo-3':'Sou3', 'Bamboo-4':'Sou4', 'Bamboo-5':'Sou5', 'Bamboo-6':'Sou6', 'Bamboo-7':'Sou7', 'Bamboo-8':'Sou8', 'Bamboo-9':'Sou9',
-    'Character-1':'Man1', 'Character-2':'Man2', 'Character-3':'Man3', 'Character-4':'Man4', 'Character-5':'Man5', 'Character-6':'Man6', 'Character-7':'Man7', 'Character-8':'Man8', 'Character-9':'Man9',
-    'Wind-E':'Ton', 'Wind-S':'Nan', 'Wind-W':'Sha', 'Wind-N':'Pei',
-    'Dragon-R':'Chun', 'Dragon-G':'Hatsu', 'Dragon-W':'Haku'
-};
-
-const UNICODE_BONUS = {
-    'Flower-1':'🀢', 'Flower-2':'🀣', 'Flower-3':'🀤', 'Flower-4':'🀥',
-    'Season-1':'🀦', 'Season-2':'🀧', 'Season-3':'🀨', 'Season-4':'🀩'
+    'Circle-1':'pin1', 'Circle-2':'pin2', 'Circle-3':'pin3', 'Circle-4':'pin4', 'Circle-5':'pin5', 'Circle-6':'pin6', 'Circle-7':'pin7', 'Circle-8':'pin8', 'Circle-9':'pin9',
+    'Bamboo-1':'sou1', 'Bamboo-2':'sou2', 'Bamboo-3':'sou3', 'Bamboo-4':'sou4', 'Bamboo-5':'sou5', 'Bamboo-6':'sou6', 'Bamboo-7':'sou7', 'Bamboo-8':'sou8', 'Bamboo-9':'sou9',
+    'Character-1':'man1', 'Character-2':'man2', 'Character-3':'man3', 'Character-4':'man4', 'Character-5':'man5', 'Character-6':'man6', 'Character-7':'man7', 'Character-8':'man8', 'Character-9':'man9',
+    'Wind-E':'ton', 'Wind-S':'nan', 'Wind-W':'sha', 'Wind-N':'pei',
+    'Dragon-R':'chun', 'Dragon-G':'hatsu', 'Dragon-W':'haku'
 };
 
 function buildMahjongDeck() {
@@ -43,11 +39,15 @@ function shuffleArray(arr) {
     return arr;
 }
 
+// Attempts to find local image assets first; returns null if not found (triggers fallback)
 function getTileImagePath(id) {
+    // Uncomment this block once you upload your FluffyStuff files:
+    /*
     if (FLUFFY_STUFF_MAP[id]) {
         return `MahjongTiles/${currentTheme}/${FLUFFY_STUFF_MAP[id]}.webp`;
     }
-    return null;
+    */
+    return null; // Forces fallback rendering for now
 }
 
 /* =========================================================
@@ -67,7 +67,7 @@ function generateTurtleLayout() {
     for (let x = 3; x <= 10; x++) add(x, 1, 0);
     for (let x = 2; x <= 11; x++) add(x, 2, 0);
     for (let x = 1; x <= 12; x++) add(x, 3, 0);
-    add(0, 3.5, 0); 
+    add(0, 3.5, 0);  
     add(13, 3.5, 0); 
     add(14, 3.5, 0); 
     for (let x = 1; x <= 12; x++) add(x, 4, 0);
@@ -94,15 +94,28 @@ function generatePyramidLayout() {
     let id = 0;
     const add = (x, y, z) => layout.push({ posId: id++, x, y, z });
 
-    for(let y = 0; y <= 7; y++) {
-        for(let x = 2.5; x <= 11.5; x++) add(x, y, 0);
+    for (let y = 0; y < 8; y++) {
+        for (let x = 2; x < 10; x++) {
+            add(x, y, 0);
+        }
     }
-    for(let y = 1; y <= 6; y++) {
-        for(let x = 3.5; x <= 10.5; x++) add(x, y, 1);
+    for (let y = 1; y < 7; y++) {
+        for (let x = 3; x < 9; x++) {
+            add(x, y, 1);
+        }
     }
-    for(let y = 2; y <= 5; y++) {
-        for(let x = 5.5; x <= 8.5; x++) add(x, y, 2);
+    for (let y = 2; y < 6; y++) {
+        for (let x = 4; x < 8; x++) {
+            add(x, y, 2);
+        }
     }
+    for (let y = 3; y < 5; y++) {
+        for (let x = 5; x < 7; x++) {
+            add(x, y, 3);
+        }
+    }
+    add(5.5, 3.5, 4);
+
     return layout;
 }
 
@@ -143,14 +156,13 @@ function startNewGame() {
             img.className = 'tile-img';
             img.src = imgPath;
             img.alt = tile.id;
-            // Fallback to text if image asset is missing locally
             img.onerror = () => {
                 img.remove();
-                addFallbackText(tile.element, tile.id);
+                addFallbackContent(tile.element, tile.id);
             };
             tile.element.appendChild(img);
         } else {
-            addFallbackText(tile.element, tile.id);
+            addFallbackContent(tile.element, tile.id);
         }
         
         tile.element.style.left = `calc(var(--tile-w) * ${tile.x - 7})`; 
@@ -166,19 +178,44 @@ function startNewGame() {
     scaleBoardToFit();
 }
 
-function addFallbackText(element, id) {
-    const span = document.createElement('span');
-    span.className = 'tile-fallback';
-    if (UNICODE_BONUS[id]) {
-        span.innerText = UNICODE_BONUS[id];
-    } else {
-        // Shorten name for readable text fallback
-        span.innerText = id.replace('Character-', 'C').replace('Bamboo-', 'B').replace('Circle-', 'O').replace('Wind-', '').replace('Dragon-', 'D');
+// Clean text layout for fallback tiles (Suit top badge + value center)
+function addFallbackContent(element, id) {
+    const container = document.createElement('div');
+    container.className = 'tile-fallback';
+
+    const topSpan = document.createElement('span');
+    topSpan.className = 't-top';
+    const mainSpan = document.createElement('span');
+    mainSpan.className = 't-main';
+
+    if (id.startsWith('Circle-')) {
+        topSpan.innerText = 'CIRCLE';
+        mainSpan.innerText = id.split('-')[1];
+    } else if (id.startsWith('Bamboo-')) {
+        topSpan.innerText = 'BAMBOO';
+        mainSpan.innerText = id.split('-')[1];
+    } else if (id.startsWith('Character-')) {
+        topSpan.innerText = 'CHAR';
+        mainSpan.innerText = id.split('-')[1];
+    } else if (id.startsWith('Wind-')) {
+        topSpan.innerText = 'WIND';
+        mainSpan.innerText = id.split('-')[1];
+    } else if (id.startsWith('Dragon-')) {
+        topSpan.innerText = 'DRAGON';
+        mainSpan.innerText = id.split('-')[1];
+    } else if (id.startsWith('Flower-')) {
+        topSpan.innerText = 'FLOWER';
+        mainSpan.innerText = id.split('-')[1];
+    } else if (id.startsWith('Season-')) {
+        topSpan.innerText = 'SEASON';
+        mainSpan.innerText = id.split('-')[1];
     }
-    element.appendChild(span);
+
+    container.appendChild(topSpan);
+    container.appendChild(mainSpan);
+    element.appendChild(container);
 }
 
-// Automatically scales down the board wrapper if it exceeds the felt container
 function scaleBoardToFit() {
     const felt = document.querySelector('.table-felt');
     const wrapper = document.getElementById('scale-wrapper');
@@ -205,6 +242,7 @@ function handleTileClick(tile) {
         selectedTile.element.classList.remove('selected');
         selectedTile = null;
     } else if (isMatch(selectedTile, tile)) {
+        selectedTile.element.classList.remove('selected');
         tile.active = false;
         selectedTile.active = false;
         tile.element.style.display = 'none';
@@ -266,11 +304,11 @@ function shuffleBoard() {
             img.alt = tile.id;
             img.onerror = () => {
                 img.remove();
-                addFallbackText(tile.element, tile.id);
+                addFallbackContent(tile.element, tile.id);
             };
             tile.element.appendChild(img);
         } else {
-            addFallbackText(tile.element, tile.id);
+            addFallbackContent(tile.element, tile.id);
         }
     });
     
@@ -312,9 +350,11 @@ function applyTheme(themeVal) {
     }
 
     currentTiles.forEach(tile => {
-        if (tile.active && FLUFFY_STUFF_MAP[tile.id]) {
+        if (tile.active) {
             const img = tile.element.querySelector('img');
-            if (img) img.src = getTileImagePath(tile.id);
+            if (img) {
+                img.src = getTileImagePath(tile.id);
+            }
         }
     });
     
@@ -330,7 +370,7 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
 });
 
 /* =========================================================
-   UI MODAL WIRING (Fixed Settings Overlay Activation)
+   UI MODAL WIRING 
    ========================================================= */
 const confirmOverlay = document.getElementById('confirm-overlay');
 if (confirmOverlay) {
@@ -345,7 +385,6 @@ if (confirmOverlay) {
 const helpOverlay = document.getElementById('help-overlay');
 if (helpOverlay) {
     document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
-    document.getElementById('btn-help-close')?.addEventListener('click', ()=> helpOverlay.classList.remove('show'));
     document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
     helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
 }
