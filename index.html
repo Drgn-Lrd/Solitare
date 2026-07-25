@@ -2,14 +2,20 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 4.1
+    Version 4.2
 
-   Tut's Tomb tile now links to its real file, Tut'sTomb.html, instead
-   of the old working filename Pyramid.html. Also switches this file
-   onto the shared-file version scheme: X.x, where X is the current
-   count of active (playable/testing) games — Klondike, FreeCell,
-   Yukon, Tut's Tomb — and x is the step within that. X only changes
-   when a game is added to or dropped from that active count.
+   Yukon retired from the active roster and replaced with Spider, same
+   tile slot and same Testing status. Active count stays at 4
+   (Klondike, FreeCell, Spider, Tut's Tomb) — per this file's own
+   versioning rule (see below) that's a step, not a new major version.
+   Background art is a placeholder pointing at images/Spider.webp
+   until real photo art exists for it.
+
+   Also switches this file onto the shared-file version scheme: X.x,
+   where X is the current count of active (playable/testing) games —
+   Klondike, FreeCell, Spider, Tut's Tomb — and x is the step within
+   that. X only changes when a game is added to or dropped from that
+   active count.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -23,14 +29,14 @@
   Card BACKS stay simple CSS stripes, one distinct color per game.
 
   FreeCell + every in-dev tile also gets a real photo background from
-  /images (Golf.png, TriPeaks.png, Yukon.png, Pyramid.png, FreeCell.png)
+  /images (Golf.png, TriPeaks.png, Spider.png, Pyramid.png, FreeCell.png)
   instead of hand-drawn shapes — a dark gradient scrim sits between the
   photo and the content so the title/badge/mini-board stay legible
   regardless of the photo. Klondike stays plain felt on purpose ("keep
   it as is").
 
-  Tiles for Klondike/FreeCell/Yukon/Tut's Tomb link out to their real
-  files (Klondike is approved and live; FreeCell, Yukon, and Tut's Tomb
+  Tiles for Klondike/FreeCell/Spider/Tut's Tomb link out to their real
+  files (Klondike is approved and live; FreeCell, Spider, and Tut's Tomb
   are playable but still marked Testing until signed off). TriPeaks and
   Golf are marked IN DEV and stay inert (no navigation) until built.
 -->
@@ -44,7 +50,7 @@
 <link rel="preload" as="image" href="images/FreeCell.webp">
 <link rel="preload" as="image" href="images/TriPeaks.webp">
 <link rel="preload" as="image" href="images/Golf.webp">
-<link rel="preload" as="image" href="images/Yukon.webp">
+<link rel="preload" as="image" href="images/Spider.webp">
 <link rel="preload" as="image" href="images/Pyramid.webp">
 <style>
   :root{
@@ -149,7 +155,7 @@
 
   .art-golf{ background-image: url('images/Golf.webp'); }
   .art-tripeaks{ background-image: url('images/TriPeaks.webp'); }
-  .art-yukon{ background-image: url('images/Yukon.webp'); }
+  .art-spider{ background-image: url('images/Spider.webp'); }
   .art-tut{ background-image: url('images/Pyramid.webp'); }
   .art-freecell{ background-image: url('images/FreeCell.webp'); }
 
@@ -197,7 +203,7 @@
   .mc.back-freecell{ background: repeating-linear-gradient(45deg, #146b62 0 3px, #0e4a44 3px 6px); }
   .mc.back-tripeaks{ background: repeating-linear-gradient(45deg, #4a2f6b 0 3px, #351f4d 3px 6px); }
   .mc.back-golf{ background: repeating-linear-gradient(45deg, #2f6b3a 0 3px, #1f4d28 3px 6px); }
-  .mc.back-yukon{ background: repeating-linear-gradient(45deg, #2f5c7a 0 3px, #1f3f56 3px 6px); }
+  .mc.back-spider{ background: repeating-linear-gradient(45deg, #6b1f3a 0 3px, #4a1428 3px 6px); }
   .mc.gold-back{
     background: repeating-linear-gradient(45deg, #8a5a1e 0 3px, #6b4315 3px 6px);
     border:1px solid rgba(232,200,115,.5);
@@ -397,31 +403,36 @@
       <p class="tile-desc">Fast-paced card matching. Clear 35 tableau cards onto the waste pile in sequential order.</p>
     </div>
 
-    <!-- YUKON — playable -->
-    <a class="tile-link" href="Yukon.html">
+    <!-- SPIDER — playable -->
+    <a class="tile-link" href="Spider.html">
       <div class="tile-frame">
         <div class="tile-felt">
-          <div class="tile-bg-art art-yukon"></div>
-          <div class="tile-head"><h2>Yukon</h2><span class="status-pill testing">Testing</span></div>
+          <div class="tile-bg-art art-spider"></div>
+          <div class="tile-head"><h2>Spider</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
-            <div class="mc-row" style="align-items:flex-start; gap:8px;">
-              <div class="mc-cols" style="flex:1;">
-                <div class="mc-col"><div class="mc face"></div></div>
-                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-                <div class="mc-col"><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc back-yukon"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
-              </div>
-              <div style="display:flex; flex-direction:column; gap:3px;">
+            <div class="mc-row" style="justify-content:center; align-items:center; gap:5px;">
+              <div class="mc back-spider"></div>
+              <div class="mc-row" style="gap:3px;">
+                <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
                 <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
               </div>
+            </div>
+            <div class="mc-cols">
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
             </div>
           </div>
         </div>
       </div>
-      <p class="tile-desc">7 tableau stacks with ascending face-down cards topped with face-up runs. Build foundations up by suit.</p>
+      <p class="tile-desc">10 tableau columns, two decks. Stack <b>any suit</b> descending, but only matching-suit runs move together — clear all 8 runs to win.</p>
     </a>
 
     <!-- TUT'S TOMB (Pyramid) — playable -->
