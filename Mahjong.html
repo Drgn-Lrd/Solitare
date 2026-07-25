@@ -2,19 +2,32 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 1.0
+    Version 1.1
 
-   New game. Mahjong Solitaire (pair-matching tile layout), built on
-   the shared engine.js + styles.css the same way every other game in
-   the suite is: header, buttons, chips, toasts, hint-pulse, the
-   Settings/Help/Win/Confirm modal shells, the undo stack, and the win
-   cascade all come straight from engine.js/styles.css untouched. What
-   this file owns is everything genuinely specific to Mahjong: the
-   144-tile layered "turtle" layout, tile face art (tiles/*.svg, drawn
-   the same way cards/*.webp are — real image files, one per tile
-   design), the free-tile rule (nothing on top, open on the left or
-   right), guaranteed-solvable deal generation, and click-to-select
-   pair matching instead of drag/drop.
+   Header now matches every other game's real markup exactly:
+   brand-actions (Home/New Game) nested INSIDE .brand-text below the
+   <h1>, not off to the side of it, and no invented subtitle line —
+   there never was a "Solitaire Suite" byline under the title anywhere
+   else in the suite. Title itself is just "Mahjong", no suffix.
+   Pairs/Time chips moved out of the header hud and into the bottombar
+   (#chip-score/#chip-time), same as Klondike/FreeCell — the header
+   hud only ever holds Help/Settings.
+
+   Real bug fix: tile z-index (layer*1000 + row*20 + col, so up into
+   the thousands) was painting every tile ABOVE .overlay/.winmask
+   (z-index 100/200) instead of under them — Settings/Help/Confirm/No
+   Moves were rendering, just invisibly behind the board, which is why
+   Settings looked like it only "dimmed half the tiles and did
+   nothing." Tile z-index is now capped at layer*20+row (max ~70,
+   nowhere near overlay range), and .overlay/.winmask additionally get
+   a local z-index:5000 override here just so this can never regress
+   even if the tile-numbering scheme changes later.
+
+   Background now uses the same photo+scrim technique as Spider.html/
+   FreeCell.html (images/Mahjong.webp, dark gradient scrim, --table-
+   opacity already shared via styles.css so the wood/felt read the
+   photo through them the same way) instead of the flat vignette this
+   started with.
 
    Two settings this game adds that no card game needed:
      - Light/Dark tile color pickers (two <input type=color>) driving
@@ -60,12 +73,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Mahjong</title>
+<link rel="preload" as="image" href="images/Mahjong.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
-  /* ===== Mahjong-only background: plain dark jade vignette, same
-     treatment Klondike uses for its felt-only look (no photo). ===== */
+  /* Mahjong-only background: same photo+scrim treatment as Spider.html/
+     FreeCell.html — a dark gradient sits between the photo and
+     everything else so the header/bottom bar/table stay legible
+     regardless of how bright the photo is. images/Mahjong.webp is a
+     dedicated background photo the same way images/Spider.webp and
+     images/FreeCell.webp are — add that file and this picks it up
+     with no other change needed. The wood frame + green felt
+     (.table-frame/.table-felt) already read --table-opacity from
+     styles.css, so they let this photo show through exactly like
+     every other game with a photo background. */
   html,body{
-    background: radial-gradient(ellipse at 50% -10%, #182a1c, #0b140d 65%);
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Mahjong.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
   }
   .brand .crest{ font-size:30px; }
 
@@ -122,27 +147,31 @@
   .helpbody{ font-size:13px; line-height:1.7; color:#dce9df; }
   .helpbody b{ color:var(--brass-light); }
   .helpbody ul{ margin:6px 0 14px; padding-left:20px; }
+
+  /* Tiles are stacked with their own z-index scheme (see renderAll's
+     layer*20+row math — max ~70), which stays comfortably under
+     .overlay's z-index:100 already. This explicit override is just a
+     safety net so a modal can never again render silently behind the
+     board even if that tile formula changes later. */
+  .overlay, .winmask{ z-index: 5000; }
 </style>
 </head>
 <body>
 
 <header>
   <div class="brand">
-    <div class="crest">🀄</div>
+    <div class="crest" aria-hidden="true">🀄</div>
     <div class="brand-text">
-      <h1>Mahjong<span class="title-suffix"> &nbsp;·&nbsp; Solitaire</span></h1>
-      <small>SOLITAIRE SUITE</small>
-    </div>
-    <div class="brand-actions">
-      <a class="home-btn" href="index.html" title="Home">🏠</a>
-      <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      <h1>Mahjong</h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
     </div>
   </div>
   <div class="hud">
-    <div class="chip" id="chip-score">Pairs <b id="score-val">0</b>/72</div>
-    <div class="chip" id="chip-time">⏱ <b id="time-val">00:00</b></div>
-    <div class="iconbtn" id="btn-help" title="Help">?</div>
-    <div class="iconbtn" id="btn-settings" title="Settings">⚙</div>
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
 </header>
 
@@ -154,18 +183,18 @@
   </div>
 </div>
 
-<div class="bottombar">
-  <div></div>
-  <div class="bottombar-actions">
-    <button class="bottombtn" id="btn-undo"><span class="bicon">↺</span><span class="blabel">UNDO</span></button>
-    <button class="bottombtn" id="btn-hint"><span class="bicon">💡</span><span class="blabel">HINT</span></button>
-    <button class="bottombtn" id="btn-findmatch"><span class="bicon">🔎</span><span class="blabel">FIND MATCH</span></button>
-    <button class="bottombtn" id="btn-shuffle"><span class="bicon">🔀</span><span class="blabel">SHUFFLE</span></button>
-  </div>
-  <div></div>
-</div>
-
 <div class="hint-toast" id="toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score">PAIRS <b id="score-val">0</b>/72</div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">💡</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-findmatch" title="Highlight this tile's free matches"><span class="bicon">🔎</span><span class="blabel">Find Match</span></button>
+    <button class="bottombtn" id="btn-shuffle" title="Shuffle remaining tiles"><span class="bicon">🔀</span><span class="blabel">Shuffle</span></button>
+  </div>
+  <div class="chip" id="chip-time">TIME <b id="time-val">00:00</b></div>
+</div>
 
 <!-- SETTINGS -->
 <div class="overlay" id="settings-overlay">
@@ -268,7 +297,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '1.0';
+const PAGE_VERSION = '1.1';
 
 /* =========================================================
    TILE LAYOUT
@@ -460,7 +489,11 @@ function renderAll(){
     el.style.top = top + 'px';
     el.style.width = tileW + 'px';
     el.style.height = tileH + 'px';
-    el.style.zIndex = String(t.layer*1000 + t.row*20 + t.col);
+    // Small, deliberately capped range (max ~70 for 4 layers) — keeps
+    // higher layers reliably painting over lower ones without ever
+    // approaching .overlay/.winmask's z-index (see the local override
+    // in <style> above for why that headroom matters).
+    el.style.zIndex = String(t.layer*20 + t.row);
 
     const body = document.createElement('div');
     body.className = 'mtile-body';
