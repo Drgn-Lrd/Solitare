@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<!--
+    Spider.html
+    Written by: Johnathon Largent
+    Version 0.1
+
+   First build. New game built on the shared engine.js + styles.css,
+   following the same split every other game in the suite uses: this
+   file only owns what's actually specific to Spider (10 tableau
+   columns, a 50-card stock dealt 10-at-a-time instead of free cells or
+   a waste pile, 8 generic foundation slots instead of 4 per-suit ones,
+   and the rules for both), while drag/drop, click-to-move, undo,
+   settings shell, hint pulse/toast, win cascade, and screen-fit sizing
+   all come from engine.js untouched.
+
+   Spider-specific rules, different from every other game here:
+     - An empty column accepts ANY card (like FreeCell), but otherwise
+       a card can be placed on ANY card exactly one rank higher,
+       regardless of suit or color (unlike Klondike/FreeCell's
+       alternating-color requirement).
+     - Only a run of cards that's all the SAME SUIT and sequential can
+       be picked up and moved together — a mixed-suit sequence that's
+       merely rank-legal to look at can still only move one card at a
+       time. There's no free-cell-style cap on how long a same-suit run
+       can be (no supermove-size formula needed at all).
+     - No manual foundation drops: completing a full King-to-Ace
+       same-suit run anywhere in a column is detected automatically
+       after every move/deal and swept off to the next open foundation
+       slot on its own (see processCompletedRuns).
+     - The "Suits" difficulty slider (1-4, default 1) controls how many
+       distinct suits the two-deck, 104-card shoe is built from — 1 is
+       the classic easiest variant (all Spades), 4 is the classic
+       hardest (all four suits) — via buildSpiderDeck's set-cycling
+       below. 2 and 3 are supported the same way even though only 1/2/4
+       are the traditional named variants.
+     - Dealing a new row from the stock (10 cards, one face-up onto
+       each column) is blocked while any column is empty, per the
+       standard rule — same as classic Spider.
+   ========================================================= -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Spider</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Spider has no dedicated crest artwork yet — a plain spider glyph
+     on the shared brass circle, same lightweight approach Yukon uses
+     for its snowflake, rather than inventing an image asset that
+     doesn't exist. */
+  .brand .crest{ font-size:30px; }
+
+  /* Small numeric badge overlaid on the stock pile showing how many
+     more 10-card deals are left (ceil(stock.length/10)) — the stock
+     pile itself only ever shows one generic card back, so without
+     this there'd be no way to tell 3 deals left from 1 at a glance.
+     Positioned inside .pile (already position:relative) and given an
+     explicit z-index so it stacks above the card image appended
+     after it in DOM order (that .card element has no z-index of its
+     own, so anything with a real z-index wins the paint order). */
+  .stock-badge{
+    position:absolute; bottom:-8px; right:-8px; z-index:5;
+    background: var(--brass); color:#2a1e05; font-weight:bold;
+    font-size:11px; min-width:20px; height:20px; border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4); pointer-events:none;
+    padding:0 4px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true">&#128375;</div>
+    <div class="brand-text">
+      <h1>Spider</h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<!-- Stock (left) + 8 completed-run foundation slots (right) up top,
+     10 tableau columns below — 54 cards dealt to the tableau (4
+     columns of 6, 6 columns of 5, only the last of each face-up), the
+     remaining 50 held back in the stock for later 10-card deals. -->
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="row top-row">
+        <div class="stockwaste" id="stock-group">
+          <div class="pile slot" id="pile-stock" data-type="stock">
+            <div class="slot-mark">↺</div>
+            <div class="stock-badge" id="stock-badge" style="display:none;"></div>
+          </div>
+        </div>
+        <div class="foundations" id="foundations-row"></div>
+      </div>
+      <div class="row tableau-row" id="tableau"></div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-deal" title="Deal a new row from the stock"><span class="bicon">⇩</span><span class="blabel">Deal</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="winmask" id="winmask">
+  <div class="winmask-modal">
+    <h2>You Win!</h2>
+    <p id="win-sub">Cleared in — </p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  </div>
+</div>
+
+<div class="winmask" id="nomovesmask">
+  <h2>No More Moves</h2>
+  <p>Looks like the game is stuck.</p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="nomoves-undo">Undo Last Move</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="nomoves-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Spider Solitaire</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Two decks (104 cards) are in play. 54 are dealt across 10 tableau columns (only the top card of each face-up); the other 50 sit in the stock.</li>
+      <li>Build tableau columns DOWN one rank at a time — <b>any suit</b> can sit on any other, unlike Klondike. An empty column accepts any card.</li>
+      <li>Only a run that's the <b>same suit</b> and perfectly sequential can be dragged as a group. A mixed-suit sequence still looks tidy on the table, but you can only move one card of it at a time.</li>
+      <li>Build a complete King-to-Ace run of one suit anywhere in a column and it clears itself off to a foundation slot automatically — no need to drag it there.</li>
+      <li>Tap the stock (or the <b>Deal</b> button) to deal one new face-up card onto every column — only when no column is empty.</li>
+      <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make.</li>
+      <li>Settings lets you choose how many suits (1-4) the deck is built from — 1 suit is the easiest classic variant, 4 is the hardest.</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Card back applies instantly. Timer/score too.</div>
+
+    <div class="field">
+      <label>Suits: <span id="suit-slider-val">1</span></label>
+      <input type="range" id="suit-slider" min="1" max="4" step="1" value="1" style="width:100%;">
+      <div class="fieldnote">1 suit is the classic easiest deal (every card is a Spade); 4 is the classic hardest (all four suits mixed in). Applies on your next New Game.</div>
+    </div>
+
+    <div class="field">
+      <label>Card Back</label>
+      <div class="backpicker" id="back-picker">
+        <div class="backswatch" data-val="back_6.webp"><img src="cards/back_6.webp" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.webp"><img src="cards/back_7.webp" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.webp"><img src="cards/back_9.webp" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.webp"><img src="cards/back_10.webp" alt="Back 10"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Testing</label>
+      <button class="textbtn" id="settings-preview-win" style="width:100%;">Preview Win Screen</button>
+      <div class="fieldnote">Plays the win cascade + dialog without touching your current game.</div>
+    </div>
+
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const E = window.SEngine;
+const PAGE_VERSION = '0.1';
+const SUITS = E.SUITS, RANKS = E.RANKS;
+
+/* =========================================================
+   GAME STATE
+   No free cells, no waste pile. state.foundations is 8 generic slots
+   (not one per suit — with a repeating 2-deck shoe, "one pile per
+   suit" doesn't make sense here) that each hold either nothing or one
+   completed 13-card King-to-Ace same-suit run, stored Ace-first/
+   King-last so the King renders as the visible top card, matching the
+   classic look of a cleared Spider suit.
+   ========================================================= */
+const state = {
+  showTimer: false,
+  showScore: false,
+  backStyle: 'back_10.webp',
+  suitCount: 1, // difficulty slider, 1-4, default 1 (classic easiest)
+  stock: [],
+  tableau: [[],[],[],[],[],[],[],[],[],[]],
+  foundations: [[],[],[],[],[],[],[],[]],
+  score: 0,
+  seconds: 0,
+  timerHandle: null,
+  cascadePlayed: false
+};
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp', suitCount:1 };
+const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
+const toastEl = document.getElementById('hint-toast');
+
+/* =========================================================
+   DECK
+   A real Spider shoe is two standard decks (104 cards) built from
+   `suitCount` distinct suits, cycled evenly across the 8 thirteen-card
+   sets that make it up — set 0 gets suits[0], set 1 gets suits[1], ...
+   wrapping back around. suitCount=1 -> all 8 sets are Spades (the
+   classic 1-suit deal). suitCount=2 -> 4 sets Spades, 4 Hearts
+   (classic 2-suit). suitCount=4 -> 2 sets each suit (classic 4-suit).
+   suitCount=3 isn't a traditional named variant, but the same cycling
+   still produces a sensible in-between deck (3/3/2 sets).
+   ========================================================= */
+function buildSpiderDeck(suitCount){
+  const suits = SUITS.slice(0, Math.max(1, Math.min(4, suitCount)));
+  const deck = [];
+  let id = 0;
+  for(let set=0; set<8; set++){
+    const suit = suits[set % suits.length];
+    for(const r of RANKS){
+      deck.push({ id:'c'+(id++), rank:r, suit:suit, faceUp:false });
+    }
+  }
+  return deck;
+}
+
+/* =========================================================
+   RULES
+   ========================================================= */
+function canPlaceOnTableau(card, destPile){
+  if(destPile.length===0) return true; // empty column takes any card, like FreeCell
+  const top = destPile[destPile.length-1];
+  if(!top.faceUp) return false;
+  return E.rankValue(card.rank) === E.rankValue(top.rank)-1; // rank only — suit/color don't matter for a single card
+}
+function findPileArray(pileType, key){
+  if(pileType==='tableau') return state.tableau[key];
+  if(pileType==='foundation') return state.foundations[key];
+  return null;
+}
+// Only tableau-to-tableau moves are ever legal to drag/click — nothing
+// is ever dropped directly onto a foundation slot (see the changelog
+// note above about automatic run detection instead).
+function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
+  if(fromType!=='tableau' || toType!=='tableau') return false;
+  const fromPile = state.tableau[fromKey];
+  if(!fromPile || fromIndex<0 || fromIndex>=fromPile.length) return false;
+  if(Number(fromKey)===Number(toKey)) return false;
+
+  const movingCards = fromPile.slice(fromIndex);
+  if(movingCards.some(c=>!c.faceUp)) return false;
+  // Moving more than one card at once requires the whole slice to be
+  // one same-suit, strictly sequential run — a mixed-suit sequence
+  // that merely LOOKS legal card-by-card still can't move as a group.
+  if(movingCards.length>1){
+    for(let i=0;i<movingCards.length-1;i++){
+      const a=movingCards[i], b=movingCards[i+1];
+      if(!(a.suit===b.suit && E.rankValue(a.rank)===E.rankValue(b.rank)+1)) return false;
+    }
+  }
+  return canPlaceOnTableau(movingCards[0], state.tableau[toKey]);
+}
+// No widening needed here the way FreeCell needs it — there's no
+// free-cell/empty-column capacity limit on how many cards can move
+// together in Spider, so whatever slice the player actually grabbed
+// (fromIndex..end) either is or isn't a legal same-suit run as-is.
+function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
+  return canMoveExact(fromType, fromKey, fromIndex, toType, toKey) ? fromIndex : -1;
+}
+function tryMove(fromType, fromKey, fromIndex, toType, toKey){
+  if(!canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return false;
+  const fromPile = state.tableau[fromKey];
+  const movingCards = fromPile.slice(fromIndex);
+  undo.push();
+  fromPile.splice(fromIndex, movingCards.length);
+  state.tableau[toKey].push(...movingCards);
+  flipNewTopIfNeeded(Number(fromKey));
+  const completed = processCompletedRuns();
+  renderAll();
+  announceCompletedRuns(completed);
+  return true;
+}
+function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
+  const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
+  if(idx<0) return false;
+  return tryMove(fromType, fromKey, idx, toType, toKey);
+}
+function flipNewTopIfNeeded(col){
+  const pile = state.tableau[col];
+  if(pile.length){
+    const top = pile[pile.length-1];
+    if(!top.faceUp){ top.faceUp = true; addScore(5); }
+  }
+}
+
+/* =========================================================
+   COMPLETED-RUN DETECTION
+   Runs after every move and every stock deal: any column whose top 13
+   cards form a full King-to-Ace same-suit sequence gets that run
+   pulled off automatically into the next open foundation slot. Stored
+   reversed (Ace-first) so the King — the last card pushed — ends up
+   as the visible top card, matching the classic completed-pile look.
+   Pure state mutation only; returns which slot(s) just filled so the
+   caller can pulse/toast about it AFTER renderAll() has redrawn the
+   board (so the foundation slot's new card actually exists to pulse).
+   ========================================================= */
+function processCompletedRuns(){
+  const completedSlots = [];
+  for(let c=0;c<10;c++){
+    const pile = state.tableau[c];
+    if(pile.length<13) continue;
+    const top13 = pile.slice(pile.length-13);
+    if(top13[0].rank!=='K' || top13[12].rank!=='A') continue;
+    let ok = true;
+    for(let i=0;i<12;i++){
+      const a=top13[i], b=top13[i+1];
+      if(!(a.suit===b.suit && E.rankValue(a.rank)===E.rankValue(b.rank)+1)){ ok=false; break; }
+    }
+    if(!ok) continue;
+    const slot = state.foundations.findIndex(f=>f.length===0);
+    if(slot<0) continue; // shouldn't happen (max 8 completions ever possible) — leave it in place if it somehow does
+    pile.splice(pile.length-13, 13);
+    state.foundations[slot] = top13.slice().reverse();
+    addScore(100);
+    completedSlots.push(slot);
+  }
+  return completedSlots;
+}
+function announceCompletedRuns(completedSlots){
+  if(!completedSlots.length) return;
+  completedSlots.forEach(slot=> E.pulse(document.getElementById('f-'+slot)));
+  E.showToast(toastEl, completedSlots.length>1 ? 'Suits completed!' : 'Suit completed!');
+}
+
+/* =========================================================
+   STOCK DEAL
+   Deals one card face-up onto each of the 10 columns — the standard
+   rule blocks this while any column is empty, same as classic Spider.
+   ========================================================= */
+function dealFromStock(){
+  if(state.stock.length===0){ E.showToast(toastEl, 'No cards left in the stock.'); return; }
+  if(state.tableau.some(col=>col.length===0)){ E.showToast(toastEl, 'Fill every empty column before dealing.'); return; }
+  undo.push();
+  for(let c=0;c<10;c++){
+    const card = state.stock.pop();
+    card.faceUp = true;
+    state.tableau[c].push(card);
+  }
+  const completed = processCompletedRuns();
+  renderAll();
+  announceCompletedRuns(completed);
+}
+
+/* =========================================================
+   HINT / NO-MOVES SCANNER
+   ========================================================= */
+// Prefers a move that flips a face-down card over one that doesn't —
+// same "unambiguous progress first" idea as the other games' hint
+// scanners, simplified since there's no free cell/waste to weigh in.
+function findProductiveMove(){
+  for(let c=0;c<10;c++){
+    const pile = state.tableau[c];
+    for(let i=0;i<pile.length;i++){
+      if(!pile[i].faceUp) continue;
+      if(i===0 || pile[i-1].faceUp) continue; // only the exact spot that would expose a hidden card
+      for(let t=0;t<10;t++){
+        if(t===c) continue;
+        if(canMoveExact('tableau', c, i, 'tableau', t)) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
+      }
+    }
+  }
+  for(let c=0;c<10;c++){
+    const pile = state.tableau[c];
+    for(let i=0;i<pile.length;i++){
+      if(!pile[i].faceUp) continue;
+      for(let t=0;t<10;t++){
+        if(t===c) continue;
+        if(i===0 && state.tableau[t].length===0) continue; // relocating a whole column onto another empty one isn't progress
+        if(canMoveExact('tableau', c, i, 'tableau', t)) return {type:'tableau-tableau', fromKey:c, index:i, to:t};
+      }
+    }
+  }
+  return null;
+}
+function findAnyMove(){
+  const direct = findProductiveMove();
+  if(direct) return direct;
+  if(state.stock.length>0 && !state.tableau.some(col=>col.length===0)) return {type:'deal'};
+  return null;
+}
+function checkNoMoves(){
+  const mask = document.getElementById('nomovesmask');
+  const total = state.foundations.reduce((n,f)=>n+f.length,0);
+  if(total===104){ mask.classList.remove('show'); return; }
+  mask.classList.toggle('show', !findAnyMove());
+}
+function findCardEl(pileType, pileKey, index){
+  return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
+}
+function showHint(){
+  const move = findAnyMove();
+  if(!move){ E.showToast(toastEl, "No moves left — try Undo or New Game."); return; }
+  switch(move.type){
+    case 'tableau-tableau':
+      E.showToast(toastEl, 'Move from column '+(move.fromKey+1)+' onto column '+(move.to+1)+'.');
+      E.pulse(findCardEl('tableau', move.fromKey, move.index));
+      break;
+    case 'deal':
+      E.showToast(toastEl, 'Deal a new row from the stock.');
+      E.pulse(document.getElementById('pile-stock'));
+      break;
+  }
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function ensureTableauCols(){
+  const row = document.getElementById('tableau');
+  if(row.children.length===10) return;
+  row.innerHTML = '';
+  for(let i=0;i<10;i++){
+    const col = document.createElement('div');
+    col.className = 'tcol';
+    col.dataset.index = i;
+    col.innerHTML = '<div class="pile slot"></div>';
+    row.appendChild(col);
+  }
+}
+function ensureFoundations(){
+  const row = document.getElementById('foundations-row');
+  if(row.children.length===8) return;
+  row.innerHTML = '';
+  for(let i=0;i<8;i++){
+    const el = document.createElement('div');
+    el.className = 'pile slot';
+    el.id = 'f-'+i;
+    el.dataset.type = 'foundation';
+    el.dataset.key = i;
+    el.innerHTML = '<div class="slot-mark">K</div>';
+    row.appendChild(el);
+  }
+}
+function makeCardEl(card, pileType, pileKey, index, covered){
+  return E.makeCardEl(card, pileType, pileKey, index, covered, state.backStyle, E.attachCardEvents);
+}
+function renderAll(){
+  E.purgeStrayCards();
+  ensureTableauCols();
+  ensureFoundations();
+  E.fitBoard({
+    columns: 10,
+    // Top row = 1 stock pile + 8 foundation slots = 9 card-widths,
+    // with 8 total gaps (7 within the foundation group + 1 between
+    // the stock and foundation groups) — see the comment on
+    // fitBoard's extraRows in engine.js for why this needs spelling
+    // out separately from the tableau's own column count.
+    extraRows: [{ units: 9, gaps: 8 }],
+    getMaxStackDepth: ()=> Math.max(6, ...state.tableau.map(c=>c.length)),
+    minStackForFit: 6
+  });
+  renderHUD();
+  renderStock();
+  renderFoundations();
+  renderTableau();
+  const won = checkWin();
+  if(!won) checkNoMoves();
+}
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+function renderStock(){
+  const p = document.getElementById('pile-stock');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  if(state.stock.length){
+    const top = state.stock[state.stock.length-1];
+    // Just like Klondike's stock — always a generic back, never the
+    // real top card's face, regardless of what it actually is.
+    const fake = {id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false};
+    p.appendChild(makeCardEl(fake, 'stock', 'stock', state.stock.length-1));
+  }
+  const dealsLeft = Math.ceil(state.stock.length/10);
+  const badge = document.getElementById('stock-badge');
+  badge.textContent = dealsLeft;
+  badge.style.display = dealsLeft>0 ? 'flex' : 'none';
+}
+function renderFoundations(){
+  for(let i=0;i<8;i++){
+    const p = document.getElementById('f-'+i);
+    p.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.foundations[i];
+    if(pile.length) p.appendChild(makeCardEl(pile[pile.length-1], 'foundation', i, pile.length-1, false));
+  }
+}
+function renderTableau(){
+  const metrics = E.cardMetrics(0.183);
+  for(let c=0;c<10;c++){
+    const col = document.querySelector('.tcol[data-index="'+c+'"]');
+    col.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.tableau[c];
+    pile.forEach((card, i)=>{
+      const el = makeCardEl(card, 'tableau', c, i, i<pile.length-1);
+      el.style.top = (i*metrics.overlap)+'px';
+      col.appendChild(el);
+    });
+    E.setColumnHeight(col, pile.length, metrics);
+  }
+}
+
+/* =========================================================
+   WIN + CASCADE
+   ========================================================= */
+function checkWin(){
+  const total = state.foundations.reduce((n,f)=>n+f.length,0);
+  if(total===104){
+    clearInterval(state.timerHandle);
+    if(!state.cascadePlayed){
+      state.cascadePlayed = true;
+      launchCascade();
+      const m = Math.floor(state.seconds/60), s = state.seconds%60;
+      document.getElementById('win-sub').textContent = state.showTimer
+        ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+        : (state.showScore ? ('Score '+state.score) : 'Well played.');
+      document.getElementById('win-newgame').textContent = 'Play Again';
+      setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+    }
+    return true;
+  }
+  return false;
+}
+function launchCascade(){
+  const cards = [];
+  // Foundation slots are stored Ace-first/King-last (see
+  // processCompletedRuns), so index 12 is each slot's King — launching
+  // from i=12 down to 0 sends Kings flying first, same "top card
+  // first" feel as Klondike/FreeCell's own cascades.
+  for(let i=12;i>=0;i--){
+    const slotOrder = E.shuffle([0,1,2,3,4,5,6,7]);
+    for(const slot of slotOrder){
+      if(state.foundations[slot][i]) cards.push({ card: state.foundations[slot][i], sourceEl: document.getElementById('f-'+slot) });
+    }
+  }
+  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 80, gravity: 0.3, bounceDamp: 0.63, trail: true, sequential: true, sequentialMaxWait: 180 });
+}
+let previewingWin = false;
+let previewCascadeLayer = null;
+function previewWinScreen(){
+  previewingWin = true;
+  // A full 4-suit deck built the same way a real game's shoe is,
+  // grouped back into its 8 thirteen-card sets — no shuffle, so each
+  // set comes out in a clean Ace-to-King order to reverse-launch from,
+  // same idea as every other game's preview.
+  const deck = buildSpiderDeck(4);
+  const cards = [];
+  for(let i=12;i>=0;i--){
+    const slotOrder = E.shuffle([0,1,2,3,4,5,6,7]);
+    for(const slot of slotOrder){
+      const card = deck[slot*13+i];
+      if(card) cards.push({ card, sourceEl: document.getElementById('f-'+slot) });
+    }
+  }
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 80, gravity: 0.3, bounceDamp: 0.63, trail: true, sequential: true, sequentialMaxWait: 180 });
+  document.getElementById('win-sub').textContent = 'Preview — not a real win';
+  document.getElementById('win-newgame').textContent = 'Close Preview';
+  setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+}
+
+/* =========================================================
+   UNDO / TIMER / HUD
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({ stock: state.stock, tableau: state.tableau, foundations: state.foundations, score: state.score }),
+  (snap)=>{ state.stock=snap.stock; state.tableau=snap.tableau; state.foundations=snap.foundations; state.score=snap.score; E.clearSelection(); renderAll(); },
+  document.getElementById('btn-undo')
+);
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
+
+/* =========================================================
+   DEAL / NEW GAME
+   Standard Spider deal: columns 0-3 get 6 cards, columns 4-9 get 5 —
+   only the last card of each column starts face-up. The remaining 50
+   cards stay in the stock for later 10-card deals.
+   ========================================================= */
+function newGame(){
+  clearInterval(state.timerHandle);
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.backStyle = pendingSettings.backStyle;
+  state.suitCount = pendingSettings.suitCount;
+  state.stock = E.shuffle(buildSpiderDeck(state.suitCount));
+  state.tableau = [[],[],[],[],[],[],[],[],[],[]];
+  state.foundations = [[],[],[],[],[],[],[],[]];
+  state.score = 0;
+  state.seconds = 0;
+  state.cascadePlayed = false;
+  undo.reset();
+  E.clearSelection();
+  const oldCascade = document.getElementById('cascade-layer');
+  if(oldCascade) oldCascade.remove();
+
+  for(let col=0; col<10; col++){
+    const count = col<4 ? 6 : 5;
+    for(let i=0;i<count;i++){
+      const card = state.stock.pop();
+      card.faceUp = (i===count-1);
+      state.tableau[col].push(card);
+    }
+  }
+
+  document.getElementById('winmask').classList.remove('show');
+  document.getElementById('nomovesmask').classList.remove('show');
+  applyHudVisibility();
+  syncTimerInterval();
+  renderAll();
+}
+
+/* =========================================================
+   INTERACTION WIRING
+   ========================================================= */
+function isCardMovable(card, pileType, pileKey, index){
+  if(pileType!=='tableau') return false; // foundation cards never come back into play; the stock is click-only
+  return card.faceUp;
+}
+function resolveDropTarget(x,y){
+  const el = document.elementFromPoint(x,y);
+  if(!el) return null;
+  const col = el.closest('.tcol');
+  if(col) return { type:'tableau', key:Number(col.dataset.index), highlightEl:col };
+  return null;
+}
+function getAllZones(){
+  const zones = [];
+  for(let i=0;i<10;i++){
+    const el = document.querySelector('.tcol[data-index="'+i+'"]');
+    if(el) zones.push({type:'tableau', key:i, el});
+  }
+  return zones;
+}
+const resolveHoverTargetPadded = E.makePaddedResolver(getAllZones, 26);
+
+E.initInteractions({
+  findPileArray,
+  isCardMovable,
+  resolveDropTarget,
+  resolveHoverTargetPadded,
+  canMoveWithWiden,
+  tryMoveAuto,
+  onRenderNeeded: renderAll
+});
+
+document.getElementById('pile-stock').addEventListener('click', ()=>{ E.clearSelection(); dealFromStock(); });
+document.getElementById('tableau').addEventListener('click', (e)=>{
+  if(e.target.closest('.card')) return; // clicks on actual cards are handled by the engine's pointerup flow
+  const col = e.target.closest('.tcol');
+  if(!col) return;
+  const sel = E.getSelected();
+  if(sel){ tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'tableau', Number(col.dataset.index)); E.clearSelection(); }
+});
+
+/* =========================================================
+   SETTINGS / DIALOGS
+   ========================================================= */
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility, syncTimerInterval,
+  onRenderNeeded: renderAll,
+  extraSnapshot: ()=>({ suitCount: pendingSettings.suitCount }),
+  extraRestore: (snap)=>{ pendingSettings.suitCount = snap.suitCount; refreshSuitSlider(); },
+  extraOnOpen: ()=>{ pendingSettings.suitCount = state.suitCount; refreshSuitSlider(); refreshVersionInfo(); }
+});
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'Spider.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
+function refreshSuitSlider(){
+  document.getElementById('suit-slider').value = pendingSettings.suitCount;
+  document.getElementById('suit-slider-val').textContent = pendingSettings.suitCount;
+}
+document.getElementById('suit-slider').addEventListener('input', (e)=>{
+  pendingSettings.suitCount = parseInt(e.target.value, 10);
+  document.getElementById('suit-slider-val').textContent = pendingSettings.suitCount;
+});
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
+});
+document.getElementById('settings-preview-win').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  previewWinScreen();
+});
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('winmask').classList.remove('show');
+  if(previewCascadeLayer){ previewCascadeLayer.remove(); previewCascadeLayer = null; }
+  if(previewingWin){
+    previewingWin = false;
+    document.getElementById('win-newgame').textContent = 'Play Again';
+    return; // real game underneath was never touched — just close the dialog
+  }
+  newGame();
+});
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
+document.getElementById('btn-deal').addEventListener('click', ()=>{ E.clearSelection(); dealFromStock(); });
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('nomoves-undo').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  undo.undo();
+});
+document.getElementById('nomoves-newgame').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  newGame();
+});
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{
+    E.fitBoard({
+      columns: 10,
+      extraRows: [{ units: 9, gaps: 8 }],
+      getMaxStackDepth: ()=> Math.max(6, ...state.tableau.map(c=>c.length)),
+      minStackForFit: 6
+    });
+  }, 100);
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+E.preloadAllCardImages(KNOWN_BACK_FILES);
+ensureTableauCols();
+ensureFoundations();
+newGame();
+
+})();
+</script>
+</body>
+</html>
