@@ -2,17 +2,18 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.8
+    Version 1.10
 
-   Two corrections: (1) The blade step-back reaction I'd liked and
-   asked to be kept was overwritten with a different animation shape
-   entirely instead of being augmented — restored the original
-   stumble-style wobble's exact rhythm/timing/rotation, just shifted
-   backward by one wobble-unit (~4px) throughout, so it reads as an
-   active dodge without discarding the motion that already looked
-   right. (2) Blade trap redrawn as an actual mezzaluna — a wide
-   crescent rocker-blade SVG with a steel gradient and highlight line —
-   instead of the narrow pointed-dagger clip-path shape it was using.
+   Two corrections: (1) Misread the pit-sizing request last round —
+   shrunk the regular pit AND grew the whip pit, when it should only
+   have been the whip pit growing. Regular pit is back to its original
+   size; whip pit is now ~3x that (was ~2x) instead. (2) Pits are holes
+   in the ground, not transient obstacle animations — they now persist
+   permanently once spawned (only cleared by New Expedition), instead
+   of fading out shortly after he crosses them. The animation test
+   window is the one exception (ctx.persistPits stays unset there), so
+   repeated testing at roughly the same spot doesn't stack up pits
+   indefinitely.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -208,7 +209,7 @@
      top of the vertical hop, not just a straight up-down bounce. */
   @keyframes jumpAnim {
     0%   { transform: translate(0,0) rotate(0deg); }
-    45%  { transform: translate(12px,-22px) rotate(-8deg); }
+    45%  { transform: translate(14px,-26px) rotate(-8deg); }
     100% { transform: translate(0,0) rotate(0deg); }
   }
   /* Duck — a falling boulder. Leans back off the vertical as he
@@ -235,7 +236,7 @@
      lands mid-crossing instead of after he's already arrived. */
   @keyframes bigJumpAnim {
     0%   { transform: translate(0,0) rotate(0deg); }
-    50%  { transform: translate(20px,-34px) rotate(-8deg); }
+    50%  { transform: translate(40px,-36px) rotate(-8deg); }
     100% { transform: translate(0,0) rotate(0deg); }
   }
   /* Whip-swing — the bonus: swings on the rope over the pit. Same
@@ -245,8 +246,8 @@
      independent fixed point on the track). */
   @keyframes whipSwingAnim {
     0%   { transform: translate(0,0) rotate(0deg); }
-    35%  { transform: translate(20px,-28px) rotate(18deg); }
-    70%  { transform: translate(30px,-6px) rotate(-10deg); }
+    45%  { transform: translate(24px,-26px) rotate(14deg); }
+    80%  { transform: translate(34px,-4px) rotate(-6deg); }
     100% { transform: translate(0,0) rotate(0deg); }
   }
   /* Reshuffle stumble — a brief backward wobble, not a real rollback. */
@@ -320,6 +321,13 @@
     z-index: 1;
   }
   .pit-trap.show { opacity: 1; }
+  /* The whip-swing pit is the one that got bigger, not the regular
+     one — roughly 3x the regular pit, wide enough that it reads as
+     needing the whip to cross rather than a hop. */
+  .pit-trap.wide {
+    width: 108px; height: 42px;
+    box-shadow: inset 0 10px 12px rgba(0,0,0,0.85);
+  }
 
   /* Whip rope — appended as a DOM CHILD of #adventurer-inner (not a
      sibling on the track), so it automatically inherits his position
@@ -330,18 +338,23 @@
      fixed, disconnected point on the track. */
   .whip-rope-tethered {
     position: absolute;
-    left: 50%; bottom: 60%;
+    left: 50%; bottom: 55%;
     width: 2px; height: 46px;
     background: linear-gradient(180deg, #2a1a0a, #5c430a);
     transform-origin: bottom center;
     animation: ropeSwingTethered 1.1s ease-in-out;
     z-index: 5;
   }
+  /* Positive rotate = top tip forward/right (a "/" reaching ahead of
+     him, in his direction of travel); this sweeps monotonically from
+     that forward reach down through vertical and just past it, then
+     HOLDS there while fading — it never eases back toward a backward
+     lean at the end. */
   @keyframes ropeSwingTethered {
-    0%   { transform: translateX(-50%) rotate(-42deg); opacity: 1; }
-    45%  { transform: translateX(-50%) rotate(8deg);    opacity: 1; }
-    75%  { transform: translateX(-50%) rotate(40deg);   opacity: 1; }
-    100% { transform: translateX(-50%) rotate(16deg);   opacity: 0; }
+    0%   { transform: translateX(-50%) rotate(42deg); opacity: 1; }
+    45%  { transform: translateX(-50%) rotate(8deg);   opacity: 1; }
+    80%  { transform: translateX(-50%) rotate(-4deg);  opacity: 1; }
+    100% { transform: translateX(-50%) rotate(-4deg);  opacity: 0; }
   }
 
   /* =========================================================
@@ -598,7 +611,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.8';
+const PAGE_VERSION = '1.10';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -804,7 +817,8 @@ const mainCtx = {
   track: document.getElementById('adventure-track'),
   inner: document.getElementById('adventurer-inner'),
   adventurerEl: document.getElementById('adventurer'),
-  toastEl: document.getElementById('hint-toast')
+  toastEl: document.getElementById('hint-toast'),
+  persistPits: true
 };
 
 function resetAdventurerAnim(inner){
@@ -841,22 +855,42 @@ function spawnBlade(ctx, obstacle, targetLeft){
   rig.innerHTML = '<div class="rod"></div>' + SVG_MEZZALUNA;
   ctx.track.appendChild(rig);
   setTimeout(()=> rig.remove(), 1700);
-  setTimeout(()=> playReaction(ctx, obstacle.reaction, 1050), 620);
+
+  // Real backward position shift — same idea as the reshuffle
+  // stumble's outer left-shift, not just an inner pixel wobble. That
+  // wobble alone (even shifted backward) never reads as "moving back"
+  // as clearly as an actual position change does; this pairs a quick
+  // real retreat with the rotation reaction so both happen together.
+  const adv = ctx.adventurerEl;
+  const back = Math.max(2, targetLeft - 4);
+  const restoreTransition = adv.style.transition;
+  setTimeout(()=>{
+    adv.style.transition = 'left 0.3s ease-out';
+    adv.style.left = back + '%';
+    playReaction(ctx, obstacle.reaction, 1050);
+  }, 620);
+  setTimeout(()=>{
+    adv.style.transition = 'left 0.45s ease-in';
+    adv.style.left = targetLeft + '%';
+  }, 1550);
+  setTimeout(()=>{ adv.style.transition = restoreTransition || ''; }, 2050);
+
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
 function spawnPit(ctx, obstacle, targetLeft){
-  // Pit sits exactly at his landing spot — all real horizontal travel
-  // is the outer #adventurer left-slide (percentage-based, correct at
-  // any screen width). What sells "cleared it" instead of "landed on
-  // it" is TIMING: the pit closes up and fades before he actually
-  // lands, so by the time he's down the ground there is solid again.
+  const isWhip = obstacle.reaction === 'whipswing';
+  // The pit sits slightly BEHIND his landing spot, not on top of it —
+  // he needs a real gap in front of him to jump/swing across, ending
+  // up on solid ground past it. The whip pit is much wider (see CSS)
+  // and gets a bigger offset accordingly.
+  const pitLeft = targetLeft - (isWhip ? 9 : 3);
   const pit = ctx.track.ownerDocument.createElement('div');
-  pit.className = 'pit-trap';
-  pit.style.left = targetLeft + '%';
+  pit.className = 'pit-trap' + (isWhip ? ' wide' : '');
+  pit.style.left = pitLeft + '%';
   ctx.track.appendChild(pit);
   requestAnimationFrame(()=> requestAnimationFrame(()=> pit.classList.add('show')));
 
-  if(obstacle.reaction === 'whipswing'){
+  if(isWhip){
     // Rope is a DOM CHILD of ctx.inner (his own element), not the
     // track — it inherits his position slide AND his whipSwingAnim
     // transform automatically, so it's genuinely tethered to his hand
@@ -873,8 +907,15 @@ function spawnPit(ctx, obstacle, targetLeft){
     setTimeout(()=> playReaction(ctx, obstacle.reaction, 850), 20);
   }
 
-  setTimeout(()=> pit.classList.remove('show'), 650);
-  setTimeout(()=> pit.remove(), 1150);
+  // Pits are literal holes in the ground — in the real game they stay
+  // (permanent terrain, cleared only by New Expedition). The test rig
+  // is the one exception: it keeps re-triggering at roughly the same
+  // spot, so its pits still despawn to avoid stacking up indefinitely
+  // (ctx.persistPits is left unset there).
+  if(!ctx.persistPits){
+    setTimeout(()=> pit.classList.remove('show'), 650);
+    setTimeout(()=> pit.remove(), 1150);
+  }
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
 function spawnTraveling(ctx, obstacle, targetLeft){
@@ -1151,12 +1192,13 @@ function openAnimTestWindow(){
     + '#adventurer{font-size:60px;bottom:11px;}'
     + '#chest{font-size:54px;bottom:14px;}'
     + '.dust-puff{width:14px;height:14px;}'
-    + '.obstacle{font-size:40px;bottom:11px;}'
+    + '.obstacle{font-size:27px;bottom:11px;}'
     + '.obstacle.high{top:7px;}'
     + '.blade-rig{height:90px;}'
     + '.blade-rig .rod{height:58px;}'
     + '.blade-rig .blade-art{width:64px;height:36px;top:50px;left:-32px;}'
     + '.pit-trap{width:65px;height:25px;}'
+    + '.pit-trap.wide{width:194px;height:76px;}'
     + '.whip-rope-tethered{height:72px;}'
     + '#center-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);z-index:5;}'
     + '#center-line::after{content:"center";position:absolute;top:-16px;left:4px;font-size:9px;color:rgba(255,255,255,0.5);}'
@@ -1487,6 +1529,7 @@ function newGame(){
   }
   document.getElementById('chest').classList.remove('near');
   updateCheckpoints();
+  document.querySelectorAll('#adventure-track .pit-trap').forEach(el=> el.remove());
 
   document.getElementById('winmask').classList.remove('show');
   E.applyHudVisibility(state);
