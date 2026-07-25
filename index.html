@@ -2,16 +2,19 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 4.4
+    Version 5.0
 
-   Tut's Tomb's tile background art and preload link now point at
-   images/Tut'sTomb.webp (its new dedicated background photo) instead
-   of the old images/Pyramid.webp — the crest art was split out to its
-   own images/Tut'sTomb-crest.webp file, freeing up the plain filename
-   for the background photo, matching how FreeCell's background/crest
-   are set up. (This update was made against the newer base with
-   Spider swapped in for Yukon — that swap and the grid reorder are
-   this file's own edits, not mine.)
+   Added the Mahjong tile (Mahjong.html) — playable, marked Testing
+   like FreeCell/Spider/Tut's Tomb until signed off. Same treatment as
+   every other real game: a dedicated images/Mahjong.webp background
+   photo + preload link, and a small hand-positioned mini-board
+   preview (plain ivory .mc.mtile blocks in a stepped-layer shape,
+   same idea as Tut's Tomb's pyramid preview, just without card art
+   since Mahjong tiles aren't playing cards). Bumped to 5.0 under this
+   file's own versioning rule: X is the current count of active
+   (playable/testing) games — was 4 (Klondike/FreeCell/Spider/Tut's
+   Tomb), now 5 — and X only changes when a game is added to or
+   dropped from that count.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -23,18 +26,22 @@
   from cards/ via the script at the bottom — same assets the games
   themselves use, so nothing goes stale or needs a separate asset set.
   Card BACKS stay simple CSS stripes, one distinct color per game.
+  Mahjong's mini tiles deliberately use their own .mc.mtile class
+  instead of .mc.face, so that script leaves them as plain ivory
+  blocks rather than dropping a random playing-card image onto them.
 
   FreeCell + every in-dev tile also gets a real photo background from
-  /images (Golf.png, TriPeaks.png, Spider.png, Pyramid.png, FreeCell.png)
-  instead of hand-drawn shapes — a dark gradient scrim sits between the
-  photo and the content so the title/badge/mini-board stay legible
-  regardless of the photo. Klondike stays plain felt on purpose ("keep
-  it as is").
+  /images (Golf.png, TriPeaks.png, Spider.png, Pyramid.png, FreeCell.png,
+  Mahjong.png) instead of hand-drawn shapes — a dark gradient scrim sits
+  between the photo and the content so the title/badge/mini-board stay
+  legible regardless of the photo. Klondike stays plain felt on purpose
+  ("keep it as is").
 
-  Tiles for Klondike/FreeCell/Spider/Tut's Tomb link out to their real
-  files (Klondike is approved and live; FreeCell, Spider, and Tut's Tomb
-  are playable but still marked Testing until signed off). TriPeaks and
-  Golf are marked IN DEV and stay inert (no navigation) until built.
+  Tiles for Klondike/FreeCell/Spider/Tut's Tomb/Mahjong link out to
+  their real files (Klondike is approved and live; FreeCell, Spider,
+  Tut's Tomb, and Mahjong are playable but still marked Testing until
+  signed off). TriPeaks and Golf are marked IN DEV and stay inert (no
+  navigation) until built.
 -->
 <html lang="en">
 <head>
@@ -48,6 +55,7 @@
 <link rel="preload" as="image" href="images/Golf.webp">
 <link rel="preload" as="image" href="images/Spider.webp">
 <link rel="preload" as="image" href="images/Tut'sTomb.webp">
+<link rel="preload" as="image" href="images/Mahjong.webp">
 <style>
   :root{
     --felt-1:#0e4432;
@@ -154,6 +162,7 @@
   .art-spider{ background-image: url('images/Spider.webp'); }
   .art-tut{ background-image: url('images/Tut\'sTomb.webp'); }
   .art-freecell{ background-image: url('images/FreeCell.webp'); }
+  .art-mahjong{ background-image: url('images/Mahjong.webp'); }
 
   .tile-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; position:relative; z-index:1; }
   .tile-bg-art + .tile-head{
@@ -196,6 +205,12 @@
     background: repeating-linear-gradient(45deg, #12406f 0 3px, #0d3358 3px 6px);
     border:1px solid rgba(232,200,115,.4);
   }
+  /* Mahjong's mini tiles: plain ivory, same box as .mc.face but
+     WITHOUT the "face" class, so the randomized-card-art script at
+     the bottom (which targets .mc.face specifically) leaves these
+     alone — a random playing-card image would be the wrong game's
+     art on a mahjong tile. */
+  .mc.mtile{ background: var(--ivory); border:1px solid rgba(0,0,0,.15); }
   .mc.back-freecell{ background: repeating-linear-gradient(45deg, #146b62 0 3px, #0e4a44 3px 6px); }
   .mc.back-tripeaks{ background: repeating-linear-gradient(45deg, #4a2f6b 0 3px, #351f4d 3px 6px); }
   .mc.back-golf{ background: repeating-linear-gradient(45deg, #2f6b3a 0 3px, #1f4d28 3px 6px); }
@@ -411,6 +426,39 @@
         </div>
       </div>
       <p class="tile-desc">Pair exposed cards that sum to 13 to clear the pyramid — Egyptian-themed, unlimited waste-pile cycling.</p>
+    </a>
+
+    <!-- MAHJONG — playable -->
+    <a class="tile-link" href="Mahjong.html">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-bg-art art-mahjong"></div>
+          <div class="tile-head"><h2>Mahjong</h2><span class="status-pill testing">Testing</span></div>
+          <div class="mini-board">
+            <div class="pyramid-wrap" style="width:128px; height:35px;">
+              <div class="mc mtile mc-abs" style="left:0px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:16px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:32px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:48px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:64px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:80px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:96px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:112px; top:14px;"></div>
+              <div class="mc mtile mc-abs" style="left:16px; top:7px;"></div>
+              <div class="mc mtile mc-abs" style="left:32px; top:7px;"></div>
+              <div class="mc mtile mc-abs" style="left:48px; top:7px;"></div>
+              <div class="mc mtile mc-abs" style="left:64px; top:7px;"></div>
+              <div class="mc mtile mc-abs" style="left:80px; top:7px;"></div>
+              <div class="mc mtile mc-abs" style="left:96px; top:7px;"></div>
+              <div class="mc mtile mc-abs" style="left:32px; top:0px;"></div>
+              <div class="mc mtile mc-abs" style="left:48px; top:0px;"></div>
+              <div class="mc mtile mc-abs" style="left:64px; top:0px;"></div>
+              <div class="mc mtile mc-abs" style="left:80px; top:0px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">144 tiles, 4 stacked layers. Clear the board by matching <b>free tile pairs</b> — nothing on top, one open side.</p>
     </a>
 
     <!-- TRIPEAKS — in dev -->
