@@ -2,20 +2,27 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.13
+    Version 1.14
 
-   Pulled frames from the two videos and found the actual bug:
-   spawnPit() computed clearance using hardcoded pit widths (36px
-   regular / 108px whip) matching the main game's own CSS — but the
-   popup test window's CSS scales pits up to 65px/194px for
-   visibility. Every clearance calculation run in the test window
-   (i.e. everywhere this was actually being tested) was built on a pit
-   roughly half the size of the one really on screen, so the "clear
-   margin" was never real there. Now measures the pit's ACTUAL
-   rendered width via offsetWidth (appended invisibly first, then
-   measured, then positioned) instead of guessing a constant — correct
-   in both the main game and the popup regardless of whatever size
-   each one's CSS renders it at.
+   Two changes: (1) Replaced the separate popup test window entirely
+   with an inline test panel (Settings → "Show Test Controls") that
+   adds buttons directly under the real adventure track. It's wired
+   straight to mainCtx — the exact same functions, DOM, and CSS the
+   real game uses, not a second copy with its own stylesheet overrides
+   that can (and did, repeatedly) drift out of sync. A "Zoom Track"
+   button is a pure CSS transform:scale on the track for closer
+   inspection — that doesn't touch offsetWidth/offsetHeight, so it
+   can't reintroduce the kind of size-mismatch bug the popup's overrides
+   caused. Also fixed a real bug along the way: testOpenChest() had
+   been calling handleWin() directly, which would have set the real
+   cascadePlayed flag and popped the actual winmask during an ongoing
+   game — extracted the cinematic into its own playChestCinematic()
+   function so the preview and the real win share one implementation
+   without the state side effects. (2) Pits are permanent now, so undo
+   needs to explicitly remove any that belong to a reverted move —
+   added pitLog, tagging each pit with the "cleared" count it was
+   created at, and the undo restore callback removes any pit whose tag
+   is past the newly-restored progress.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -361,6 +368,56 @@
   }
 
   /* =========================================================
+     INLINE TEST PANEL — buttons directly under the real track,
+     using the real track/adventurer/pit CSS and JS with zero
+     divergence, unlike the old separate popup window (which had its
+     own CSS overrides that quietly drifted out of sync with the
+     real game's sizes more than once). Zoom is a pure CSS
+     transform:scale on the track — that doesn't change offsetWidth/
+     offsetHeight, so none of the pit-clearance math below is thrown
+     off by it, only the visual size.
+     ========================================================= */
+  #test-panel {
+    background: linear-gradient(180deg, #1a130b, #120d07);
+    border-bottom: 2px solid var(--wood-3);
+    padding: 8px 10px 10px;
+    flex-shrink: 0;
+  }
+  #test-toast {
+    min-height: 18px;
+    font-size: 13px;
+    text-align: center;
+    color: var(--brass-light);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    margin-bottom: 6px;
+  }
+  #test-toast.show { opacity: 1; }
+  .test-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+  .test-controls button {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--wood-3);
+    background: var(--panel);
+    color: var(--brass-light);
+    cursor: pointer;
+  }
+  .test-controls button:hover { background: var(--wood-3); }
+  .test-controls button.active { background: var(--wood-3); box-shadow: inset 0 0 0 1px var(--brass-light); }
+  #adventure-track.zoomed {
+    transform: scale(1.6);
+    transform-origin: top center;
+    margin-bottom: 46px;
+  }
+
+  /* =========================================================
      PYRAMID BOARD LAYOUT
      ========================================================= */
   .pyramid-container {
@@ -488,6 +545,23 @@
   <div id="chest"></div>
 </div>
 
+<div id="test-panel" style="display:none;">
+  <div id="test-toast"></div>
+  <div class="test-controls">
+    <button data-act="run">Run Step</button>
+    <button data-act="duck">Duck — Boulder</button>
+    <button data-act="stepback">Step Back — Blade</button>
+    <button data-act="jump-snake">Jump — Snake</button>
+    <button data-act="jump-scorpion">Jump — Scorpion</button>
+    <button data-act="bigjump">Big Jump — Pit</button>
+    <button data-act="whipswing">Whip-Swing — Pit Bonus</button>
+    <button data-act="reshuffle">Reshuffle Stumble</button>
+    <button data-act="chest">Open Chest Cinematic</button>
+    <button data-act="zoom">Zoom Track</button>
+    <button data-act="reset">Reset Position</button>
+  </div>
+</div>
+
 <div class="stage">
   <div class="table-frame">
     <div class="table-felt">
@@ -591,9 +665,11 @@
     </div>
 
     <div class="field">
-      <label>Testing</label>
-      <button class="textbtn" id="settings-anim-test" style="width:100%;">Open Animation Test Window</button>
-      <div class="fieldnote">Opens a separate window, zoomed in on the track, with buttons to trigger each obstacle reaction and the chest cinematic on demand.</div>
+      <div class="toggrow">
+        <span>Show Test Controls</span>
+        <label class="switch"><input type="checkbox" id="tog-testpanel"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Adds buttons under the adventure track to trigger each obstacle reaction on demand, using the real track directly — no separate window, so it's exactly the same animation.</div>
     </div>
 
     <div class="field">
@@ -614,7 +690,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.13';
+const PAGE_VERSION = '1.14';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -816,10 +892,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 
 // Single set of animation-trigger functions, shared by the real game
-// AND the popup test window (called via window.__tutsAnimAssets) —
-// parameterized on a small ctx object instead of hardcoded
-// document.getElementById calls, so there is exactly one copy of this
-// logic to keep in sync, not two that can quietly drift apart.
+// AND the inline test panel (see testCtx below) — parameterized on a
+// small ctx object instead of hardcoded document.getElementById calls,
+// so there is exactly one copy of this logic, not two that can drift.
 const mainCtx = {
   track: document.getElementById('adventure-track'),
   inner: document.getElementById('adventurer-inner'),
@@ -887,7 +962,13 @@ function spawnBlade(ctx, obstacle, targetLeft){
 
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
-function spawnPit(ctx, obstacle, targetLeft){
+// Tracks persistent pits so undo can remove the ones created by
+// whichever move gets reverted — pits are plain DOM elements, not
+// part of the state object the undo stack snapshots, so they need
+// their own log tying each one to the "cleared" count it was made at.
+let pitLog = [];
+
+function spawnPit(ctx, obstacle, targetLeft, cleared){
   const isWhip = obstacle.reaction === 'whipswing';
   // Append FIRST (still invisible — base .pit-trap CSS is opacity:0
   // until '.show' is added) so its REAL rendered width can be
@@ -946,10 +1027,13 @@ function spawnPit(ctx, obstacle, targetLeft){
   }
 
   // Pits are literal holes in the ground — in the real game they stay
-  // (permanent terrain, cleared only by New Expedition). The test rig
-  // is the one exception: it keeps re-triggering at roughly the same
-  // spot, so its pits still despawn to avoid stacking up indefinitely
-  // (ctx.persistPits is left unset there).
+  // (permanent terrain, cleared only by New Expedition or an undo that
+  // reverts past the move that created them — see pitLog above and
+  // the undo restore callback below). Test-panel triggers don't pass
+  // a `cleared` value, so they're never logged (nothing to undo).
+  if(ctx.persistPits && cleared != null){
+    pitLog.push({ el: pit, clearedAt: cleared });
+  }
   if(!ctx.persistPits){
     setTimeout(()=> pit.classList.remove('show'), 650);
     setTimeout(()=> pit.remove(), 1150);
@@ -977,9 +1061,9 @@ function spawnTraveling(ctx, obstacle, targetLeft){
   setTimeout(()=> playReaction(ctx, obstacle.reaction, 1000), 1150);
   if(ctx.toastEl) E.showToast(ctx.toastEl, obstacle.msg);
 }
-function spawnObstacle(ctx, obstacle, targetLeft){
+function spawnObstacle(ctx, obstacle, targetLeft, cleared){
   if(obstacle.type === 'blade') return spawnBlade(ctx, obstacle, targetLeft);
-  if(obstacle.type === 'pit') return spawnPit(ctx, obstacle, targetLeft);
+  if(obstacle.type === 'pit') return spawnPit(ctx, obstacle, targetLeft, cleared);
   spawnTraveling(ctx, obstacle, targetLeft);
 }
 // Classic Pyramid rules don't allow reshuffling the stock at all —
@@ -1011,7 +1095,7 @@ function triggerAdventurerProgress(cleared){
   updateCheckpoints();
 
   if(ROW_CLEAR_THRESHOLDS.includes(cleared)){
-    spawnObstacle(mainCtx, pickObstacle(cleared), targetLeft);
+    spawnObstacle(mainCtx, pickObstacle(cleared), targetLeft, cleared);
   } else {
     playReaction(mainCtx, 'running', 600);
   }
@@ -1197,147 +1281,60 @@ function spawnSparkles(container, count){
   }
 }
 /* =========================================================
-   ANIMATION TEST WINDOW
-   Opens a same-origin popup and hands it references to this file's
-   own SVG/asset constants and the CURRENT text of this page's <style>
-   block, so the rig can never drift out of sync with the real game —
-   there's nothing hand-duplicated to go stale. Only small trigger
-   functions are written fresh for the popup's own DOM.
+   INLINE TEST PANEL
+   Wired directly to mainCtx — the exact same functions, DOM, and CSS
+   the real game uses. No separate window, no separate stylesheet
+   overrides to drift out of sync (that's what caused the pit-size
+   mismatch bug the old popup had).
    ========================================================= */
-window.__tutsAnimAssets = {
-  SVG_ADVENTURER, buildChestRig, TREASURES, spawnSparkles,
-  getObstacle, spawnObstacle, playReaction, spawnDust, playReshufflePenalty
-};
-function getSharedStyleText(){
-  const styleEl = document.querySelector('head > style');
-  return styleEl ? styleEl.textContent : '';
+const testCtx = { ...mainCtx, toastEl: document.getElementById('test-toast') };
+let testBusy = false;
+function runTest(fn, holdMs){
+  if(testBusy) return;
+  testBusy = true;
+  fn();
+  setTimeout(()=>{ testBusy = false; }, holdMs);
 }
-function openAnimTestWindow(){
-  const w = window.open('', 'tutstomb_anim_test', 'width=700,height=640');
-  if(!w){
-    E.showToast(document.getElementById('hint-toast'), 'Pop-up blocked — allow pop-ups to open the test rig.');
-    return;
+function testCurrentPct(){
+  return parseFloat(document.getElementById('adventurer').style.left) || 2;
+}
+function testAdvance(obstacle){
+  const prior = testCurrentPct();
+  const p = Math.min(92, prior + 6);
+  spawnDust(testCtx, prior);
+  document.getElementById('adventurer').style.left = p + '%';
+  document.getElementById('adventure-fill').style.width = p + '%';
+  document.getElementById('chest').classList.toggle('near', p > 75);
+  if(obstacle){
+    spawnObstacle(testCtx, obstacle, p); // no `cleared` passed — not a real move, nothing for undo to track
+  } else {
+    playReaction(testCtx, 'running', 600);
   }
-  const sharedCss = getSharedStyleText();
-  const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Animation Test Rig — Tut\'s Tomb</title><style>'
-    + sharedCss
-    // Everything below is popup-only layout/sizing. No transform:scale
-    // hack (it visually overflowed the window and forced a scrollbar
-    // since scaled paint bounds still count toward scrollable area) —
-    // instead these directly override the shared ID/class rules above
-    // at larger sizes, same cascade specificity, later wins.
-    + '\nhtml,body{margin:0;overflow-x:hidden;background:#0a0704;color:#f0d9a0;font-family:Georgia,\'Times New Roman\',serif;}'
-    + 'body{display:flex;flex-direction:column;align-items:center;padding:18px 20px;gap:10px;}'
-    + 'h2{margin:0 0 4px;font-size:18px;letter-spacing:0.5px;color:var(--brass-light,#f8e5a0);}'
-    + '#rig-stage{width:100%;max-width:640px;}'
-    + '#adventure-track{position:relative;height:100px;}'
-    + '#adventure-fill{height:16px;bottom:5px;}'
-    + '#adventurer{font-size:60px;bottom:11px;}'
-    + '#chest{font-size:54px;bottom:14px;}'
-    + '.dust-puff{width:14px;height:14px;}'
-    + '.obstacle{font-size:27px;bottom:11px;}'
-    + '.obstacle.high{top:7px;}'
-    + '.blade-rig{height:90px;}'
-    + '.blade-rig .rod{height:58px;}'
-    + '.blade-rig .blade-art{width:64px;height:36px;top:50px;left:-32px;}'
-    + '.pit-trap{width:65px;height:25px;}'
-    + '.pit-trap.wide{width:194px;}'
-    + '.whip-rope-tethered{height:72px;}'
-    + '#center-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.35);z-index:5;}'
-    + '#center-line::after{content:"center";position:absolute;top:-16px;left:4px;font-size:9px;color:rgba(255,255,255,0.5);}'
-    + '#rig-toast{width:100%;max-width:640px;min-height:20px;font-size:14px;text-align:center;color:var(--brass-light,#f8e5a0);opacity:0;transition:opacity .3s ease;}'
-    + '#rig-toast.show{opacity:1;}'
-    + '.controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;max-width:640px;}'
-    + '.controls button{font-family:inherit;font-size:12.5px;padding:7px 11px;border-radius:8px;border:1px solid var(--wood-3,#5c430a);background:var(--panel,#2a1e12);color:var(--brass-light,#f8e5a0);cursor:pointer;}'
-    + '.controls button:hover{background:var(--wood-3,#5c430a);}'
-    + '#chest-stage{display:none;}'
-    + '#chest-stage.show{display:flex;gap:30px;align-items:flex-end;font-size:5rem;margin-top:6px;}'
-    + '</style></head><body>'
-    + '<h2>Tut\'s Tomb — Animation Test Rig</h2>'
-    + '<div id="rig-stage"><div id="adventure-track"><div id="center-line"></div><div id="adventure-fill"></div>'
-    + '<div id="adventurer"><div id="adventurer-inner"></div></div><div id="chest"></div></div></div>'
-    + '<div id="rig-toast"></div>'
-    + '<div class="controls">'
-    + '<button data-act="run">Run Step</button>'
-    + '<button data-act="duck">Duck — Boulder</button>'
-    + '<button data-act="stepback">Step Back — Blade</button>'
-    + '<button data-act="jump-snake">Jump — Snake</button>'
-    + '<button data-act="jump-scorpion">Jump — Scorpion</button>'
-    + '<button data-act="bigjump">Big Jump — Pit</button>'
-    + '<button data-act="whipswing">Whip-Swing — Pit Bonus</button>'
-    + '<button data-act="reshuffle">Reshuffle Stumble</button>'
-    + '<button data-act="chest">Open Chest Cinematic</button>'
-    + '<button data-act="reset">Reset Position</button>'
-    + '</div>'
-    + '<div id="chest-stage"></div>'
-    + '<script>(function(){'
-    + 'var assets = window.opener.__tutsAnimAssets;'
-    + 'var track = document.getElementById("adventure-track");'
-    + 'var adv = document.getElementById("adventurer");'
-    + 'var inner = document.getElementById("adventurer-inner");'
-    + 'var fill = document.getElementById("adventure-fill");'
-    + 'inner.innerHTML = assets.SVG_ADVENTURER;'
-    + 'var pos = 46;'
-    + 'var ctx = { track: track, inner: inner, adventurerEl: adv, toastEl: document.getElementById("rig-toast") };'
-    + 'function setPos(p){ pos = p; adv.style.left = p + "%"; fill.style.width = p + "%"; }'
-    + 'setPos(46);'
-    // Real gameplay always advances position AND spawns the obstacle
-    // together (see triggerAdventurerProgress) — the obstacle buttons
-    // here need to do the same, or he never actually moves during
-    // these tests and every reaction gets tested standing still.
-    + 'function advanceAndSpawn(obstacle){'
-    + '  var prior = pos;'
-    + '  var p = Math.min(92, pos + 6);'
-    + '  assets.spawnDust(ctx, prior);'
-    + '  setPos(p);'
-    + '  assets.spawnObstacle(ctx, obstacle, p);'
-    + '}'
-    + 'var chestStage = document.getElementById("chest-stage");'
-    + 'function openChestTest(){'
-    + '  chestStage.classList.remove("show-treasure");'
-    + '  chestStage.classList.add("show");'
-    + '  chestStage.innerHTML = assets.SVG_ADVENTURER + assets.buildChestRig();'
-    + '  requestAnimationFrame(function(){ requestAnimationFrame(function(){ document.getElementById("chest-rig").classList.add("open"); }); });'
-    + '  setTimeout(function(){'
-    + '    var t = document.getElementById("treasure-reveal");'
-    + '    t.innerHTML = assets.TREASURES[Math.floor(Math.random()*assets.TREASURES.length)];'
-    + '    chestStage.classList.add("show-treasure");'
-    + '    assets.spawnSparkles(document.getElementById("treasure-wrap"), 10);'
-    + '  }, 1000);'
-    + '  setTimeout(function(){'
-    + '    chestStage.classList.remove("show","show-treasure");'
-    + '    chestStage.innerHTML = "";'
-    + '  }, 5600);'
-    + '}'
-    + 'var busy = false;'
-    + 'function runTest(fn, holdMs){ if(busy) return; busy = true; fn(); setTimeout(function(){ busy = false; }, holdMs); }'
-    + 'document.querySelectorAll(".controls button").forEach(function(btn){'
-    + '  btn.addEventListener("click", function(){'
-    + '    var act = btn.dataset.act;'
-    + '    if(act==="run"){ runTest(function(){ var p = Math.min(92, pos+6); assets.spawnDust(ctx, pos); setPos(p); assets.playReaction(ctx, "running", 600); }, 700); }'
-    + '    else if(act==="duck"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("boulder")); }, 2700); }'
-    + '    else if(act==="stepback"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("blade")); }, 1900); }'
-    + '    else if(act==="jump-snake"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("snake")); }, 2700); }'
-    + '    else if(act==="jump-scorpion"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("scorpion")); }, 2700); }'
-    + '    else if(act==="bigjump"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("pit", false)); }, 1400); }'
-    + '    else if(act==="whipswing"){ runTest(function(){ advanceAndSpawn(assets.getObstacle("pit", true)); }, 1600); }'
-    + '    else if(act==="reshuffle"){ runTest(function(){ assets.playReshufflePenalty(ctx, function(){ return pos; }); }, 1900); }'
-    + '    else if(act==="reset"){ setPos(46); }'
-    + '    else if(act==="chest"){ openChestTest(); }'
-    + '  });'
-    + '});'
-    + '})();<\/script>'
-    + '</body></html>';
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
 }
+function testOpenChest(){
+  playChestCinematic(); // same sequence as a real win, no game-state side effects
+}
+document.querySelectorAll('.test-controls button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const act = btn.dataset.act;
+    if(act==='run'){ runTest(()=> testAdvance(null), 700); }
+    else if(act==='duck'){ runTest(()=> testAdvance(getObstacle('boulder')), 2700); }
+    else if(act==='stepback'){ runTest(()=> testAdvance(getObstacle('blade')), 1900); }
+    else if(act==='jump-snake'){ runTest(()=> testAdvance(getObstacle('snake')), 2700); }
+    else if(act==='jump-scorpion'){ runTest(()=> testAdvance(getObstacle('scorpion')), 2700); }
+    else if(act==='bigjump'){ runTest(()=> testAdvance(getObstacle('pit', false)), 1400); }
+    else if(act==='whipswing'){ runTest(()=> testAdvance(getObstacle('pit', true)), 1600); }
+    else if(act==='reshuffle'){ runTest(()=> playReshufflePenalty(testCtx, testCurrentPct), 1900); }
+    else if(act==='reset'){ document.getElementById('adventurer').style.left = '46%'; document.getElementById('adventure-fill').style.width = '46%'; }
+    else if(act==='chest'){ testOpenChest(); }
+    else if(act==='zoom'){
+      document.getElementById('adventure-track').classList.toggle('zoomed');
+      btn.classList.toggle('active');
+    }
+  });
+});
 
-function handleWin(){
-  clearInterval(state.timerHandle);
-  if(state.cascadePlayed) return;
-  state.cascadePlayed = true;
-
+function playChestCinematic(onComplete){
   const overlay = document.getElementById('cinematic-overlay');
   const hero = document.getElementById('cinematic-hero');
 
@@ -1362,14 +1359,22 @@ function handleWin(){
       overlay.classList.remove('fade-in');
       setTimeout(()=>{
         overlay.classList.remove('active','show-treasure');
-        const m = Math.floor(state.seconds/60), s = state.seconds%60;
-        document.getElementById('win-sub').textContent = state.showTimer
-          ? ('Escaped in '+m+':'+String(s).padStart(2,'0'))
-          : 'Tomb pillaged successfully.';
-        document.getElementById('winmask').classList.add('show');
+        if(onComplete) onComplete();
       }, 1200);
     }, 4600);
   }, 1700);
+}
+function handleWin(){
+  clearInterval(state.timerHandle);
+  if(state.cascadePlayed) return;
+  state.cascadePlayed = true;
+  playChestCinematic(()=>{
+    const m = Math.floor(state.seconds/60), s = state.seconds%60;
+    document.getElementById('win-sub').textContent = state.showTimer
+      ? ('Escaped in '+m+':'+String(s).padStart(2,'0'))
+      : 'Tomb pillaged successfully.';
+    document.getElementById('winmask').classList.add('show');
+  });
 }
 
 /* =========================================================
@@ -1391,7 +1396,16 @@ const undo = E.createUndoStack(
     state.cardsRemaining = snap.cardsRem;
     state.selected = null;
     clearCardSelection();
-    const pct = trackLeftPct(28 - state.cardsRemaining);
+    const clearedNow = 28 - state.cardsRemaining;
+    // Pits are permanent terrain (see spawnPit/pitLog), so undo needs
+    // to explicitly remove any that were created by a move this undo
+    // reverts past — otherwise a pit would outlive the move that dug
+    // it, which is exactly the "undo a pit" gap that was reported.
+    pitLog = pitLog.filter(p=>{
+      if(p.clearedAt > clearedNow){ p.el.remove(); return false; }
+      return true;
+    });
+    const pct = trackLeftPct(clearedNow);
     document.getElementById('adventurer').style.left = pct + '%';
     document.getElementById('adventure-fill').style.width = pct + '%';
     updateCheckpoints();
@@ -1584,6 +1598,7 @@ function newGame(){
   document.getElementById('chest').classList.remove('near');
   updateCheckpoints();
   document.querySelectorAll('#adventure-track .pit-trap').forEach(el=> el.remove());
+  pitLog = [];
 
   document.getElementById('winmask').classList.remove('show');
   E.applyHudVisibility(state);
@@ -1643,10 +1658,12 @@ const settingsShell = E.wireSettingsShell({
       "Tut'sTomb.html v" + PAGE_VERSION + ' · engine.js v' + E.ENGINE_VERSION + ' · styles.css v' + stylesVersion;
   }
 });
-document.getElementById('settings-anim-test').addEventListener('click', openAnimTestWindow);
 document.getElementById('tog-winnable').addEventListener('change', (e)=>{
   pendingSettings.forceWinnable = e.target.checked;
   state.forceWinnable = e.target.checked;
+});
+document.getElementById('tog-testpanel').addEventListener('change', (e)=>{
+  document.getElementById('test-panel').style.display = e.target.checked ? '' : 'none';
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
