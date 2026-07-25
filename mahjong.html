@@ -13,19 +13,39 @@
     background-attachment: fixed;
   }
 
+  /* Responsive base size that shrinks if viewport is tight */
   :root {
-    --tile-w: clamp(36px, 5vw, 65px);
+    --tile-w: clamp(34px, 4.2vw, 56px);
     --tile-h: calc(var(--tile-w) * 1.35); 
-    --tile-depth: calc(var(--tile-w) * 0.25);
+    --tile-depth: calc(var(--tile-w) * 0.2);
   }
 
-  .mahjong-board {
+  /* Table-felt acts as the bounding container */
+  .table-felt {
     position: relative;
-    width: 100%;
-    height: 100%;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  /* Scalable inner board container to guarantee it never breaches boundaries */
+  .mahjong-scale-wrapper {
+    position: relative;
+    width: 800px;
+    height: 480px;
+    transform-origin: center center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mahjong-board {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
   }
 
   /* --- LIGHT TILES (Default) --- */
@@ -38,21 +58,23 @@
     box-shadow: 
       -2px 0 0 0 #fff inset, 
       calc(var(--tile-depth) * -1) var(--tile-depth) 0 0 #c7bca1, 
-      calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 6px rgba(0,0,0,0.5); 
+      calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 5px rgba(0,0,0,0.4); 
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(0,0,0,0.1);
+    border: 1px solid rgba(0,0,0,0.15);
     transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.2s ease, background 0.2s ease;
     user-select: none;
+    margin-left: calc(var(--tile-w) * -0.5);
+    margin-top: calc(var(--tile-h) * -0.5);
   }
 
   .tile.selected {
     transform: translateY(-4px) translateX(4px); 
     box-shadow: 
       0 0 0 3px #7ee6a8, 
-      calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 12px rgba(0,0,0,0.6);
+      calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 10px rgba(0,0,0,0.6);
     z-index: 999 !important;
   }
 
@@ -63,13 +85,13 @@
     box-shadow: 
       -2px 0 0 0 #4a4d54 inset, 
       calc(var(--tile-depth) * -1) var(--tile-depth) 0 0 #151618, 
-      calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 6px rgba(0,0,0,0.8);
+      calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 5px rgba(0,0,0,0.7);
   }
   
   #board.theme-Black .tile.selected {
     box-shadow: 
       0 0 0 3px #7ee6a8, 
-      calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 12px rgba(0,0,0,0.9);
+      calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 10px rgba(0,0,0,0.8);
   }
 
   .tile.blocked {
@@ -82,6 +104,18 @@
     height: 85%;
     object-fit: contain;
     pointer-events: none;
+  }
+
+  /* Fallback text style when image files are missing */
+  .tile-fallback {
+    font-size: calc(var(--tile-w) * 0.45);
+    font-weight: bold;
+    color: var(--navy);
+    text-align: center;
+    pointer-events: none;
+  }
+  #board.theme-Black .tile-fallback {
+    color: #e7f2ea;
   }
 
   .theme-swatch {
@@ -122,7 +156,9 @@
 <div class="stage">
   <div class="table-frame">
     <div class="table-felt">
-      <div class="mahjong-board" id="board"></div>
+      <div class="mahjong-scale-wrapper" id="scale-wrapper">
+        <div class="mahjong-board" id="board"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -172,10 +208,10 @@
       <label>Tile Theme</label>
       <div class="backpicker" id="theme-picker">
         <div class="backswatch theme-swatch active" data-val="White">
-          <img src="MahjongTiles/White/Chun.webp" alt="White Tiles">
+          <img src="MahjongTiles/White/Chun.webp" alt="White Tiles" onerror="this.style.display='none'">
         </div>
         <div class="backswatch theme-swatch" data-val="Black">
-          <img src="MahjongTiles/Black/Chun.webp" alt="Black Tiles">
+          <img src="MahjongTiles/Black/Chun.webp" alt="Black Tiles" onerror="this.style.display='none'">
         </div>
       </div>
     </div>
