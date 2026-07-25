@@ -2,6 +2,18 @@
 <!--
     index.html
     Written by: Johnathon Largent
+    Version 4.3
+
+   Grid reordered: Spider swapped into TriPeaks' old slot (now sits
+   top row alongside Klondike/FreeCell), and Tut's Tomb swapped into
+   Golf's old slot — new order is Klondike, FreeCell, Spider / Tut's
+   Tomb, TriPeaks, Golf. Active count is still 4, so per this file's
+   versioning rule that's a step, not a major version. Spider's
+   mini-board also reworked to match Spider.html's own updated
+   layout: tableau on top, a fanned row of (empty) completed-run
+   slots bottom-left and the draw pile bottom-right, instead of the
+   old top-row arrangement every other tile still uses.
+
     Version 4.2
 
    Yukon retired from the active roster and replaced with Spider, same
@@ -328,6 +340,95 @@
       <p class="tile-desc">Open-board strategy with <b>4 free cells</b>. Classic numbered deals, adjustable difficulty.</p>
     </a>
 
+    <!-- SPIDER — playable -->
+    <a class="tile-link" href="Spider.html">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-bg-art art-spider"></div>
+          <div class="tile-head"><h2>Spider</h2><span class="status-pill testing">Testing</span></div>
+          <div class="mini-board">
+            <div class="mc-cols">
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
+            </div>
+            <!-- Bottom row, matching the real game's layout: fanned
+                 (empty) foundation slots bottom-left, draw pile
+                 bottom-right — same overlap idea as Spider.html's own
+                 .foundations-fan, just hand-positioned at mini scale
+                 instead of computed from --card-w. -->
+            <div class="mc-row" style="justify-content:space-between; align-items:flex-end; margin-top:2px;">
+              <div style="position:relative; width:36px; height:21px;">
+                <div class="mc-slot" style="position:absolute; left:0px;"></div>
+                <div class="mc-slot" style="position:absolute; left:3px;"></div>
+                <div class="mc-slot" style="position:absolute; left:6px;"></div>
+                <div class="mc-slot" style="position:absolute; left:9px;"></div>
+                <div class="mc-slot" style="position:absolute; left:12px;"></div>
+                <div class="mc-slot" style="position:absolute; left:15px;"></div>
+                <div class="mc-slot" style="position:absolute; left:18px;"></div>
+                <div class="mc-slot" style="position:absolute; left:21px;"></div>
+              </div>
+              <div class="mc back-spider"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">10 tableau columns, two decks. Stack <b>any suit</b> descending, but only matching-suit runs move together — clear all 8 runs to win.</p>
+    </a>
+
+    <!-- TUT'S TOMB (Pyramid) — playable -->
+    <a class="tile-link" href="Tut'sTomb.html">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-bg-art art-tut"></div>
+          <div class="tile-head"><h2>Tut's Tomb</h2><span class="status-pill testing">Testing</span></div>
+          <div class="mini-board">
+            <div class="pyramid-wrap" style="height:99px;">
+              <div class="mc face mc-abs" style="left:102.5px; top:0px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:13px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:13px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:72.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:132.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:65px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:140px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:57.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:72.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:132.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:147.5px; top:78px;"></div>
+            </div>
+            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:6px;">
+              <div class="mc gold-back"></div><div class="mc face"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">Pair exposed cards that sum to 13 to clear the pyramid — Egyptian-themed, unlimited waste-pile cycling.</p>
+    </a>
+
     <!-- TRIPEAKS — in dev -->
     <div class="tile-link disabled">
       <div class="tile-frame">
@@ -403,84 +504,7 @@
       <p class="tile-desc">Fast-paced card matching. Clear 35 tableau cards onto the waste pile in sequential order.</p>
     </div>
 
-    <!-- SPIDER — playable -->
-    <a class="tile-link" href="Spider.html">
-      <div class="tile-frame">
-        <div class="tile-felt">
-          <div class="tile-bg-art art-spider"></div>
-          <div class="tile-head"><h2>Spider</h2><span class="status-pill testing">Testing</span></div>
-          <div class="mini-board">
-            <div class="mc-row" style="justify-content:center; align-items:center; gap:5px;">
-              <div class="mc back-spider"></div>
-              <div class="mc-row" style="gap:3px;">
-                <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
-                <div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div><div class="mc-slot"></div>
-              </div>
-            </div>
-            <div class="mc-cols">
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-              <div class="mc-col"><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc back-spider"></div><div class="mc face"></div></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <p class="tile-desc">10 tableau columns, two decks. Stack <b>any suit</b> descending, but only matching-suit runs move together — clear all 8 runs to win.</p>
-    </a>
-
-    <!-- TUT'S TOMB (Pyramid) — playable -->
-    <a class="tile-link" href="Tut'sTomb.html">
-      <div class="tile-frame">
-        <div class="tile-felt">
-          <div class="tile-bg-art art-tut"></div>
-          <div class="tile-head"><h2>Tut's Tomb</h2><span class="status-pill testing">Testing</span></div>
-          <div class="mini-board">
-            <div class="pyramid-wrap" style="height:99px;">
-              <div class="mc face mc-abs" style="left:102.5px; top:0px;"></div>
-              <div class="mc face mc-abs" style="left:95px; top:13px;"></div>
-              <div class="mc face mc-abs" style="left:110px; top:13px;"></div>
-              <div class="mc face mc-abs" style="left:87.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:102.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:117.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:80px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:95px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:110px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:125px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:72.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:87.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:102.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:117.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:132.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:65px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:80px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:95px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:110px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:125px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:140px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:57.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:72.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:87.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:102.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:117.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:132.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:147.5px; top:78px;"></div>
-            </div>
-            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:6px;">
-              <div class="mc gold-back"></div><div class="mc face"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <p class="tile-desc">Pair exposed cards that sum to 13 to clear the pyramid — Egyptian-themed, unlimited waste-pile cycling.</p>
-    </a>
-
+    
   </div>
 </div>
 
