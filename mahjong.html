@@ -6,7 +6,6 @@
 <title>Mahjong Solitaire</title>
 <link rel="stylesheet" href="styles.css">
 <style>
-  /* Custom background mimicking FreeCell's approach */
   html,body{
     background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Mahjong-BG.webp');
     background-size: cover;
@@ -14,7 +13,6 @@
     background-attachment: fixed;
   }
 
-  /* 3D Mahjong Tile Sizing */
   :root {
     --tile-w: clamp(36px, 5vw, 65px);
     --tile-h: calc(var(--tile-w) * 1.35); 
@@ -30,7 +28,7 @@
     justify-content: center;
   }
 
-  /* 3D Tile Container */
+  /* --- LIGHT TILES (Default) --- */
   .tile {
     position: absolute;
     width: var(--tile-w);
@@ -46,19 +44,10 @@
     align-items: center;
     justify-content: center;
     border: 1px solid rgba(0,0,0,0.1);
-    transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.2s ease;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.2s ease, background 0.2s ease;
     user-select: none;
   }
 
-  /* Tile Graphics */
-  .tile-img {
-    width: 85%;
-    height: 85%;
-    object-fit: contain;
-    pointer-events: none; /* Prevents dragging the image itself */
-  }
-
-  /* Selection and Blocked States */
   .tile.selected {
     transform: translateY(-4px) translateX(4px); 
     box-shadow: 
@@ -66,9 +55,49 @@
       calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 12px rgba(0,0,0,0.6);
     z-index: 999 !important;
   }
+
+  /* --- DARK TILES --- */
+  #board.theme-Black .tile {
+    background: #2a2b2e;
+    border-color: #111;
+    box-shadow: 
+      -2px 0 0 0 #4a4d54 inset, 
+      calc(var(--tile-depth) * -1) var(--tile-depth) 0 0 #151618, 
+      calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 6px rgba(0,0,0,0.8);
+  }
+  
+  #board.theme-Black .tile.selected {
+    box-shadow: 
+      0 0 0 3px #7ee6a8, 
+      calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 12px rgba(0,0,0,0.9);
+  }
+
   .tile.blocked {
     filter: brightness(0.75);
     cursor: default;
+  }
+
+  .tile-img {
+    width: 85%;
+    height: 85%;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  .theme-swatch {
+    background: var(--ivory);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+  }
+  .theme-swatch[data-val="Black"] {
+    background: #2a2b2e;
+  }
+  .theme-swatch img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
   }
 </style>
 </head>
@@ -107,7 +136,6 @@
   <div class="chip" id="chip-time">MATCHES <b id="matches-made">0</b></div>
 </div>
 
-<!-- Confirm New Game Overlay -->
 <div class="overlay" id="confirm-overlay">
   <div class="modal" style="text-align:center;">
     <h3>Start New Game?</h3>
@@ -119,7 +147,6 @@
   </div>
 </div>
 
-<!-- Help Overlay -->
 <div class="overlay" id="help-overlay">
   <div class="modal">
     <h3>How to Play</h3>
@@ -136,11 +163,22 @@
   </div>
 </div>
 
-<!-- Settings Overlay -->
 <div class="overlay" id="settings-overlay">
   <div class="modal">
     <h3>Settings</h3>
-    <div class="sub">Adjust your Mahjong experience.</div>
+    <div class="sub">Tile theme applies instantly. Layout requires New Game.</div>
+
+    <div class="field">
+      <label>Tile Theme</label>
+      <div class="backpicker" id="theme-picker">
+        <div class="backswatch theme-swatch active" data-val="White">
+          <img src="MahjongTiles/White/Chun.webp" alt="White Tiles">
+        </div>
+        <div class="backswatch theme-swatch" data-val="Black">
+          <img src="MahjongTiles/Black/Chun.webp" alt="Black Tiles">
+        </div>
+      </div>
+    </div>
 
     <div class="field">
       <label>Board Layout</label>
@@ -152,8 +190,8 @@
     </div>
 
     <div class="modal-actions">
-      <button class="textbtn" id="settings-cancel">Cancel</button>
-      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+      <button class="textbtn" id="settings-cancel">Close</button>
+      <button class="textbtn primary" id="settings-newgame">Apply Layout &amp; New Game</button>
     </div>
   </div>
 </div>
