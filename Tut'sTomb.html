@@ -2,26 +2,20 @@
 <!--
     Tut'sTomb.html
     Written by: Johnathon Largent
-    Version 1.12
+    Version 1.13
 
-   (1) Found the real bug behind the pit "spawning on his feet": the
-   clearance calculation only accounted for the pit's own half-width
-   plus a small fixed margin — it never subtracted the adventurer's
-   own rendered width (arms included, wider than his feet) at all,
-   so the pit's edge sat right at his position with barely any real
-   gap. Now factors in ctx.adventurerEl.offsetWidth on both the
-   approach and landing side. (2) The jump/swing arc used a fixed
-   pixel peak that couldn't scale with the now-variable gap size —
-   replaced with a --jump-dist CSS custom property computed per-spawn
-   from the real gap (pit width + his width + margins), so the arc
-   always visually spans however big the actual gap is. (3) Per
-   request, it's fine for the whip-swing pit's clearance to need more
-   room than a standard step — restricted picking it to the first 60%
-   of the track (pickObstacle now takes `cleared`) so there's always
-   guaranteed space behind him for it, rather than needing to
-   compress/redistribute checkpoint spacing. (4) Blade dodge backward
-   shift bumped from 4 to 12 percentage points — 4 was too subtle to
-   read as a real retreat regardless of correct timing/rotation.
+   Pulled frames from the two videos and found the actual bug:
+   spawnPit() computed clearance using hardcoded pit widths (36px
+   regular / 108px whip) matching the main game's own CSS — but the
+   popup test window's CSS scales pits up to 65px/194px for
+   visibility. Every clearance calculation run in the test window
+   (i.e. everywhere this was actually being tested) was built on a pit
+   roughly half the size of the one really on screen, so the "clear
+   margin" was never real there. Now measures the pit's ACTUAL
+   rendered width via offsetWidth (appended invisibly first, then
+   measured, then positioned) instead of guessing a constant — correct
+   in both the main game and the popup regardless of whatever size
+   each one's CSS renders it at.
 -->
 <!--
   Tut's Tomb — built on the shared engine.js + styles.css, structured
@@ -620,7 +614,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.12';
+const PAGE_VERSION = '1.13';
 const TREASURES = ['🌟', '🏺', '👑', '🗿', '💎', '🦂'];
 
 // Cumulative cards-cleared count at which each pyramid ROW (7,6,5,4,3,2
@@ -895,7 +889,20 @@ function spawnBlade(ctx, obstacle, targetLeft){
 }
 function spawnPit(ctx, obstacle, targetLeft){
   const isWhip = obstacle.reaction === 'whipswing';
-  const pitWidthPx = isWhip ? 108 : 36;
+  // Append FIRST (still invisible — base .pit-trap CSS is opacity:0
+  // until '.show' is added) so its REAL rendered width can be
+  // measured via offsetWidth. A hardcoded px constant here was the
+  // actual bug: this file assumed 36px/108px (the main game's CSS),
+  // but the popup's own CSS scales pits up to 65px/194px for
+  // visibility — so every clearance calculation in the test window
+  // was built on a pit roughly half the size of the one actually
+  // rendered there. Measuring it directly works correctly in both
+  // contexts regardless of whatever size CSS renders it at.
+  const pit = ctx.track.ownerDocument.createElement('div');
+  pit.className = 'pit-trap' + (isWhip ? ' wide' : '');
+  ctx.track.appendChild(pit);
+  const pitWidthPx = pit.offsetWidth || (isWhip ? 108 : 36);
+
   // The pit's edges are computed from the track's ACTUAL rendered
   // width AND his own actual rendered width — not just the pit's own
   // half-width. His arms reach wider than his feet (that's the visual
@@ -910,10 +917,7 @@ function spawnPit(ctx, obstacle, targetLeft){
   const clearancePx = advW / 2 + marginPx;
   const offsetPct = ((pitWidthPx / 2 + clearancePx) / trackW) * 100;
   const pitLeft = targetLeft - offsetPct;
-  const pit = ctx.track.ownerDocument.createElement('div');
-  pit.className = 'pit-trap' + (isWhip ? ' wide' : '');
   pit.style.left = pitLeft + '%';
-  ctx.track.appendChild(pit);
   requestAnimationFrame(()=> requestAnimationFrame(()=> pit.classList.add('show')));
 
   // The jump/swing arc's horizontal reach is set to the REAL computed
