@@ -8,9 +8,8 @@ const RANKS = ['1','2','3','4','5','6','7','8','9'];
 const HONORS = ['Wind-N', 'Wind-S', 'Wind-E', 'Wind-W', 'Dragon-R', 'Dragon-G', 'Dragon-W'];
 const BONUS = ['Flower-1', 'Flower-2', 'Flower-3', 'Flower-4', 'Season-1', 'Season-2', 'Season-3', 'Season-4'];
 
-let currentTheme = 'White'; // Tracks the active tile theme ('White' or 'Black')
+let currentTheme = 'White';
 
-// Translates internal English IDs to FluffyStuff's Romaji filenames
 const FLUFFY_STUFF_MAP = {
     'Circle-1':'Pin1', 'Circle-2':'Pin2', 'Circle-3':'Pin3', 'Circle-4':'Pin4', 'Circle-5':'Pin5', 'Circle-6':'Pin6', 'Circle-7':'Pin7', 'Circle-8':'Pin8', 'Circle-9':'Pin9',
     'Bamboo-1':'Sou1', 'Bamboo-2':'Sou2', 'Bamboo-3':'Sou3', 'Bamboo-4':'Sou4', 'Bamboo-5':'Sou5', 'Bamboo-6':'Sou6', 'Bamboo-7':'Sou7', 'Bamboo-8':'Sou8', 'Bamboo-9':'Sou9',
@@ -19,7 +18,6 @@ const FLUFFY_STUFF_MAP = {
     'Dragon-R':'Chun', 'Dragon-G':'Hatsu', 'Dragon-W':'Haku'
 };
 
-// Fallback Unicode characters since FluffyStuff does not include Bonus tiles
 const UNICODE_BONUS = {
     'Flower-1':'🀢', 'Flower-2':'🀣', 'Flower-3':'🀤', 'Flower-4':'🀥',
     'Season-1':'🀦', 'Season-2':'🀧', 'Season-3':'🀨', 'Season-4':'🀩'
@@ -65,7 +63,6 @@ function generateTurtleLayout() {
     let id = 0;
     const add = (x, y, z) => layout.push({ posId: id++, x, y, z });
 
-    // Layer 0 (Bottom)
     for (let x = 1; x <= 12; x++) add(x, 0, 0);
     for (let x = 3; x <= 10; x++) add(x, 1, 0);
     for (let x = 2; x <= 11; x++) add(x, 2, 0);
@@ -78,22 +75,15 @@ function generateTurtleLayout() {
     for (let x = 3; x <= 10; x++) add(x, 6, 0);
     for (let x = 1; x <= 12; x++) add(x, 7, 0);
 
-    // Layer 1
     for (let y = 1; y <= 6; y++) {
         for (let x = 4; x <= 9; x++) add(x, y, 1);
     }
-
-    // Layer 2
     for (let y = 2; y <= 5; y++) {
         for (let x = 5; x <= 8; x++) add(x, y, 2);
     }
-
-    // Layer 3
     for (let y = 3; y <= 4; y++) {
         for (let x = 6; x <= 7; x++) add(x, y, 3);
     }
-
-    // Layer 4 (Top)
     add(6.5, 3.5, 4);
 
     return layout;
@@ -113,7 +103,6 @@ function generatePyramidLayout() {
     for(let y = 2; y <= 5; y++) {
         for(let x = 5.5; x <= 8.5; x++) add(x, y, 2);
     }
-    
     return layout;
 }
 
@@ -148,25 +137,24 @@ function startNewGame() {
         
         tile.element.className = 'tile';
         
-        if (FLUFFY_STUFF_MAP[tile.id]) {
+        const imgPath = getTileImagePath(tile.id);
+        if (imgPath) {
             const img = document.createElement('img');
             img.className = 'tile-img';
-            img.src = getTileImagePath(tile.id);
-            img.alt = tile.id; 
+            img.src = imgPath;
+            img.alt = tile.id;
+            // Fallback to text if image asset is missing locally
+            img.onerror = () => {
+                img.remove();
+                addFallbackText(tile.element, tile.id);
+            };
             tile.element.appendChild(img);
-        } else if (UNICODE_BONUS[tile.id]) {
-            const tileSymbol = document.createElement('div');
-            tileSymbol.className = 'tile-symbol';
-            tileSymbol.innerText = UNICODE_BONUS[tile.id];
-            tileSymbol.style.fontSize = 'calc(var(--tile-w) * 0.9)';
-            tileSymbol.style.lineHeight = '1';
-            tileSymbol.style.pointerEvents = 'none';
-            tileSymbol.style.color = (tile.id.startsWith('Flower')) ? '#e24b4a' : '#2f7a53';
-            tile.element.appendChild(tileSymbol);
+        } else {
+            addFallbackText(tile.element, tile.id);
         }
         
-        tile.element.style.left = `calc(50% + (var(--tile-w) * ${tile.x - 7}))`; 
-        tile.element.style.top = `calc(50% + (var(--tile-h) * ${tile.y - 3.5}))`;
+        tile.element.style.left = `calc(var(--tile-w) * ${tile.x - 7})`; 
+        tile.element.style.top = `calc(var(--tile-h) * ${tile.y - 3.5})`;
         tile.element.style.zIndex = Math.floor(tile.z * 1000 + tile.y * 10 + tile.x);
 
         tile.element.onclick = () => handleTileClick(tile);
@@ -175,6 +163,36 @@ function startNewGame() {
     });
     
     updateBoardState();
+    scaleBoardToFit();
+}
+
+function addFallbackText(element, id) {
+    const span = document.createElement('span');
+    span.className = 'tile-fallback';
+    if (UNICODE_BONUS[id]) {
+        span.innerText = UNICODE_BONUS[id];
+    } else {
+        // Shorten name for readable text fallback
+        span.innerText = id.replace('Character-', 'C').replace('Bamboo-', 'B').replace('Circle-', 'O').replace('Wind-', '').replace('Dragon-', 'D');
+    }
+    element.appendChild(span);
+}
+
+// Automatically scales down the board wrapper if it exceeds the felt container
+function scaleBoardToFit() {
+    const felt = document.querySelector('.table-felt');
+    const wrapper = document.getElementById('scale-wrapper');
+    if (!felt || !wrapper) return;
+
+    wrapper.style.transform = 'scale(1)';
+    const feltRect = felt.getBoundingClientRect();
+    const wrapperRect = wrapper.getBoundingClientRect();
+
+    const scaleX = (feltRect.width - 24) / wrapperRect.width;
+    const scaleY = (feltRect.height - 24) / wrapperRect.height;
+    const finalScale = Math.min(scaleX, scaleY, 1);
+
+    wrapper.style.transform = `scale(${finalScale})`;
 }
 
 function handleTileClick(tile) {
@@ -239,34 +257,20 @@ function shuffleBoard() {
         tile.id = activeData[i].id;
         tile.type = activeData[i].type;
         
-        if (FLUFFY_STUFF_MAP[tile.id]) {
-            const img = tile.element.querySelector('img');
-            if (img) {
-                img.src = getTileImagePath(tile.id);
-                img.alt = tile.id;
-            } else {
-                tile.element.innerHTML = '';
-                const newImg = document.createElement('img');
-                newImg.className = 'tile-img';
-                newImg.src = getTileImagePath(tile.id);
-                newImg.alt = tile.id; 
-                tile.element.appendChild(newImg);
-            }
-        } else if (UNICODE_BONUS[tile.id]) {
-            const sym = tile.element.querySelector('.tile-symbol');
-            if (sym) {
-                sym.innerText = UNICODE_BONUS[tile.id];
-            } else {
-                tile.element.innerHTML = '';
-                const newSym = document.createElement('div');
-                newSym.className = 'tile-symbol';
-                newSym.innerText = UNICODE_BONUS[tile.id];
-                newSym.style.fontSize = 'calc(var(--tile-w) * 0.9)';
-                newSym.style.lineHeight = '1';
-                newSym.style.pointerEvents = 'none';
-                newSym.style.color = (tile.id.startsWith('Flower')) ? '#e24b4a' : '#2f7a53';
-                tile.element.appendChild(newSym);
-            }
+        tile.element.innerHTML = '';
+        const imgPath = getTileImagePath(tile.id);
+        if (imgPath) {
+            const img = document.createElement('img');
+            img.className = 'tile-img';
+            img.src = imgPath;
+            img.alt = tile.id;
+            img.onerror = () => {
+                img.remove();
+                addFallbackText(tile.element, tile.id);
+            };
+            tile.element.appendChild(img);
+        } else {
+            addFallbackText(tile.element, tile.id);
         }
     });
     
@@ -326,7 +330,7 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
 });
 
 /* =========================================================
-   UI MODAL WIRING 
+   UI MODAL WIRING (Fixed Settings Overlay Activation)
    ========================================================= */
 const confirmOverlay = document.getElementById('confirm-overlay');
 if (confirmOverlay) {
@@ -341,6 +345,7 @@ if (confirmOverlay) {
 const helpOverlay = document.getElementById('help-overlay');
 if (helpOverlay) {
     document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+    document.getElementById('btn-help-close')?.addEventListener('click', ()=> helpOverlay.classList.remove('show'));
     document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
     helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
 }
@@ -360,3 +365,4 @@ const btnShuffle = document.getElementById('btn-shuffle');
 if (btnShuffle) btnShuffle.addEventListener('click', shuffleBoard);
 
 window.onload = startNewGame;
+window.addEventListener('resize', scaleBoardToFit);
