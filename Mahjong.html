@@ -2,41 +2,37 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 1.3
+    Version 1.4
 
-   Turtle and Pyramid were never actually mahjong-shaped — they were
-   rectangular stepped blocks, which is what a card pyramid (TriPeaks/
-   Tut's Tomb) looks like, not a real mahjong board. Real mahjong
-   layouts are diamonds: widest in the middle, tapering to a point at
-   BOTH the top and bottom (not narrowing to one point like a
-   triangle). Both are rebuilt as actual tile-index Manhattan-distance
-   diamonds now:
-     - Turtle: radius-6/4/2 diamond + a single-tile cap + two small
-       2-tile flippers off the left/right points, matching the
-       classic reference shape.
-     - Pyramid: a narrower radius-5/4/3/2 diamond + cap + one small
-       3-tile flipper — more layers than Turtle so it reads as a
-       steeper, taller stack, while staying a diamond rather than a
-       triangle.
-   Fortress is untouched — it was never claiming to BE the classic
-   layout, just an extra shape, so it's left as its own hollow-ring
-   design for now.
+   My "diamond" Turtle/Pyramid from last pass were still off — close
+   in concept, wrong in the actual proportions, per side-by-side
+   photos of real boards. Turtle is now sourced from a published,
+   verified 144-tile classic Turtle dataset (cheshire137/Mahjong on
+   GitHub) instead of a hand-rolled formula — tile-for-tile the real
+   1981 layout, 5 layers (87/36/16/4/1), confirmed solvable over 300
+   generated deals. I could not find an equally authoritative public
+   dataset for "Pyramid" or "Irish Castle" specifically (unlike
+   Turtle, these vary by vendor rather than having one universal
+   shape) — Pyramid keeps last pass's diamond design, and Fortress is
+   replaced with an original Irish Castle: two tapering towers linked
+   by a small bridge, built from the reference photo provided, also
+   confirmed solvable over 300 deals. Flagging this plainly in case
+   either still needs correcting.
 
-   Tile Color simplified from two pickers (Light/Dark) down to ONE —
-   picking a swatch now sets the single base color for every tile on
-   the board (shadeHex() derives the lit-face/shaded-edge bevel from
-   that one color automatically), same "one choice applies everywhere"
-   pattern as the card-back picker instead of two independently-picked
-   gradient stops.
+   Tile rendering had a real bug, not just a style opinion: the two-
+   stop diagonal gradient was barely visible at most tile sizes and
+   concentrated its visible falloff in one corner, and dark tile-color
+   choices made free/blocked tiles nearly indistinguishable. Tiles are
+   now flat, solid --tile-color — no gradient anywhere. Blocked
+   (unmovable) tiles are now a flat rgb(50,50,50) regardless of the
+   chosen tile color, so free vs. blocked reads instantly no matter
+   what color is picked.
 
-   Tile Text Size slider range changed from 90-160 to 50-100 (default
-   75) so it never offers shrinking below normal size — range maps to
-   an actual 1.0x-1.5x scale (scale = 0.5 + value/100), default 75 ->
-   1.25x, a modest head start above normal rather than sitting at the
-   true minimum.
+   Layouts button now shows visible text ("Change Layout") instead of
+   only a map glyph.
 
-   Layouts button's tooltip/label is now "Change Layout" instead of
-   "Choose board layout" (icon unchanged).
+   Home button now links to "./" instead of "index.html" — same
+   directory, but the filename won't show in the address bar.
 -->
 <!--
   Mahjong-specific rules:
@@ -107,34 +103,29 @@
   .table-felt{ display:flex; align-items:center; justify-content:center; overflow:auto; }
   #board{ position:relative; margin:auto; flex-shrink:0; }
 
-  /* --tile-light/--tile-dark are the two settings-driven colors for
-     the ONE tile appearance used across the whole board (same idea as
-     the card-back picker choosing one back for every card) — every
-     tile reads the exact same gradient, light face to dark shaded
-     edge, top to bottom. --tile-glyph-scale is the on-page text-size
+  /* --tile-color is the ONE settings-driven color used across the
+     whole board (same idea as the card-back picker choosing one back
+     for every card) — every free tile reads the exact same flat
+     color, no gradient. --tile-glyph-scale is the on-page text-size
      slider's only job: it scales each tile's <img> in place. */
   :root{
-    --tile-light: #f6efdd;
-    --tile-dark: #ddd0ac;
+    --tile-color: #f6efdd;
     --tile-glyph-scale: 1.25;
   }
 
   .mtile{
     position:absolute; left:0; top:0;
     cursor:pointer;
-    transition: filter .15s ease, transform .12s ease;
+    transition: background-color .12s ease, transform .12s ease;
   }
   .mtile-body{
     position:absolute; inset:0;
     border-radius: 14%;
-    background-image:
-      linear-gradient(160deg, rgba(255,255,255,.35), rgba(0,0,0,.06)),
-      linear-gradient(160deg, var(--tile-light), var(--tile-dark));
+    background: var(--tile-color);
     box-shadow:
       0 3px 0 rgba(0,0,0,.32),
       0 6px 10px rgba(0,0,0,.45),
-      inset 0 0 0 1px rgba(255,255,255,.35),
-      inset 0 -8px 12px rgba(0,0,0,.07);
+      inset 0 0 0 1px rgba(255,255,255,.35);
   }
   .mtile-body img{
     position:absolute; inset:0; width:100%; height:100%;
@@ -144,8 +135,11 @@
     transition: transform .1s ease;
   }
   .mtile.blocked{ cursor:default; }
-  .mtile.blocked .mtile-body{ filter: saturate(0.7) brightness(0.86); }
-  .mtile.free:hover .mtile-body{ filter:brightness(1.07); }
+  /* Flat rgb(50,50,50) regardless of the chosen tile color — the
+     point is maximum, color-independent contrast against whatever
+     free tiles look like, not a tint of the user's chosen color. */
+  .mtile.blocked .mtile-body{ background: rgb(50,50,50); box-shadow: 0 3px 0 rgba(0,0,0,.5), 0 6px 10px rgba(0,0,0,.55); }
+  .mtile.free:hover .mtile-body{ filter:brightness(1.1); }
   .mtile.free:active{ transform: translateY(1px); }
   .mtile.selected .mtile-body{
     box-shadow:
@@ -214,13 +208,13 @@
     <div class="brand-text">
       <h1>Mahjong</h1>
       <div class="brand-actions">
-        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
       </div>
     </div>
   </div>
   <div class="hud">
-    <button class="iconbtn" id="btn-layouts" title="Change Layout" aria-label="Change Layout">🗺</button>
+    <button class="textbtn" id="btn-layouts">Change Layout</button>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
@@ -322,7 +316,7 @@
         selection.</li>
         <li><b>Shuffle</b> randomizes the kinds on whatever tiles remain —
         useful if you get stuck.</li>
-        <li><b>Layouts</b> (map icon, top of the page) lets you pick a
+        <li><b>Change Layout</b> (top of the page) lets you pick a
         different board shape before starting a new game.</li>
       </ul>
     </div>
@@ -389,7 +383,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '1.3';
+const PAGE_VERSION = '1.4';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -405,9 +399,9 @@ const PAGE_VERSION = '1.3';
 const LAYOUTS = {
   turtle: {
     name: 'Turtle',
-    desc: 'The classic diamond board — widest in the middle, tapering to a point top and bottom, with two small flippers on the sides.',
+    desc: 'The original 1981 Turtle board, tile-for-tile — widest in the middle, tapering to a point top and bottom, with small flippers on both sides.',
     coords: [
-[0,2,12],[0,4,10],[0,4,12],[0,4,14],[0,6,8],[0,6,10],[0,6,12],[0,6,14],[0,6,16],[0,8,6],[0,8,8],[0,8,10],[0,8,12],[0,8,14],[0,8,16],[0,8,18],[0,10,4],[0,10,6],[0,10,8],[0,10,10],[0,10,12],[0,10,14],[0,10,16],[0,10,18],[0,10,20],[0,12,2],[0,12,4],[0,12,6],[0,12,8],[0,12,10],[0,12,12],[0,12,14],[0,12,16],[0,12,18],[0,12,20],[0,12,22],[0,14,0],[0,14,2],[0,14,4],[0,14,6],[0,14,8],[0,14,10],[0,14,12],[0,14,14],[0,14,16],[0,14,18],[0,14,20],[0,14,22],[0,14,24],[0,16,2],[0,16,4],[0,16,6],[0,16,8],[0,16,10],[0,16,12],[0,16,14],[0,16,16],[0,16,18],[0,16,20],[0,16,22],[0,18,4],[0,18,6],[0,18,8],[0,18,10],[0,18,12],[0,18,14],[0,18,16],[0,18,18],[0,18,20],[0,20,6],[0,20,8],[0,20,10],[0,20,12],[0,20,14],[0,20,16],[0,20,18],[0,22,8],[0,22,10],[0,22,12],[0,22,14],[0,22,16],[0,24,10],[0,24,12],[0,24,14],[0,26,12],[1,6,12],[1,8,10],[1,8,12],[1,8,14],[1,10,8],[1,10,10],[1,10,12],[1,10,14],[1,10,16],[1,12,6],[1,12,8],[1,12,10],[1,12,12],[1,12,14],[1,12,16],[1,12,18],[1,14,4],[1,14,6],[1,14,8],[1,14,10],[1,14,12],[1,14,14],[1,14,16],[1,14,18],[1,14,20],[1,16,6],[1,16,8],[1,16,10],[1,16,12],[1,16,14],[1,16,16],[1,16,18],[1,18,8],[1,18,10],[1,18,12],[1,18,14],[1,18,16],[1,20,10],[1,20,12],[1,20,14],[1,22,12],[2,10,12],[2,12,10],[2,12,12],[2,12,14],[2,14,8],[2,14,10],[2,14,12],[2,14,14],[2,14,16],[2,16,10],[2,16,12],[2,16,14],[2,18,12],[3,14,12],[0,0,10],[0,0,14],[0,28,10],[0,28,14]
+[0,0,7],[0,2,0],[0,2,6],[0,2,8],[0,2,14],[0,4,0],[0,4,4],[0,4,6],[0,4,8],[0,4,10],[0,4,14],[0,6,0],[0,6,2],[0,6,4],[0,6,6],[0,6,8],[0,6,10],[0,6,12],[0,6,14],[0,8,0],[0,8,2],[0,8,4],[0,8,6],[0,8,8],[0,8,10],[0,8,12],[0,8,14],[1,8,2],[1,8,4],[1,8,6],[1,8,8],[1,8,10],[1,8,12],[0,10,0],[0,10,2],[0,10,4],[0,10,6],[0,10,8],[0,10,10],[0,10,12],[0,10,14],[1,10,2],[1,10,4],[1,10,6],[1,10,8],[1,10,10],[1,10,12],[2,10,4],[2,10,6],[2,10,8],[2,10,10],[0,12,0],[0,12,2],[0,12,4],[0,12,6],[0,12,8],[0,12,10],[0,12,12],[0,12,14],[1,12,2],[1,12,4],[1,12,6],[1,12,8],[1,12,10],[1,12,12],[2,12,4],[2,12,6],[2,12,8],[2,12,10],[3,12,6],[3,12,8],[4,13,7],[0,14,0],[0,14,2],[0,14,4],[0,14,6],[0,14,8],[0,14,10],[0,14,12],[0,14,14],[1,14,2],[1,14,4],[1,14,6],[1,14,8],[1,14,10],[1,14,12],[2,14,4],[2,14,6],[2,14,8],[2,14,10],[3,14,6],[3,14,8],[0,16,0],[0,16,2],[0,16,4],[0,16,6],[0,16,8],[0,16,10],[0,16,12],[0,16,14],[1,16,2],[1,16,4],[1,16,6],[1,16,8],[1,16,10],[1,16,12],[2,16,4],[2,16,6],[2,16,8],[2,16,10],[0,18,0],[0,18,2],[0,18,4],[0,18,6],[0,18,8],[0,18,10],[0,18,12],[0,18,14],[1,18,2],[1,18,4],[1,18,6],[1,18,8],[1,18,10],[1,18,12],[0,20,0],[0,20,2],[0,20,4],[0,20,6],[0,20,8],[0,20,10],[0,20,12],[0,20,14],[0,22,0],[0,22,4],[0,22,6],[0,22,8],[0,22,10],[0,22,14],[0,24,0],[0,24,6],[0,24,8],[0,24,14],[0,26,7],[0,28,7]
     ]
   },
   pyramid: {
@@ -417,15 +411,15 @@ const LAYOUTS = {
 [0,2,10],[0,4,8],[0,4,10],[0,4,12],[0,6,6],[0,6,8],[0,6,10],[0,6,12],[0,6,14],[0,8,4],[0,8,6],[0,8,8],[0,8,10],[0,8,12],[0,8,14],[0,8,16],[0,10,2],[0,10,4],[0,10,6],[0,10,8],[0,10,10],[0,10,12],[0,10,14],[0,10,16],[0,10,18],[0,12,0],[0,12,2],[0,12,4],[0,12,6],[0,12,8],[0,12,10],[0,12,12],[0,12,14],[0,12,16],[0,12,18],[0,12,20],[0,14,2],[0,14,4],[0,14,6],[0,14,8],[0,14,10],[0,14,12],[0,14,14],[0,14,16],[0,14,18],[0,16,4],[0,16,6],[0,16,8],[0,16,10],[0,16,12],[0,16,14],[0,16,16],[0,18,6],[0,18,8],[0,18,10],[0,18,12],[0,18,14],[0,20,8],[0,20,10],[0,20,12],[0,22,10],[1,4,10],[1,6,8],[1,6,10],[1,6,12],[1,8,6],[1,8,8],[1,8,10],[1,8,12],[1,8,14],[1,10,4],[1,10,6],[1,10,8],[1,10,10],[1,10,12],[1,10,14],[1,10,16],[1,12,2],[1,12,4],[1,12,6],[1,12,8],[1,12,10],[1,12,12],[1,12,14],[1,12,16],[1,12,18],[1,14,4],[1,14,6],[1,14,8],[1,14,10],[1,14,12],[1,14,14],[1,14,16],[1,16,6],[1,16,8],[1,16,10],[1,16,12],[1,16,14],[1,18,8],[1,18,10],[1,18,12],[1,20,10],[2,6,10],[2,8,8],[2,8,10],[2,8,12],[2,10,6],[2,10,8],[2,10,10],[2,10,12],[2,10,14],[2,12,4],[2,12,6],[2,12,8],[2,12,10],[2,12,12],[2,12,14],[2,12,16],[2,14,6],[2,14,8],[2,14,10],[2,14,12],[2,14,14],[2,16,8],[2,16,10],[2,16,12],[2,18,10],[3,8,10],[3,10,8],[3,10,10],[3,10,12],[3,12,6],[3,12,8],[3,12,10],[3,12,12],[3,12,14],[3,14,8],[3,14,10],[3,14,12],[3,16,10],[4,12,10],[0,0,8],[0,0,10],[0,0,12]
     ]
   },
-  fortress: {
-    name: 'Fortress',
-    desc: 'A hollow courtyard ring with a tower rising from its center.',
+  irishcastle: {
+    name: 'Irish Castle',
+    desc: 'Two tall towers linked by a small bridge, each rising in its own tapering stack.',
     coords: [
-[0,0,0],[0,2,0],[0,4,0],[0,6,0],[0,8,0],[0,10,0],[0,12,0],[0,14,0],[0,16,0],[0,18,0],[0,20,0],[0,22,0],[0,24,0],[0,26,0],[0,0,2],[0,2,2],[0,4,2],[0,6,2],[0,8,2],[0,10,2],[0,12,2],[0,14,2],[0,16,2],[0,18,2],[0,20,2],[0,22,2],[0,24,2],[0,26,2],[0,0,4],[0,2,4],[0,4,4],[0,20,4],[0,22,4],[0,24,4],[0,26,4],[0,0,6],[0,2,6],[0,4,6],[0,20,6],[0,22,6],[0,24,6],[0,26,6],[0,0,8],[0,2,8],[0,4,8],[0,20,8],[0,22,8],[0,24,8],[0,26,8],[0,0,10],[0,2,10],[0,4,10],[0,20,10],[0,22,10],[0,24,10],[0,26,10],[0,0,12],[0,2,12],[0,4,12],[0,6,12],[0,8,12],[0,10,12],[0,12,12],[0,14,12],[0,16,12],[0,18,12],[0,20,12],[0,22,12],[0,24,12],[0,26,12],[0,0,14],[0,2,14],[0,4,14],[0,6,14],[0,8,14],[0,10,14],[0,12,14],[0,14,14],[0,16,14],[0,18,14],[0,20,14],[0,22,14],[0,24,14],[0,26,14],[1,8,4],[1,10,4],[1,12,4],[1,14,4],[1,16,4],[1,18,4],[1,8,6],[1,10,6],[1,12,6],[1,14,6],[1,16,6],[1,18,6],[1,8,8],[1,10,8],[1,12,8],[1,14,8],[1,16,8],[1,18,8],[1,8,10],[1,10,10],[1,12,10],[1,14,10],[1,16,10],[1,18,10],[2,9,4],[2,11,4],[2,13,4],[2,15,4],[2,17,4],[2,9,6],[2,11,6],[2,13,6],[2,15,6],[2,17,6],[2,9,8],[2,11,8],[2,13,8],[2,15,8],[2,17,8],[2,9,10],[2,11,10],[2,13,10],[2,15,10],[2,17,10],[3,10,4],[3,12,4],[3,14,4],[3,16,4],[3,10,6],[3,12,6],[3,14,6],[3,16,6],[3,10,8],[3,12,8],[3,14,8],[3,16,8],[3,10,10],[3,12,10],[3,14,10],[3,16,10]
+[0,0,0],[0,2,0],[0,4,0],[0,6,0],[0,0,2],[0,2,2],[0,4,2],[0,6,2],[0,0,4],[0,2,4],[0,4,4],[0,6,4],[0,0,6],[0,2,6],[0,4,6],[0,6,6],[0,0,8],[0,2,8],[0,4,8],[0,6,8],[0,0,10],[0,2,10],[0,4,10],[0,6,10],[0,0,12],[0,2,12],[0,4,12],[0,6,12],[0,0,14],[0,2,14],[0,4,14],[0,6,14],[0,0,16],[0,2,16],[0,4,16],[0,6,16],[1,1,2],[1,3,2],[1,5,2],[1,1,4],[1,3,4],[1,5,4],[1,1,6],[1,3,6],[1,5,6],[1,1,8],[1,3,8],[1,5,8],[1,1,10],[1,3,10],[1,5,10],[1,1,12],[1,3,12],[1,5,12],[1,1,14],[1,3,14],[1,5,14],[2,2,4],[2,4,4],[2,2,6],[2,4,6],[2,2,8],[2,4,8],[2,2,10],[2,4,10],[2,2,12],[2,4,12],[3,3,6],[3,3,8],[3,3,10],[0,12,0],[0,14,0],[0,16,0],[0,18,0],[0,12,2],[0,14,2],[0,16,2],[0,18,2],[0,12,4],[0,14,4],[0,16,4],[0,18,4],[0,12,6],[0,14,6],[0,16,6],[0,18,6],[0,12,8],[0,14,8],[0,16,8],[0,18,8],[0,12,10],[0,14,10],[0,16,10],[0,18,10],[0,12,12],[0,14,12],[0,16,12],[0,18,12],[0,12,14],[0,14,14],[0,16,14],[0,18,14],[0,12,16],[0,14,16],[0,16,16],[0,18,16],[1,13,2],[1,15,2],[1,17,2],[1,13,4],[1,15,4],[1,17,4],[1,13,6],[1,15,6],[1,17,6],[1,13,8],[1,15,8],[1,17,8],[1,13,10],[1,15,10],[1,17,10],[1,13,12],[1,15,12],[1,17,12],[1,13,14],[1,15,14],[1,17,14],[2,14,4],[2,16,4],[2,14,6],[2,16,6],[2,14,8],[2,16,8],[2,14,10],[2,16,10],[2,14,12],[2,16,12],[3,15,6],[3,15,8],[3,15,10],[0,8,8],[0,10,8],[0,8,10],[0,10,10]
     ]
   }
 };
-const LAYOUTS_ORDER = ['turtle','pyramid','fortress'];
+const LAYOUTS_ORDER = ['turtle','pyramid','irishcastle'];
 
 const KINDS_34 = [
   'dot_1','dot_2','dot_3','dot_4','dot_5','dot_6','dot_7','dot_8','dot_9',
@@ -496,10 +490,10 @@ function isFreeRuntime(tile){ return isFreeAmong(tile, activeTiles()); }
    those two positions. Freeness only depends on position, never kind,
    so replaying that same removal order in the real game is always
    still legal. Most layouts never hit the fallback below, but a
-   shape like Fortress's ring occasionally paints itself into a corner
-   near the end of a random attempt — rather than let that one rare
-   attempt silently produce a non-guaranteed board, the whole attempt
-   just retries from scratch.
+   shape with tight corridors (like Irish Castle's towers) can
+   occasionally paint itself into a corner near the end of a random
+   attempt — rather than let that one rare attempt silently produce a
+   non-guaranteed board, the whole attempt just retries from scratch.
    ========================================================= */
 function attemptSolvableLayout(coords){
   const positions = coords.map((p,i)=>({ id:'t'+i, layer:p[0], col:p[1], row:p[2], kind:null, removed:false }));
@@ -613,9 +607,9 @@ function renderAll(){
     // local override in <style> above for why that headroom matters).
     el.style.zIndex = String(t.layer*20 + t.row);
 
-    // Tile appearance itself (the --tile-light/--tile-dark gradient)
-    // is defined once in the shared .mtile-body CSS rule above — every
-    // tile reads the exact same two colors, nothing set per-tile here.
+    // Tile appearance itself (the flat --tile-color background, or
+    // the flat rgb(50,50,50) blocked override) is defined once in the
+    // shared CSS rules above — nothing set per-tile here.
     const body = document.createElement('div');
     body.className = 'mtile-body';
 
@@ -769,24 +763,8 @@ function newGame(){
 /* =========================================================
    SETTINGS WIRING
    ========================================================= */
-// Lightens (positive percent) or darkens (negative percent) a hex
-// color by nudging each channel toward white/black. Used so picking
-// ONE tile color (like choosing one card back for the whole deck)
-// still gets the same lit-face/shaded-edge bevel every tile had
-// before — the two shades are now computed from that single choice
-// instead of picked independently.
-function shadeHex(hex, percent){
-  const num = parseInt(hex.replace('#',''), 16);
-  const amt = Math.round(255 * (percent/100));
-  let r = (num>>16) + amt, g = ((num>>8)&0xff) + amt, b = (num&0xff) + amt;
-  r = Math.max(0, Math.min(255, r));
-  g = Math.max(0, Math.min(255, g));
-  b = Math.max(0, Math.min(255, b));
-  return '#' + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
-}
 function applyTileColors(){
-  document.documentElement.style.setProperty('--tile-light', shadeHex(state.tileColor, 10));
-  document.documentElement.style.setProperty('--tile-dark', shadeHex(state.tileColor, -16));
+  document.documentElement.style.setProperty('--tile-color', state.tileColor);
 }
 function refreshVersionInfo(){
   const stylesVersion = E.getStylesheetVersion() || 'unknown';
