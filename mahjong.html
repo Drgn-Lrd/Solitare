@@ -1,102 +1,163 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Mahjong Solitaire</title>
-  
-  <!-- Pulls in your existing Solitaire UI shell -->
-  <link rel="stylesheet" href="styles.css">
-  
-  <style>
-    /* Standard Mahjong tile proportions with 3D depth */
-    :root {
-      --tile-w: clamp(36px, 5vw, 65px);
-      --tile-h: calc(var(--tile-w) * 1.35); 
-      --tile-depth: calc(var(--tile-w) * 0.25); /* Thickness of the tile */
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Mahjong Solitaire</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Custom background mimicking FreeCell's approach */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Mahjong-BG.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
 
-    .mahjong-board {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
+  /* 3D Mahjong Tile Sizing */
+  :root {
+    --tile-w: clamp(36px, 5vw, 65px);
+    --tile-h: calc(var(--tile-w) * 1.35); 
+    --tile-depth: calc(var(--tile-w) * 0.25);
+  }
 
-    /* 3D Tile Styling */
-    .tile {
-      position: absolute;
-      width: var(--tile-w);
-      height: var(--tile-h);
-      background: var(--ivory); 
-      border-radius: 4px;
-      box-shadow: 
-        -2px 0 0 0 #fff inset, 
-        calc(var(--tile-depth) * -1) var(--tile-depth) 0 0 #c7bca1, 
-        calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 6px rgba(0,0,0,0.5); 
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: calc(var(--tile-w) * 0.45);
-      color: var(--navy); 
-      border: 1px solid rgba(0,0,0,0.2);
-      transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.2s ease;
-      user-select: none;
-    }
+  .mahjong-board {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
-    /* Hover/Selection states mirroring your Solitaire mechanics */
-    .tile.selected {
-      transform: translateY(-4px) translateX(4px); 
-      box-shadow: 
-        0 0 0 3px #7ee6a8, 
-        calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 12px rgba(0,0,0,0.6);
-      z-index: 999 !important;
-    }
+  /* 3D Tile Container */
+  .tile {
+    position: absolute;
+    width: var(--tile-w);
+    height: var(--tile-h);
+    background: var(--ivory); 
+    border-radius: 6px;
+    box-shadow: 
+      -2px 0 0 0 #fff inset, 
+      calc(var(--tile-depth) * -1) var(--tile-depth) 0 0 #c7bca1, 
+      calc(var(--tile-depth) * -1 - 2px) calc(var(--tile-depth) + 2px) 6px rgba(0,0,0,0.5); 
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0,0,0,0.1);
+    transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.2s ease;
+    user-select: none;
+  }
 
-    /* Dimmed state for tiles trapped under or between others */
-    .tile.blocked {
-      filter: brightness(0.75);
-      cursor: default;
-    }
-  </style>
+  /* Tile Graphics */
+  .tile-img {
+    width: 85%;
+    height: 85%;
+    object-fit: contain;
+    pointer-events: none; /* Prevents dragging the image itself */
+  }
+
+  /* Selection and Blocked States */
+  .tile.selected {
+    transform: translateY(-4px) translateX(4px); 
+    box-shadow: 
+      0 0 0 3px #7ee6a8, 
+      calc(var(--tile-depth) * -1 - 4px) calc(var(--tile-depth) + 4px) 12px rgba(0,0,0,0.6);
+    z-index: 999 !important;
+  }
+  .tile.blocked {
+    filter: brightness(0.75);
+    cursor: default;
+  }
+</style>
 </head>
 <body>
 
-  <header>
-    <div class="brand">
-      <div class="brand-text">
-        <h1>Mahjong</h1>
-      </div>
-    </div>
-    <div class="hud">
-      <button class="textbtn newgame-btn" onclick="startNewGame('turtle')">New Game</button>
-      <button class="textbtn newgame-btn" onclick="startNewGame('pyramid')">Pyramid</button>
-    </div>
-  </header>
-
-  <div class="stage">
-    <div class="table-frame">
-      <div class="table-felt">
-        <div class="mahjong-board" id="board"></div>
+<header>
+  <div class="brand">
+    <div class="brand-text">
+      <h1>Mahjong</h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="index.html" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
       </div>
     </div>
   </div>
-
-  <div class="bottombar">
-    <div id="chip-score" class="chip">Tiles: <b id="tiles-left">144</b></div>
-    <div class="bottombar-actions">
-       <button class="bottombtn" onclick="shuffleBoard()">
-         <span class="blabel">SHUFFLE</span>
-       </button>
-    </div>
-    <div id="chip-time" class="chip">Matches: <b id="matches-made">0</b></div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
+</header>
 
-  <!-- Custom game engine for Mahjong -->
-  <script src="mahjong.js"></script>
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="mahjong-board" id="board"></div>
+    </div>
+  </div>
+</div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score">TILES <b id="tiles-left">144</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-shuffle" title="Shuffle remaining tiles"><span class="bicon">🔀</span><span class="blabel">Shuffle</span></button>
+  </div>
+  <div class="chip" id="chip-time">MATCHES <b id="matches-made">0</b></div>
+</div>
+
+<!-- Confirm New Game Overlay -->
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<!-- Help Overlay -->
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Mahjong Solitaire</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Match pairs of identical tiles to remove them from the board.</li>
+      <li>A tile is only playable if it is "free"—meaning no other tile is directly on top of it, and it has no tile touching its left OR right side.</li>
+      <li>Flower and Season tiles are exceptions: any Flower matches any other Flower, and any Season matches any other Season.</li>
+      <li>Clear all 144 tiles to win!</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Overlay -->
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Adjust your Mahjong experience.</div>
+
+    <div class="field">
+      <label>Board Layout</label>
+      <select id="layout-select" style="width:100%; background:var(--panel); border:1px solid var(--panel-line); border-radius:8px; color:var(--ivory); padding:8px 10px; font-family:inherit; font-size:14px;">
+        <option value="turtle">Classic Turtle</option>
+        <option value="pyramid">Pyramid</option>
+      </select>
+      <div class="fieldnote">Changes the 3D shape of the tiles. Applies on your next New Game.</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script src="mahjong.js"></script>
 </body>
 </html>
