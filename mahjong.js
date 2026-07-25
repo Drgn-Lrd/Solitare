@@ -1,6 +1,8 @@
 // mahjong.js
 
-// 1. Deck Generation (144 Tiles)
+/* =========================================================
+   DECK & GRAPHICS
+   ========================================================= */
 const SUITS = ['Bamboo', 'Character', 'Circle'];
 const RANKS = ['1','2','3','4','5','6','7','8','9'];
 const HONORS = ['Wind-N', 'Wind-S', 'Wind-E', 'Wind-W', 'Dragon-R', 'Dragon-G', 'Dragon-W'];
@@ -8,15 +10,13 @@ const BONUS = ['Flower-1', 'Flower-2', 'Flower-3', 'Flower-4', 'Season-1', 'Seas
 
 function buildMahjongDeck() {
     let deck = [];
-    // 4 of each standard suit and honor
     for (let i = 0; i < 4; i++) {
         SUITS.forEach(suit => {
-            RANKS.forEach(rank => deck.push({ id: `${suit}-${rank}`, display: `${rank}${suit[0]}` }));
+            RANKS.forEach(rank => deck.push({ id: `${suit}-${rank}`, type: 'standard' }));
         });
-        HONORS.forEach(honor => deck.push({ id: honor, display: honor[0] }));
+        HONORS.forEach(honor => deck.push({ id: honor, type: 'honor' }));
     }
-    // 1 of each bonus tile
-    BONUS.forEach(bonus => deck.push({ id: bonus.split('-')[0], display: bonus[0] }));
+    BONUS.forEach(bonus => deck.push({ id: bonus, type: bonus.split('-')[0] }));
     return shuffleArray(deck);
 }
 
@@ -28,13 +28,20 @@ function shuffleArray(arr) {
     return arr;
 }
 
-// 2. Layout Definitions (x, y, z coordinates in half-tile increments)
+// Generates the image path based on the ID. 
+// Requires a folder named "mahjong-tiles" in the root directory.
+function getTileImagePath(id) {
+    return `mahjong-tiles/${id}.webp`;
+}
+
+/* =========================================================
+   LAYOUTS (3D Coordinates)
+   ========================================================= */
 const LAYOUTS = {
-    'pyramid': generatePyramidLayout(), // Simple layout for testing
-    'turtle': generateTurtleLayout()    // Classic layout
+    'pyramid': generatePyramidLayout(),
+    'turtle': generateTurtleLayout()
 };
 
-// Generates a simple stacked pyramid to test the 3D mechanics
 function generatePyramidLayout() {
     let layout = [];
     let id = 0;
@@ -49,10 +56,7 @@ function generatePyramidLayout() {
     return layout; 
 }
 
-// Classic 144-tile Turtle layout coordinates
 function generateTurtleLayout() {
-    // Falls back to generating a grid of 144 tiles in a layered block for this script.
-    // In a fully finished version, this is where you would map out all 144 precise X/Y/Z coords.
     let layout = [];
     let id = 0;
     for (let z = 0; z < 4; z++) {
@@ -65,17 +69,21 @@ function generateTurtleLayout() {
     return layout;
 }
 
-// 3. Game State & Interaction
+/* =========================================================
+   GAME STATE & LOGIC
+   ========================================================= */
 let currentTiles = [];
 let selectedTile = null;
 let matches = 0;
 
-function startNewGame(layoutName) {
+function startNewGame() {
+    const layoutName = document.getElementById('layout-select').value;
     const board = document.getElementById('board');
     board.innerHTML = '';
     
     let deck = buildMahjongDeck();
     let layout = LAYOUTS[layoutName].slice(0, deck.length); 
+    
     currentTiles = [];
     matches = 0;
     selectedTile = null;
@@ -91,9 +99,16 @@ function startNewGame(layoutName) {
         };
         
         tile.element.className = 'tile';
-        tile.element.innerText = tile.display; 
         
-        // Convert grid coordinates to visual CSS positions
+        // Add real tile image
+        const img = document.createElement('img');
+        img.className = 'tile-img';
+        img.src = getTileImagePath(tile.id);
+        
+        // Fallback alt text in case the images are missing
+        img.alt = tile.id; 
+        tile.element.appendChild(img);
+        
         tile.element.style.left = `calc(50% + ${(tile.x - 5) * 25}px)`; 
         tile.element.style.top = `calc(50% + ${(tile.y - 5) * 35}px)`;
         tile.element.style.zIndex = tile.z * 10 + tile.y; 
@@ -115,8 +130,7 @@ function handleTileClick(tile) {
     } else if (selectedTile.posId === tile.posId) {
         selectedTile.element.classList.remove('selected');
         selectedTile = null;
-    } else if (selectedTile.id === tile.id) {
-        // Match found!
+    } else if (isMatch(selectedTile, tile)) {
         tile.active = false;
         selectedTile.active = false;
         tile.element.style.display = 'none';
@@ -126,14 +140,19 @@ function handleTileClick(tile) {
         selectedTile = null;
         updateBoardState();
     } else {
-        // Wrong match, switch selection
         selectedTile.element.classList.remove('selected');
         selectedTile = tile;
         tile.element.classList.add('selected');
     }
 }
 
-// Mahjong Rules: Free if no tile is directly on top, AND it's free on either left or right.
+// Special Mahjong matching rule: Seasons match Seasons, Flowers match Flowers.
+function isMatch(tileA, tileB) {
+    if (tileA.type === 'Flower' && tileB.type === 'Flower') return true;
+    if (tileA.type === 'Season' && tileB.type === 'Season') return true;
+    return tileA.id === tileB.id;
+}
+
 function isTileFree(target) {
     let blockedLeft = false;
     let blockedRight = false;
@@ -141,13 +160,7 @@ function isTileFree(target) {
 
     currentTiles.forEach(t => {
         if (!t.active || t.posId === target.posId) return;
-
-        // Check if a tile is stacked directly on top (overlapping coordinates at a higher Z)
-        if (t.z > target.z && Math.abs(t.x - target.x) < 2 && Math.abs(t.y - target.y) < 2) {
-            blockedTop = true;
-        }
-
-        // Check left/right blockers on the exact same Z layer
+        if (t.z > target.z && Math.abs(t.x - target.x) < 2 && Math.abs(t.y - target.y) < 2) blockedTop = true;
         if (t.z === target.z && Math.abs(t.y - target.y) < 1) {
             if (t.x < target.x && target.x - t.x <= 2) blockedLeft = true;
             if (t.x > target.x && t.x - target.x <= 2) blockedRight = true;
@@ -158,23 +171,23 @@ function isTileFree(target) {
 }
 
 function shuffleBoard() {
-    // Only shuffle tiles that are currently active
     let activeTiles = currentTiles.filter(t => t.active);
-    let activeData = activeTiles.map(t => ({ id: t.id, display: t.display }));
+    let activeData = activeTiles.map(t => ({ id: t.id, type: t.type }));
     
     activeData = shuffleArray(activeData);
     
     activeTiles.forEach((tile, i) => {
         tile.id = activeData[i].id;
-        tile.display = activeData[i].display;
-        tile.element.innerText = tile.display;
+        tile.type = activeData[i].type;
+        // Update image src
+        tile.element.querySelector('img').src = getTileImagePath(tile.id);
+        tile.element.querySelector('img').alt = tile.id;
     });
     
     if(selectedTile) {
         selectedTile.element.classList.remove('selected');
         selectedTile = null;
     }
-    
     updateBoardState();
 }
 
@@ -195,5 +208,29 @@ function updateBoardState() {
     document.getElementById('matches-made').innerText = matches;
 }
 
-// Initialize on load
-window.onload = () => startNewGame('turtle');
+/* =========================================================
+   UI MODAL WIRING (Matches FreeCell.html pattern)
+   ========================================================= */
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); startNewGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+const settingsOverlay = document.getElementById('settings-overlay');
+document.getElementById('btn-settings').addEventListener('click', ()=> settingsOverlay.classList.add('show'));
+document.getElementById('settings-cancel').addEventListener('click', ()=> settingsOverlay.classList.remove('show'));
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+    settingsOverlay.classList.remove('show');
+    startNewGame();
+});
+settingsOverlay.addEventListener('click', (e)=>{ if(e.target===settingsOverlay) settingsOverlay.classList.remove('show'); });
+
+document.getElementById('btn-shuffle').addEventListener('click', shuffleBoard);
+
+window.onload = startNewGame;
