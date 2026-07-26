@@ -2,22 +2,29 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.11
+    Version 2.12
 
-   The hardcoded top:112px guess from last pass was wrong on the
-   actual device — the mobile buttons ended up overflowing below the
-   header entirely, floating over the top of the board instead of
-   sitting in the header's row-2 gap. Two guesses at a fixed px value
-   in a row that didn't hold up is a sign the number itself was never
-   going to be reliable — header height/wrapping genuinely varies by
-   device (font rendering, viewport width, etc.), so this is fixed
-   properly now instead of re-guessed: positionMobileZoomButtons()
-   measures .brand-actions's (Home/New Game) actual getBoundingClientRect()
-   at runtime and vertically centers the zoom buttons on wherever that
-   real position turns out to be, re-measuring on resize/orientation
-   change since the gap shifts with viewport width. Called once at
-   init, once more after a 300ms delay in case fonts hadn't finished
-   settling yet, and on every resize/orientationchange after that.
+   Two real bugs found from the follow-up screenshot:
+     - Horizontal positioning was never actually implemented — last
+       pass only measured/set `top`, and left the CSS's static
+       left:50% in place, which centers on the HEADER's total width
+       (skewed way right of the actual row-2 gap by the wide
+       crest+title block on the left). Now measures BOTH edges of the
+       real gap — .brand-actions' right edge and the Settings button's
+       left edge — and centers between those specifically.
+     - "Can't scroll to see the left side while zoomed in" was a real
+       CSS bug, not a fluke: justify-content/align-items:center on a
+       scrollable flex container is a known trap — centering doesn't
+       reserve matching scroll room on the "before" side once content
+       outgrows the container, so that edge becomes permanently
+       unreachable no matter how far you scroll. Fixed with "safe
+       center" (CSS Box Alignment) on .table-felt, which centers
+       normally while content fits and falls back to reachable start-
+       alignment the moment it doesn't. Same latent bug existed in
+       LayoutEditor.html's own grid-wrap (identical pattern, would've
+       hit the same wall once that grid ever exceeded the viewport) —
+       fixed there too proactively rather than waiting for the same
+       report twice.
 -->
 <!--
   Mahjong-specific rules:
@@ -151,7 +158,7 @@
   @media (max-width:560px){
     .zoom-control{ display:none; }
     .zoom-buttons-mobile{
-      display:flex; gap:8px; position:absolute; left:50%;
+      display:flex; gap:8px; position:absolute;
       z-index:20;
     }
     .zoom-buttons-mobile .zoom-btn{
@@ -169,7 +176,16 @@
   }
 
   /* ===== Board ===== */
-  .table-felt{ display:flex; align-items:center; justify-content:center; overflow:auto; }
+  /* justify-content/align-items:center on a scrollable flex container
+     is a known trap: when content grows past the container (zoomed
+     in here), centering doesn't reserve matching scroll room on the
+     "before" side, so the left/top edge becomes permanently
+     unreachable no matter how far you scroll — exactly the "can't
+     scroll left" bug. "safe center" (CSS Box Alignment) is the actual
+     fix: it centers normally while content fits, and falls back to
+     start-alignment (scrollable from the true edge) the moment it
+     doesn't, instead of clipping that side off. */
+  .table-felt{ display:flex; align-items:safe center; justify-content:safe center; overflow:auto; }
   #board{ position:relative; margin:auto; flex-shrink:0; }
 
   /* --tile-color is the ONE settings-driven color used across the
@@ -489,7 +505,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.11';
+const PAGE_VERSION = '2.12';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -1178,22 +1194,32 @@ document.getElementById('zoom-out').addEventListener('click', ()=> applyZoom(Num
 document.getElementById('zoom-in-mobile').addEventListener('click', ()=> applyZoom(zoomMultiplier*100+10));
 document.getElementById('zoom-out-mobile').addEventListener('click', ()=> applyZoom(zoomMultiplier*100-10));
 
-// Mobile zoom buttons land wherever .brand-actions (Home/New Game)
-// actually rendered, vertically centered on it -- a measured position
-// instead of a guessed px offset, since header height/wrapping varies
-// enough across real devices that a hardcoded number kept landing
-// wrong. Re-measures on resize/orientation change since that gap's
-// position shifts with viewport width.
+// Mobile zoom buttons land wherever the actual gap in row 2 of the
+// header is -- measured, not guessed. Vertically: centered on
+// .brand-actions (Home/New Game)'s real rendered position. Horizontally:
+// centered specifically between .brand-actions' right edge and the
+// Settings button's left edge -- NOT the header's own horizontal
+// center (that was the bug last pass: static left:50% in CSS centers
+// on the whole header's width, which is skewed way right of the
+// actual row-2 gap by the wide crest+title block on the far left).
+// Re-measures on resize/orientation change since the gap shifts with
+// viewport width.
 function positionMobileZoomButtons(){
   const btns = document.getElementById('zoom-buttons-mobile');
   const actions = document.querySelector('.brand-actions');
+  const settingsBtn = document.getElementById('btn-settings');
   const header = document.querySelector('header');
-  if(!btns || !actions || !header) return;
-  if(window.innerWidth > 560){ btns.style.top = ''; btns.style.transform = ''; return; }
+  if(!btns || !actions || !settingsBtn || !header) return;
+  if(window.innerWidth > 560){ btns.style.top=''; btns.style.left=''; btns.style.transform=''; return; }
   const actionsRect = actions.getBoundingClientRect();
+  const settingsRect = settingsBtn.getBoundingClientRect();
   const headerRect = header.getBoundingClientRect();
   const centerY = actionsRect.top + actionsRect.height/2 - headerRect.top;
+  const gapLeft = actionsRect.right - headerRect.left;
+  const gapRight = settingsRect.left - headerRect.left;
+  const centerX = (gapLeft + gapRight) / 2;
   btns.style.top = centerY + 'px';
+  btns.style.left = centerX + 'px';
   btns.style.transform = 'translate(-50%, -50%)';
 }
 window.addEventListener('resize', positionMobileZoomButtons);
