@@ -2,22 +2,11 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.5
+    Version 2.6
 
-   Tile Text Size slider removed entirely — after a few real games,
-   max size was the right call every time, so --tile-glyph-scale is
-   now just locked at 1.5 (its old max) instead of asking anyone to
-   choose. Same locked value backs the help modal's Flower/Season
-   examples too, so nothing else needed changing there.
-
-   Settings' Tile Color field: dropped the "same as the card-back
-   picker" comparison line (didn't need explaining), narrowed the
-   preset swatches from 8 down to 5 (kept 1st/2nd/3rd/6th/7th — ivory,
-   bone, tan, dark taupe, near-black; dropped sage green, light blue,
-   maroon), moved the default from the 1st swatch to the 2nd (bone),
-   and every swatch — presets and Custom alike — now shows a checkmark
-   on whichever one is selected, colored dark-on-light or light-on-
-   dark so it stays legible against any of them.
+   Favicon added — no separate icon file, an inline SVG data URI
+   reusing the same 🀄 emoji already used as the header crest, so the
+   browser tab matches the page itself with nothing extra to host.
 
    Still pending, not yet acted on: tile art stays in tiles/, but
    going forward NEW layout JSON files should live in tiles/layout/
@@ -56,6 +45,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Mahjong</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%80%84%3C/text%3E%3C/svg%3E">
 <link rel="preload" as="image" href="images/Mahjong.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -383,7 +373,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.5';
+const PAGE_VERSION = '2.6';
 
 /* =========================================================
    BOARD LAYOUTS
