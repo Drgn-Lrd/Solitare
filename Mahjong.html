@@ -2,23 +2,40 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.6
+    Version 2.8
 
-   Favicon added — no separate icon file, an inline SVG data URI
-   reusing the same 🀄 emoji already used as the header crest, so the
-   browser tab matches the page itself with nothing extra to host.
-
-   Still pending, not yet acted on: tile art stays in tiles/, but
-   going forward NEW layout JSON files should live in tiles/layout/
-   instead of loose in tiles/.
+   Relaxed the hard 144-tile assumption to a real range: 32-144 (even
+   only), matching that actual mahjong sets legitimately come in
+   sizes smaller than the full 144, not just as a house-rule cap. The
+   kind-generator (buildPairSlots(), new) now scales to whatever size
+   a layout actually is instead of hardcoding 72 pair-slots: all 34
+   kinds get one pair first (max variety at small sizes -- a 32-tile
+   deck is 16 distinct kinds once each), then Flowers/Seasons, then a
+   second pair per kind, capping at the real-set ceiling of 4 copies
+   per kind. loadCustomLayouts()'s validation range updated to match
+   (even, 32-144, not "must be exactly 144"). Fixed two places that
+   had 144 hardcoded as a DISPLAY assumption rather than a real
+   constraint: the How To Play blurb, and the "PAIRS n/72" chip, which
+   now shows the actual pair count for whatever's loaded instead of a
+   fixed /72. Verified: kind-pool math checked across the full
+   32-144 range (correct tile counts, no kind ever exceeding 4
+   copies), then a full generation+greedy-solve simulation at six
+   sizes in that range (32/40/68/76/100/144), zero failures.
 -->
 <!--
   Mahjong-specific rules:
-    - 144 tiles across 4 layers (see the LAYOUTS registry below): 34
-      distinct "kinds" (9 Dots, 9 Bamboo, 9 Characters, 4 Winds, 3
-      Dragons) at 4 copies each = 136, plus 4 Flowers + 4 Seasons (one
-      of each design, no duplicates) = 144 total. Every layout shape
-      in LAYOUTS totals exactly 144 positions.
+    - The 3 built-in boards (Turtle/Pyramid/Irish Castle) are all a
+      full 144-tile set: 34 distinct "kinds" (9 Dots, 9 Bamboo, 9
+      Characters, 4 Winds, 3 Dragons) at up to 4 copies each, plus 4
+      Flowers + 4 Seasons (one of each design, no duplicates). Custom
+      layouts (tiles/layout/) can be any EVEN size from 32 to 144 —
+      real mahjong sets legitimately come in smaller sizes too, not
+      just the full 144; buildPairSlots() scales the kind-pool to
+      match whatever size a given layout actually is, prioritizing
+      variety (each of the 34 kinds gets one pair before any kind
+      gets a second, and Flowers/Seasons only enter once all 34 kinds
+      already have their first pair) so a 32-tile deck is 16 distinct
+      kinds once each rather than a handful repeated many times.
     - A tile is FREE (selectable) only if no other tile sits on top of
       it (any layer above whose footprint overlaps), AND at least one
       of its left/right neighbors at the same layer is empty.
@@ -221,7 +238,7 @@
 <div class="hint-toast" id="toast"></div>
 
 <div class="bottombar">
-  <div class="chip" id="chip-score">PAIRS <b id="score-val">0</b>/72</div>
+  <div class="chip" id="chip-score">PAIRS <b id="score-val">0</b>/<span id="score-total">72</span></div>
   <div class="bottombar-actions">
     <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">💡</span><span class="blabel">Hint</span></button>
@@ -279,7 +296,9 @@
     <h3>How To Play</h3>
     <div class="sub">Mahjong Solitaire</div>
     <div class="helpbody">
-      <p>Clear all 144 tiles by matching them in pairs.</p>
+      <p>Clear the whole board by matching tiles in pairs. The built-in
+      boards use a full 144-tile set; some custom layouts (Change
+      Layout) may use fewer.</p>
       <ul>
         <li>Tap a tile to select it, then tap a matching tile to remove both.</li>
         <li>Only <b>free</b> tiles can be selected — nothing covering it from
@@ -373,7 +392,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.6';
+const PAGE_VERSION = '2.8';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -485,14 +504,31 @@ function isFreeRuntime(tile){ return isFreeAmong(tile, activeTiles()); }
    attempt — rather than let that one rare attempt silently produce a
    non-guaranteed board, the whole attempt just retries from scratch.
    ========================================================= */
+// Builds exactly (totalTiles/2) pair-slots for a deck of any size from
+// 32 to 144 tiles, always guaranteed pairable by construction. Real
+// mahjong sets don't hard-require all 144 tiles -- smaller sets (the
+// same 34 kinds, fewer copies, often without Flowers/Seasons at all)
+// are legitimate too. Priority order: every one of the 34 standard
+// kinds gets ONE pair first (max variety for small decks), then
+// Flowers/Seasons (2 pair-slots each), then a SECOND pair for each of
+// the 34 kinds (never a third or more -- a real set only has 4 copies
+// of any one tile, so 2 pairs is the ceiling per kind). A 32-tile deck
+// only ever draws from the first tier, so it's 16 different kinds,
+// one pair each, no Flowers/Seasons -- exactly what a minimal real set
+// looks like.
+function buildPairSlots(totalTiles){
+  const pairsNeeded = totalTiles / 2;
+  const tier1 = E.shuffle(KINDS_34.slice());
+  const tier2 = E.shuffle(['FLOWER','FLOWER','SEASON','SEASON']);
+  const tier3 = E.shuffle(KINDS_34.slice());
+  const priority = tier1.concat(tier2, tier3);
+  return E.shuffle(priority.slice(0, pairsNeeded));
+}
+
 function attemptSolvableLayout(coords){
   const positions = coords.map((p,i)=>({ id:'t'+i, layer:p[0], col:p[1], row:p[2], kind:null, removed:false }));
 
-  const pairSlots = [];
-  KINDS_34.forEach(k=>{ pairSlots.push(k, k); });
-  pairSlots.push('FLOWER','FLOWER');
-  pairSlots.push('SEASON','SEASON');
-  E.shuffle(pairSlots);
+  const pairSlots = buildPairSlots(positions.length);
 
   const flowerPool = E.shuffle(FLOWER_KINDS.slice());
   const seasonPool = E.shuffle(SEASON_KINDS.slice());
@@ -618,6 +654,7 @@ function renderAll(){
 
 function updateHud(){
   document.getElementById('score-val').textContent = String(state.matchedCount);
+  document.getElementById('score-total').textContent = String(state.tiles.length / 2);
   const mm = String(Math.floor(state.elapsedSeconds/60)).padStart(2,'0');
   const ss = String(state.elapsedSeconds%60).padStart(2,'0');
   document.getElementById('time-val').textContent = mm+':'+ss;
@@ -1023,10 +1060,56 @@ window.addEventListener('resize', ()=>{
 });
 
 /* =========================================================
+   CUSTOM LAYOUTS (tiles/layout/)
+   LayoutEditor.html exports plain .json files, but this was the
+   missing half: nothing here was ever actually reading them back.
+   Static hosting can't list a folder's contents, so this expects a
+   small manifest, tiles/layout/index.json, listing which files to
+   load -- e.g. ["mylayout.json","another.json"]. Each listed file is
+   fetched, validated, and merged straight into LAYOUTS/LAYOUTS_ORDER
+   alongside the 3 built-ins. No manifest yet, or a fetch fails? Fails
+   silently and the game proceeds with just the built-ins -- this is
+   the normal/expected state for anyone who hasn't added a manifest,
+   not an error.
+   ========================================================= */
+async function loadCustomLayouts(){
+  const dir = 'tiles/layout/';
+  try {
+    const idxResp = await fetch(dir + 'index.json');
+    if(!idxResp.ok) return;
+    const manifest = await idxResp.json();
+    const files = Array.isArray(manifest) ? manifest : (manifest.files || []);
+    for(const filename of files){
+      try {
+        const resp = await fetch(dir + filename);
+        if(!resp.ok) continue;
+        const data = await resp.json();
+        if(!Array.isArray(data.coords) || data.coords.length===0) continue;
+        const n = data.coords.length;
+        if(n % 2 !== 0 || n < 32 || n > 144){
+          console.warn('Skipped custom layout "'+filename+'": has '+n+' tiles -- needs to be even and between 32 and 144 (real mahjong set sizes) for the kind-generator to build a valid pairable deck.');
+          continue;
+        }
+        const key = 'custom_' + filename.replace(/\.json$/i,'').toLowerCase().replace(/[^a-z0-9]+/g,'_');
+        if(LAYOUTS[key]) continue;
+        LAYOUTS[key] = { name: data.name || filename.replace(/\.json$/i,''), desc: data.desc || 'Custom layout.', coords: data.coords };
+        LAYOUTS_ORDER.push(key);
+      } catch(fileErr){
+        // one bad file shouldn't stop the rest from loading
+      }
+    }
+    layoutCardsBuilt = false; // rebuild the gallery next time it's opened, now including these
+  } catch(manifestErr){
+    // no tiles/layout/index.json yet -- nothing to do
+  }
+}
+
+/* =========================================================
    INIT
    ========================================================= */
 applyTileColors();
 newGame();
+loadCustomLayouts();
 
 })();
 </script>
