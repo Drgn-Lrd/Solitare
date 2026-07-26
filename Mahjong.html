@@ -2,25 +2,25 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.8
+    Version 2.9
 
-   Relaxed the hard 144-tile assumption to a real range: 32-144 (even
-   only), matching that actual mahjong sets legitimately come in
-   sizes smaller than the full 144, not just as a house-rule cap. The
-   kind-generator (buildPairSlots(), new) now scales to whatever size
-   a layout actually is instead of hardcoding 72 pair-slots: all 34
-   kinds get one pair first (max variety at small sizes -- a 32-tile
-   deck is 16 distinct kinds once each), then Flowers/Seasons, then a
-   second pair per kind, capping at the real-set ceiling of 4 copies
-   per kind. loadCustomLayouts()'s validation range updated to match
-   (even, 32-144, not "must be exactly 144"). Fixed two places that
-   had 144 hardcoded as a DISPLAY assumption rather than a real
-   constraint: the How To Play blurb, and the "PAIRS n/72" chip, which
-   now shows the actual pair count for whatever's loaded instead of a
-   fixed /72. Verified: kind-pool math checked across the full
-   32-144 range (correct tile counts, no kind ever exceeding 4
-   copies), then a full generation+greedy-solve simulation at six
-   sizes in that range (32/40/68/76/100/144), zero failures.
+   Trimmed .stage/.table-frame/.table-felt padding locally (shared
+   styles.css's clamp() values are tuned generously for games with
+   less board area) — recovers a few px that were tipping some
+   layouts into a small, unnecessary scrollbar within the felt.
+
+   Added a board zoom control: a vertical slider (100-250%, same
+   ~130px footprint the old horizontal text-size slider had, just
+   rotated) with +/- buttons, floating on the right edge so it takes
+   no layout space of its own. Scales tileW/tileH as a multiplier ON
+   TOP of fitBoard()'s own auto-fit output rather than replacing it —
+   default 100% is exactly today's unchanged auto-fit behavior ("most
+   zoomed out"), and the slider only ever scales further IN from
+   there. Scrolling stays scoped to .table-felt itself either way,
+   unaffected by this — zooming in just makes using that scroll more
+   likely, not different in kind. Repositioned via media query on
+   narrow screens to sit under the header instead of floating mid-
+   board.
 -->
 <!--
   Mahjong-specific rules:
@@ -83,6 +83,49 @@
     background-attachment: fixed;
   }
   .brand .crest{ font-size:30px; }
+
+  /* Shared styles.css's .stage/.table-frame/.table-felt padding is
+     tuned generously for games with fewer/smaller board elements —
+     trimmed down here specifically, since Mahjong boards can span
+     close to the full viewport height and a few extra px of padding
+     was tipping some layouts into an unnecessary ~5px scrollbar. */
+  .stage{ padding: clamp(4px,1vw,10px) clamp(6px,1.6vw,14px) clamp(4px,1vw,8px); }
+  .table-frame{ padding: clamp(6px,1vw,10px); }
+  .table-felt{ padding: clamp(6px,1.2vw,14px) clamp(6px,1.4vw,12px) 8px; }
+
+  /* Board zoom — a vertical version of the old horizontal text-size
+     slider (same ~130px footprint, just rotated), floating on the
+     right edge so it doesn't take up any layout space of its own.
+     Scrolling stays scoped to .table-felt itself either way; this
+     just lets someone trade "whole board visible, smaller tiles" for
+     "bigger tiles, more scrolling" on purpose instead of only ever
+     getting whichever fitBoard() picks automatically. */
+  .zoom-control{
+    position: fixed; right: 14px; top: 50%; transform: translateY(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    z-index: 500;
+  }
+  .zoom-control .zoom-btn{
+    width:30px; height:30px; border-radius:8px; flex-shrink:0;
+    background: var(--panel); border:1px solid var(--panel-line); color: var(--brass-light);
+    font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .zoom-control .zoom-btn .zoom-sign{
+    position:absolute; right:-2px; bottom:-2px; font-size:11px; font-weight:700;
+    background:#0a2a1f; border-radius:50%; width:13px; height:13px; line-height:13px; text-align:center;
+    color: var(--brass-light);
+  }
+  .zoom-control .zoom-btn:active{ transform: scale(.92); }
+  .zoom-control input[type=range]{
+    writing-mode: vertical-lr; direction: rtl;
+    width:8px; height:130px; accent-color: var(--brass); cursor:pointer;
+  }
+  @media (max-width:560px){
+    /* Under the header's hud row (where Change Layout ends up on
+       narrow screens) instead of floating mid-screen over the board. */
+    .zoom-control{ top:96px; transform:none; right:8px; }
+  }
 
   /* ===== Board ===== */
   .table-felt{ display:flex; align-items:center; justify-content:center; overflow:auto; }
@@ -235,6 +278,12 @@
   </div>
 </div>
 
+<div class="zoom-control" id="zoom-control">
+  <button class="zoom-btn" id="zoom-in" title="Zoom in" aria-label="Zoom in">🔍<span class="zoom-sign">+</span></button>
+  <input type="range" id="zoom-slider" min="100" max="250" step="10" value="100" aria-label="Board zoom" title="Board zoom">
+  <button class="zoom-btn" id="zoom-out" title="Zoom out" aria-label="Zoom out">🔍<span class="zoom-sign">−</span></button>
+</div>
+
 <div class="hint-toast" id="toast"></div>
 
 <div class="bottombar">
@@ -327,6 +376,9 @@
         useful if you get stuck.</li>
         <li><b>Change Layout</b> (top of the page) lets you pick a
         different board shape before starting a new game.</li>
+        <li>The zoom slider on the right edge scales the board up from
+        its default fit — bigger tiles, more scrolling within the
+        table itself.</li>
       </ul>
     </div>
     <div class="modal-actions">
@@ -392,7 +444,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.8';
+const PAGE_VERSION = '2.9';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -575,6 +627,7 @@ function generateSolvableLayout(){
 let tileW = 46, tileH = 60;
 const TILE_ASPECT = 260/200;
 const LAYER_SHIFT = 4; // px each axis, purely a "stacked height" visual cue
+let zoomMultiplier = 1.0; // 1.0 = fitBoard()'s natural auto-fit size, unchanged -- the default, "most zoomed out" state; the slider only ever scales UP from here
 
 function boardBounds(){
   let maxCol=0, maxRow=0;
@@ -596,7 +649,8 @@ function fitBoard(){
 
   let byWidth = availW / halfUnitsW;
   let byHeight = (availH / halfUnitsH) / TILE_ASPECT;
-  let w = Math.max(14, Math.min(byWidth, byHeight, 72));
+  let baseW = Math.max(14, Math.min(byWidth, byHeight, 72));
+  let w = baseW * zoomMultiplier;
   tileW = Math.round(w);
   tileH = Math.round(tileW * TILE_ASPECT);
 
@@ -1058,6 +1112,24 @@ window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(()=>{ fitBoard(); renderAll(); }, 100);
 });
+
+/* =========================================================
+   BOARD ZOOM
+   Slider value is a plain percentage (100-250); zoomMultiplier is
+   just that /100. Default 100 = zero effect on fitBoard()'s own
+   auto-fit output -- "most zoomed out" per the on-page default.
+   ========================================================= */
+const zoomSlider = document.getElementById('zoom-slider');
+function applyZoom(pct){
+  pct = Math.max(100, Math.min(250, pct));
+  zoomSlider.value = pct;
+  zoomMultiplier = pct/100;
+  fitBoard();
+  renderAll();
+}
+zoomSlider.addEventListener('input', (e)=> applyZoom(Number(e.target.value)));
+document.getElementById('zoom-in').addEventListener('click', ()=> applyZoom(Number(zoomSlider.value)+10));
+document.getElementById('zoom-out').addEventListener('click', ()=> applyZoom(Number(zoomSlider.value)-10));
 
 /* =========================================================
    CUSTOM LAYOUTS (tiles/layout/)
