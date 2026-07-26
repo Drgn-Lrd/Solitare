@@ -2,33 +2,28 @@
 <!--
     LayoutEditor.html
     Written by: Johnathon Largent
-    Version 1.7
+    Version 1.8
 
-   Grid changed from 15 tiles tall to 14 — with an odd tile count and
-   odd-numbered bounds, row=0 landed in the dead center of a tile
-   cell instead of on an actual tile-boundary intersection; 14 (even
-   bounds -14..14) puts the origin star exactly on a grid corner like
-   it should be. Columns were already even (unaffected).
+   Grid now also centers vertically (align-items:center, was
+   flex-start) — was only centered width-wise before, still pinned to
+   the top edge.
 
-   Real z-index bug: the origin star (z-index 9999, so it's never
-   covered by tiles while editing — deliberate) and tiles themselves
-   (100-150) had nothing in their ancestor chain isolating a stacking
-   context, so both were bleeding straight through .overlay's z-index
-   100 and rendering ON TOP of open modals (Export, Help, Confirm) —
-   "shouldn't show through the export window" was a real bug, not
-   just an appearance preference. Added a local .overlay{z-index:
-   20000} override so a modal always wins over the canvas underneath.
-
-   Favicon is now a dark tile — same 🀄, black background with a white
-   outline for contrast, instead of the plain transparent version —
-   to read distinctly from Mahjong.html's tab icon at a glance.
+   Favicon redesigned after actually test-rendering it (wkhtmltoimage,
+   checked at real 16px/32px favicon sizes, not just guessed at) — the
+   🀄 emoji glyph turns out to already render as its own small tile
+   icon with a baked-in light background, so putting it on my OWN
+   black background produced a tile-inside-a-tile look, not a dark
+   tile with an outline. Replaced the emoji with a plain drawn glyph
+   (中, red, serif) that has no background of its own, directly on the
+   black rounded rect with the white outline — confirmed legible down
+   to 16px this time before shipping it.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Layout Editor</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='4' y='4' width='92' height='92' rx='16' fill='black' stroke='white' stroke-width='6'/%3E%3Ctext x='50' y='72' font-size='62' text-anchor='middle'%3E%F0%9F%80%84%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='4' y='4' width='92' height='92' rx='16' fill='black' stroke='white' stroke-width='6'/%3E%3Ctext x='50' y='73' font-family='serif' font-weight='bold' font-size='58' text-anchor='middle' fill='%23d0453a'%3E%E4%B8%AD%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 <style>
   html,body{ background: radial-gradient(ellipse at 50% -10%, #182a1c, #0b140d 65%); overflow:hidden; height:100%; }
@@ -59,7 +54,7 @@
   .editor-main{ flex:1; display:flex; overflow:hidden; }
   .grid-wrap{
     flex:1; overflow:auto; background:#0d1a12; position:relative;
-    display:flex; justify-content:center; align-items:flex-start;
+    display:flex; justify-content:center; align-items:center;
   }
   #grid-canvas{
     position:relative; flex-shrink:0;
@@ -348,7 +343,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '1.7';
+const PAGE_VERSION = '1.8';
 
 /* =========================================================
    GRID GEOMETRY
