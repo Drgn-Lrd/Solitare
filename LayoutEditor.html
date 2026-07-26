@@ -2,21 +2,17 @@
 <!--
     LayoutEditor.html
     Written by: Johnathon Largent
-    Version 2.0
+    Version 1.11
 
-   Added support/gravity validation — a tile above layer 0 now needs
-   at least 1/4 of its own footprint (area 1, out of a full tile's
-   2x2=4) covered by some tile on a lower layer, or it can't be
-   placed or dragged/nudged there. Layer 0 always passes (it's the
-   table itself). Applied everywhere a tile's position changes:
-   placeTile() (covers new placement AND mirror copies in one place),
-   the D-pad/arrow-key group move, and the live mouse-drag preview
-   (which mouseup already deferred to via dragState.blocked, so no
-   separate check needed there). Verified two ways: overlap-area math
-   checked against known cases (full/quarter/less-than-quarter/zero
-   overlap), and all three real layouts (Turtle, Pyramid, Irish
-   Castle) scanned tile-by-tile — zero violations, confirming the
-   rule matches how a genuinely valid board is actually built.
+   Export's valid range widened from "must be exactly 144" to 32-144
+   (even) — real mahjong sets legitimately come in sizes smaller than
+   the full 144, this was never actually a hard requirement, just an
+   assumption baked into the earlier messaging. Both the export-time
+   hard block and the counter/modal messaging now reflect the real
+   range instead of treating anything under 144 as a lesser/unsupported
+   case. Matches the corresponding change on the Mahjong.html side,
+   which now generates a correctly-scaled, still-guaranteed-pairable
+   deck for any size in that range, not just 144.
 -->
 <html lang="en">
 <head>
@@ -208,7 +204,7 @@
         <div class="counter-text">
           Placed: <b id="count-placed">0</b><br>
           <span id="count-parity" class="parity-bad">0 is even ✓</span><br>
-          <span id="count-target" style="font-size:11px; color:#9fc9b6;">144 = a full Mahjong.html-ready set</span>
+          <span id="count-target" style="font-size:11px; color:#9fc9b6;">32-144 (even) = a valid mahjong set size; 144 = a full set</span>
         </div>
       </div>
     </div>
@@ -297,12 +293,10 @@
         <li><b>Test Solvability</b> checks whether the current tiles
         (any layer) can be fully cleared in some order, using the same
         free-tile rule Mahjong.html plays by.</li>
-        <li><b>Export</b> is blocked unless the tile count is even —
-        an odd count can never be fully paired off. It does NOT
-        require exactly 144, but Mahjong.html's current tile-kind
-        generator specifically expects 144 to actually play a layout,
-        so anything else will export fine but won't load into a game
-        yet.</li>
+        <li><b>Export</b> is blocked unless the tile count is even and
+        between 32 and 144 — real mahjong sets come in that range,
+        both smaller and full-size; anything else can't be dealt into
+        a valid, fully-pairable game.</li>
         <li><b>Load</b> opens a previously exported .json (or any of
         Turtle/Pyramid/Irish Castle's own files) back into the grid,
         re-centered on the origin star. <b>Reload</b> re-applies the
@@ -347,7 +341,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.0';
+const PAGE_VERSION = '1.11';
 
 /* =========================================================
    GRID GEOMETRY
@@ -953,12 +947,12 @@ document.getElementById('btn-export').addEventListener('click', ()=>{
   } else if(n % 2 !== 0){
     val.className = 'validation-msg bad';
     val.textContent = 'Blocked: ' + n + ' tiles is odd — an odd count can never be fully paired off, so this layout is unwinnable in any tile arrangement. Add or remove one tile.';
-  } else if(n !== 144){
-    val.className = 'validation-msg info';
-    val.textContent = n + ' tiles (even, so it will export) — but Mahjong.html\'s current kind-generator expects exactly 144 to actually deal a playable game. This will download fine and can be edited further, just won\'t load into Mahjong.html yet.';
+  } else if(n < 32 || n > 144){
+    val.className = 'validation-msg bad';
+    val.textContent = 'Blocked: ' + n + ' tiles is outside 32-144 — real mahjong sets (and Mahjong.html\'s kind-generator) only go up to a full 144-tile set, and don\'t go below 32. Adjust the count to fit that range.';
   } else {
     val.className = 'validation-msg ok';
-    val.textContent = '144 tiles — matches a full Mahjong set exactly.';
+    val.textContent = n + ' tiles' + (n===144 ? ' — a full Mahjong set.' : ' — a valid smaller mahjong set (32-144, even).') + ' After downloading, add the filename to tiles/layout/index.json for it to actually show up in Mahjong.html.';
   }
   exportOverlay.classList.add('show');
 });
@@ -969,6 +963,10 @@ document.getElementById('export-confirm').addEventListener('click', ()=>{
   const n = tiles.length;
   if(n === 0 || n % 2 !== 0){
     E.showToast(toastEl, 'Export blocked — tile count must be even and non-zero.');
+    return;
+  }
+  if(n < 32 || n > 144){
+    E.showToast(toastEl, 'Export blocked — tile count must be between 32 and 144 (real mahjong set sizes).');
     return;
   }
   const name = document.getElementById('export-name').value.trim() || 'Untitled Layout';
@@ -991,7 +989,7 @@ document.getElementById('export-confirm').addEventListener('click', ()=>{
   a.remove();
   URL.revokeObjectURL(url);
   exportOverlay.classList.remove('show');
-  E.showToast(toastEl, 'Downloaded ' + a.download);
+  E.showToast(toastEl, 'Downloaded ' + a.download + ' — add it to tiles/layout/index.json to make it show up in Mahjong.html.');
 });
 
 /* =========================================================
