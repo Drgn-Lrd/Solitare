@@ -2,21 +2,20 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.2
+    Version 2.3
 
-   Irish Castle's middle bridge tier was offset the wrong direction —
-   shifted half a tile too far left. Flipping the offset direction
-   alone wasn't enough, though: it exposed a real collision the
-   previous version had been masking — the tower's own "final rows"
-   height-3 columns (an intentional, pre-existing part of the tower
-   spec, not bridge-related) were geometrically overlapping the
-   bridge's middle tier at the same layer. Moved the whole bridge up
-   to center on row 8 instead of row 10, where the tower stays a
-   uniform height on both flanking rows, and moved the height-3 boost
-   that used to sit at the bridge's row over to row 4 (still part of
-   the tower, just relocated away from the bridge) to keep the total
-   at 144. Verified zero same-layer collisions anywhere on the board
-   (a check beyond just "144 unique tiles"), still solvable over 300
+   Irish Castle's bridge had the wrong axis of offset, not just the
+   wrong direction — the middle tier was shifted sideways (different
+   columns than the bottom/top tiers) when it should stay on the SAME
+   two columns as bottom/top throughout, and instead split vertically
+   into two rows straddling the bridge's own row by half a tile. That
+   also resolves the collision from last pass without needing to
+   relocate anything: since the middle tier never leaves the bridge's
+   own two columns, it never reaches into the towers' edge column at
+   all, so the tower's height-3 "final rows" boost could move back to
+   its original row (the actual 3rd-from-bottom row, matching the
+   person's own count) with zero collisions. Verified: 144 tiles, zero
+   same-layer overlaps anywhere on the board, solvable over 300
    generated deals.
 
    How To Play's Flowers/Seasons rule now shows the actual tile art
@@ -396,7 +395,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.2';
+const PAGE_VERSION = '2.3';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -428,7 +427,7 @@ const LAYOUTS = {
     name: 'Irish Castle',
     desc: 'Two mirrored towers — a 3/2/3 crown, a 5-wide collar, then four tapering courses — linked by a small bridge.',
     coords: [
-[0,0,0],[1,0,0],[2,0,0],[0,4,0],[1,4,0],[0,8,0],[1,8,0],[2,8,0],[0,0,2],[1,0,2],[0,2,2],[1,2,2],[0,4,2],[1,4,2],[0,6,2],[1,6,2],[0,8,2],[1,8,2],[0,1,4],[0,3,4],[1,3,4],[0,5,4],[1,5,4],[0,7,4],[1,7,4],[2,7,4],[2,4,4],[0,1,6],[0,3,6],[1,3,6],[0,5,6],[1,5,6],[0,7,6],[2,4,6],[0,1,8],[0,3,8],[1,3,8],[0,5,8],[1,5,8],[0,7,8],[2,4,8],[0,1,10],[0,3,10],[1,3,10],[0,5,10],[1,5,10],[0,7,10],[2,4,10],[0,1,12],[1,1,12],[0,3,12],[1,3,12],[0,5,12],[1,5,12],[0,7,12],[1,7,12],[2,7,12],[3,4,12],[0,1,14],[1,1,14],[0,3,14],[1,3,14],[0,5,14],[1,5,14],[0,7,14],[1,7,14],[2,7,14],[3,4,14],[0,20,0],[1,20,0],[2,20,0],[0,16,0],[1,16,0],[0,12,0],[1,12,0],[2,12,0],[0,20,2],[1,20,2],[0,18,2],[1,18,2],[0,16,2],[1,16,2],[0,14,2],[1,14,2],[0,12,2],[1,12,2],[0,19,4],[0,17,4],[1,17,4],[0,15,4],[1,15,4],[0,13,4],[1,13,4],[2,13,4],[2,16,4],[0,19,6],[0,17,6],[1,17,6],[0,15,6],[1,15,6],[0,13,6],[2,16,6],[0,19,8],[0,17,8],[1,17,8],[0,15,8],[1,15,8],[0,13,8],[2,16,8],[0,19,10],[0,17,10],[1,17,10],[0,15,10],[1,15,10],[0,13,10],[2,16,10],[0,19,12],[1,19,12],[0,17,12],[1,17,12],[0,15,12],[1,15,12],[0,13,12],[1,13,12],[2,13,12],[3,16,12],[0,19,14],[1,19,14],[0,17,14],[1,17,14],[0,15,14],[1,15,14],[0,13,14],[1,13,14],[2,13,14],[3,16,14],[0,9,8],[0,11,8],[1,8,7],[1,8,9],[1,10,7],[1,10,9],[2,9,8],[2,11,8]
+[0,0,0],[1,0,0],[2,0,0],[0,4,0],[1,4,0],[0,8,0],[1,8,0],[2,8,0],[0,0,2],[1,0,2],[0,2,2],[1,2,2],[0,4,2],[1,4,2],[0,6,2],[1,6,2],[0,8,2],[1,8,2],[0,1,4],[0,3,4],[1,3,4],[0,5,4],[1,5,4],[0,7,4],[2,4,4],[0,1,6],[0,3,6],[1,3,6],[0,5,6],[1,5,6],[0,7,6],[2,4,6],[0,1,8],[0,3,8],[1,3,8],[0,5,8],[1,5,8],[0,7,8],[2,4,8],[0,1,10],[0,3,10],[1,3,10],[0,5,10],[1,5,10],[0,7,10],[1,7,10],[2,7,10],[2,4,10],[0,1,12],[1,1,12],[0,3,12],[1,3,12],[0,5,12],[1,5,12],[0,7,12],[1,7,12],[2,7,12],[3,4,12],[0,1,14],[1,1,14],[0,3,14],[1,3,14],[0,5,14],[1,5,14],[0,7,14],[1,7,14],[2,7,14],[3,4,14],[0,20,0],[1,20,0],[2,20,0],[0,16,0],[1,16,0],[0,12,0],[1,12,0],[2,12,0],[0,20,2],[1,20,2],[0,18,2],[1,18,2],[0,16,2],[1,16,2],[0,14,2],[1,14,2],[0,12,2],[1,12,2],[0,19,4],[0,17,4],[1,17,4],[0,15,4],[1,15,4],[0,13,4],[2,16,4],[0,19,6],[0,17,6],[1,17,6],[0,15,6],[1,15,6],[0,13,6],[2,16,6],[0,19,8],[0,17,8],[1,17,8],[0,15,8],[1,15,8],[0,13,8],[2,16,8],[0,19,10],[0,17,10],[1,17,10],[0,15,10],[1,15,10],[0,13,10],[1,13,10],[2,13,10],[2,16,10],[0,19,12],[1,19,12],[0,17,12],[1,17,12],[0,15,12],[1,15,12],[0,13,12],[1,13,12],[2,13,12],[3,16,12],[0,19,14],[1,19,14],[0,17,14],[1,17,14],[0,15,14],[1,15,14],[0,13,14],[1,13,14],[2,13,14],[3,16,14],[0,9,10],[0,11,10],[1,9,9],[1,11,9],[1,9,11],[1,11,11],[2,9,10],[2,11,10]
     ]
   }
 };
