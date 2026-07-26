@@ -3,7 +3,996 @@
     LayoutEditor.html
     Written by: Johnathon Largent
     Version 1.6
+<!DOCTYPE html>
+<!--
+    LayoutEditor.html
+    Written by: Johnathon Largent
+    Version 1.6
 
+   Favicon added — no separate icon file, an inline SVG data URI
+   reusing the same 🀄 emoji already used as the header crest, so the
+   browser tab matches the page itself with nothing extra to host.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Layout Editor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%80%84%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<style>
+  html,body{ background: radial-gradient(ellipse at 50% -10%, #182a1c, #0b140d 65%); overflow:hidden; height:100%; }
+  body{ display:flex; flex-direction:column; }
+  .brand .crest{ font-size:28px; }
+
+  .toolbar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:8px 16px; background: rgba(0,0,0,.25); border-bottom:1px solid var(--panel-line);
+  }
+  .toolbar-group{ display:flex; align-items:center; gap:6px; }
+  .toolbar-label{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#9fc9b6; margin-right:2px; }
+  .layertab{
+    width:34px; height:34px; border-radius:8px; border:1px solid var(--panel-line);
+    background:#12241a; color:#dce9df; font-weight:700; cursor:pointer; position:relative;
+  }
+  .layertab.active{ background: var(--brass); color:#241c08; border-color: var(--brass-light); }
+  .layertab .count-badge{
+    position:absolute; top:-6px; right:-6px; background:#0a2a1f; border:1px solid var(--panel-line);
+    border-radius:50%; width:16px; height:16px; font-size:9px; display:flex; align-items:center; justify-content:center;
+    color:#9fc9b6;
+  }
+  .toolbar .textbtn{ padding:8px 14px; font-size:12px; }
+  .toolbar .switch{ width:38px; height:22px; }
+  .toolbar .switch .slider::before{ width:16px; height:16px; }
+  .toolbar .switch input:checked + .slider::before{ transform: translateX(16px); }
+
+  .editor-main{ flex:1; display:flex; overflow:hidden; }
+  .grid-wrap{
+    flex:1; overflow:auto; background:#0d1a12; position:relative;
+    display:flex; justify-content:center; align-items:flex-start;
+  }
+  #grid-canvas{
+    position:relative; flex-shrink:0;
+    background-color:#16281c;
+    background-image:
+      radial-gradient(circle, rgba(255,255,255,.16) 1px, transparent 1px),
+      linear-gradient(to right, rgba(255,255,255,.09) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,.09) 1px, transparent 1px);
+    background-size: 20px 26px, 40px 52px, 40px 52px;
+  }
+  .origin-star{
+    position:absolute; width:22px; height:22px; margin-left:-11px; margin-top:-11px;
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+    color:var(--brass-light); pointer-events:none; z-index:9999;
+    text-shadow: 0 0 3px #000, 0 0 6px #000, 0 0 10px rgba(0,0,0,.9);
+  }
+  .etile{
+    position:absolute; width:40px; height:52px; border-radius:14%; cursor:pointer;
+    background: var(--tile-color, #f6efdd);
+    box-shadow: 0 2px 0 rgba(0,0,0,.32), 0 4px 6px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.3);
+  }
+  .etile.below{ opacity:.28; }
+  .etile.above{ opacity:.12; pointer-events:none; }
+  .etile.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 0 12px rgba(126,230,168,.7), 0 2px 0 rgba(0,0,0,.32); }
+  .etile.dragging{ opacity:.85; z-index:998 !important; cursor:grabbing; }
+  .snap-ghost{
+    position:absolute; width:40px; height:52px; border-radius:14%;
+    border:2px dashed rgba(126,230,168,.55); pointer-events:none; display:none; z-index:997;
+  }
+  .snap-ghost.blocked{ border-color: rgba(220,90,90,.75); }
+  .marquee-box{
+    position:absolute; border:1.5px dashed #7ee6a8; background: rgba(126,230,168,.12);
+    pointer-events:none; display:none; z-index:996;
+  }
+
+  .side-panel{
+    width:220px; flex-shrink:0; background: rgba(0,0,0,.22); border-left:1px solid var(--panel-line);
+    padding:16px; display:flex; flex-direction:column; gap:16px; overflow-y:auto;
+  }
+  .panel-box{ background: rgba(0,0,0,.2); border:1px solid var(--panel-line); border-radius:10px; padding:12px; }
+  .panel-box h4{ margin:0 0 8px; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9fc9b6; }
+  .counter-row{ display:flex; align-items:center; gap:10px; }
+  .pile-icon{ font-size:26px; line-height:1; }
+  .counter-text{ font-size:13px; color:#dce9df; line-height:1.5; }
+  .counter-text b{ color: var(--brass-light); font-size:16px; }
+  .parity-ok{ color:#7ee6a8; }
+  .parity-bad{ color:#e08b8b; }
+
+  .dpad{ display:grid; grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 38px); gap:4px; justify-content:center; margin:6px 0; }
+  .dpad button{
+    background:#12241a; border:1px solid var(--panel-line); border-radius:8px; color:var(--brass-light);
+    font-size:16px; cursor:pointer;
+  }
+  .dpad button:disabled{ opacity:.3; cursor:default; }
+  .dpad button:hover:not(:disabled){ background:#1a3626; }
+  .dpad .dpad-up{ grid-column:2; grid-row:1; }
+  .dpad .dpad-left{ grid-column:1; grid-row:2; }
+  .dpad .dpad-center{ grid-column:2; grid-row:2; display:flex; align-items:center; justify-content:center; font-size:11px; color:#6a8f7c; }
+  .dpad .dpad-right{ grid-column:3; grid-row:2; }
+  .dpad .dpad-down{ grid-column:2; grid-row:3; }
+
+  .full-btn{ width:100%; padding:9px; font-size:12px; }
+  .validation-msg{ font-size:12px; line-height:1.5; padding:8px 10px; border-radius:8px; margin-top:4px; }
+  .validation-msg.ok{ background: rgba(126,230,168,.12); color:#7ee6a8; border:1px solid rgba(126,230,168,.3); }
+  .validation-msg.bad{ background: rgba(224,139,139,.12); color:#e08b8b; border:1px solid rgba(224,139,139,.3); }
+  .validation-msg.info{ background: rgba(159,201,182,.1); color:#9fc9b6; border:1px solid rgba(159,201,182,.25); }
+
+  .field input[type=text]{
+    width:100%; box-sizing:border-box; padding:9px 10px; border-radius:8px;
+    border:1px solid var(--panel-line); background:#0f2118; color:#e7f2ea; font-size:13px;
+  }
+  .field textarea{
+    width:100%; box-sizing:border-box; padding:9px 10px; border-radius:8px; resize:vertical;
+    border:1px solid var(--panel-line); background:#0f2118; color:#e7f2ea; font-size:13px; font-family:inherit; min-height:60px;
+  }
+  .helpbody{ font-size:13px; line-height:1.7; color:#dce9df; }
+  .helpbody b{ color:var(--brass-light); }
+  .helpbody ul{ margin:6px 0 14px; padding-left:20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true">🀄</div>
+    <div class="brand-text">
+      <h1 id="page-title">Layout Editor</h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-new">New</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to use this editor">?</button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="toolbar-group">
+    <span class="toolbar-label">Layer</span>
+    <div class="toolbar-group" id="layer-tabs"></div>
+  </div>
+  <div class="toolbar-group">
+    <span class="toolbar-label">Mirror</span>
+    <label class="switch" title="When on: placing a NEW tile also places its left/right mirror image, and dragging a tile takes its mirror partner along with it.">
+      <input type="checkbox" id="tog-mirror-h"><span class="slider"></span>
+    </label>
+    <span style="font-size:11px; color:#9fc9b6;">↔</span>
+    <label class="switch" title="Same idea, top/bottom instead of left/right. Turn both on together for 4-way symmetry, equal distance from center on every side.">
+      <input type="checkbox" id="tog-mirror-v"><span class="slider"></span>
+    </label>
+    <span style="font-size:11px; color:#9fc9b6;">↕</span>
+  </div>
+  <div class="toolbar-group">
+    <button class="textbtn" id="btn-center" title="Shift every placed tile so the whole layout is centered on the origin star">Center</button>
+    <button class="textbtn" id="btn-undo" title="Undo the last change" disabled>Undo</button>
+    <button class="textbtn" id="btn-reload" title="Reload the last file you loaded, discarding changes since then" disabled>Reload</button>
+  </div>
+  <div class="toolbar-group" style="margin-left:auto;">
+    <button class="textbtn" id="btn-load">Load…</button>
+    <input type="file" id="file-load" accept="application/json,.json" style="display:none">
+    <button class="textbtn" id="btn-test">Test Solvability</button>
+    <button class="textbtn primary" id="btn-export">Export…</button>
+  </div>
+</div>
+
+<div class="editor-main">
+  <div class="grid-wrap">
+    <div id="grid-canvas">
+      <div class="origin-star">★</div>
+      <div class="snap-ghost" id="snap-ghost"></div>
+      <div class="marquee-box" id="marquee-box"></div>
+    </div>
+
+  </div>
+
+  <div class="side-panel">
+    <div class="panel-box">
+      <h4>Tile Count</h4>
+      <div class="counter-row">
+        <div class="pile-icon">🀫</div>
+        <div class="counter-text">
+          Placed: <b id="count-placed">0</b><br>
+          <span id="count-parity" class="parity-bad">0 is even ✓</span><br>
+          <span id="count-target" style="font-size:11px; color:#9fc9b6;">144 = a full Mahjong.html-ready set</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-box">
+      <h4>Position (Selection)</h4>
+      <div class="dpad">
+        <button class="dpad-up" id="dpad-up" disabled>▲</button>
+        <button class="dpad-left" id="dpad-left" disabled>◀</button>
+        <div class="dpad-center" id="dpad-coords">—</div>
+        <button class="dpad-right" id="dpad-right" disabled>▶</button>
+        <button class="dpad-down" id="dpad-down" disabled>▼</button>
+      </div>
+      <button class="textbtn full-btn" id="btn-remove" disabled>Remove Selected</button>
+      <div style="font-size:11px; color:#9fc9b6; margin-top:8px; line-height:1.5;">
+        Click a tile to select it. Ctrl-click or drag a box around several to select multiple and move them as one group.
+      </div>
+    </div>
+
+    <div class="panel-box" id="msg-box" style="display:none;">
+      <div class="validation-msg" id="msg-content"></div>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="overlay" id="export-overlay">
+  <div class="modal">
+    <h3>Export Layout</h3>
+    <div class="sub">Downloads a .json file in Mahjong.html's LAYOUTS format.</div>
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="export-name" placeholder="e.g. Dragon">
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea id="export-desc" placeholder="A short line shown in the Layouts gallery."></textarea>
+    </div>
+    <div class="validation-msg" id="export-validation"></div>
+    <div class="modal-actions">
+      <button class="textbtn" id="export-cancel">Cancel</button>
+      <button class="textbtn primary" id="export-confirm">Download JSON</button>
+    </div>
+  </div>
+</div>
+
+<!-- HELP -->
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How To Use</h3>
+    <div class="sub">Layout Editor</div>
+    <div class="helpbody">
+      <ul>
+        <li>Click an empty grid point to place a tile on the current
+        <b>Layer</b> tab. Click an existing tile to select it.</li>
+        <li>Drag a selection to move it, or use the <b>D-pad</b> (or
+        arrow keys) to nudge it one snap-step at a time.</li>
+        <li><b>Multi-select</b>: click-drag an empty area to box-select
+        several tiles at once, or Ctrl-click to add/remove individual
+        tiles from the selection. A multi-tile selection moves as one
+        rigid group; if that group started directly on top of tiles on
+        a lower layer, you'll be asked whether to bring those along too.</li>
+        <li>Every tile-width has 2 snap points across and 2 down — the
+        same half-tile offsets Turtle/Pyramid/Irish Castle use.</li>
+        <li>The <b>★</b> marks the grid origin — build outward from it
+        so left/right symmetry stays easy to eyeball. <b>Center</b>
+        shifts the whole layout so it's centered on the star.</li>
+        <li><b>Mirror</b> has two independent switches, H (left/right)
+        and V (top/bottom) — either auto-places/drags a mirrored copy
+        of what you place or move; turn both on for 4-way symmetry
+        (up to 4 tiles at once, equal distance from the star on every
+        side). A given partner only comes along if it actually exists
+        on the board — placing/moving a tile that has no H, V, or
+        diagonal partner just affects that one tile.</li>
+        <li>Tiles can't be placed or dragged on top of another tile on
+        the <b>same layer</b> — different layers overlapping is normal
+        (that's how "covered from above" works), same-layer overlap
+        isn't a valid board state.</li>
+        <li><b>Undo</b> (or Ctrl/Cmd+Z) steps back through every
+        change — placing, moving, removing, Center, Clear Grid, Load —
+        up to 50 steps.</li>
+        <li><b>Test Solvability</b> checks whether the current tiles
+        (any layer) can be fully cleared in some order, using the same
+        free-tile rule Mahjong.html plays by.</li>
+        <li><b>Export</b> is blocked unless the tile count is even —
+        an odd count can never be fully paired off. It does NOT
+        require exactly 144, but Mahjong.html's current tile-kind
+        generator specifically expects 144 to actually play a layout,
+        so anything else will export fine but won't load into a game
+        yet.</li>
+        <li><b>Load</b> opens a previously exported .json (or any of
+        Turtle/Pyramid/Irish Castle's own files) back into the grid,
+        re-centered on the origin star. <b>Reload</b> re-applies the
+        last file you loaded, discarding edits made since — different
+        from Undo (one step at a time) and New (empties the grid).</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM NEW -->
+<div class="overlay" id="confirm-overlay">
+  <div class="modal">
+    <h3>Start Over?</h3>
+    <div class="sub">This clears every tile on the grid.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Clear Grid</button>
+    </div>
+  </div>
+</div>
+
+<!-- INCLUDE LOWER TILES (shown after moving a multi-tile selection) -->
+<div class="overlay" id="lower-overlay">
+  <div class="modal">
+    <h3>Include Tiles Below?</h3>
+    <div class="sub" id="lower-sub">There are tiles on lower layers directly under this selection.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="lower-no">Leave Them</button>
+      <button class="textbtn primary" id="lower-yes">Move Them Too</button>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="toast"></div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const E = SEngine;
+const PAGE_VERSION = '1.6';
+
+/* =========================================================
+   GRID GEOMETRY
+   Half-cell coordinate system, identical to Mahjong.html: a tile is
+   2 units wide/tall, every integer position is a valid snap point.
+   ========================================================= */
+const UNIT_W = 20, UNIT_H = 26;
+const TILE_W = UNIT_W*2, TILE_H = UNIT_H*2;
+const COL_MIN = -20, COL_MAX = 20;  // 20 tiles wide (40 half-cell units)
+const ROW_MIN = -15, ROW_MAX = 15;  // 15 tiles tall (30 half-cell units)
+
+function colToPx(col){ return (col - COL_MIN) * UNIT_W; }
+function rowToPx(row){ return (row - ROW_MIN) * UNIT_H; }
+function pxToCol(px){ return Math.max(COL_MIN, Math.min(COL_MAX, Math.round(px / UNIT_W) + COL_MIN)); }
+function pxToRow(py){ return Math.max(ROW_MIN, Math.min(ROW_MAX, Math.round(py / UNIT_H) + ROW_MIN)); }
+
+const canvas = document.getElementById('grid-canvas');
+canvas.style.width = ((COL_MAX-COL_MIN)*UNIT_W) + 'px';
+canvas.style.height = ((ROW_MAX-ROW_MIN)*UNIT_H) + 'px';
+document.querySelector('.origin-star').style.left = colToPx(0) + 'px';
+document.querySelector('.origin-star').style.top = rowToPx(0) + 'px';
+
+const toastEl = document.getElementById('toast');
+
+/* =========================================================
+   STATE
+   ========================================================= */
+let tiles = [];              // {id, layer, col, row}
+let nextId = 1;
+let currentLayer = 0;
+let maxLayer = 5;            // fixed 0-5 (6 layers) -- Turtle's real data needs up to 4
+let mirrorH = false;
+let mirrorV = false;
+let selectedIds = new Set(); // ids of selected tiles, always on currentLayer
+let dragState = null;        // group-drag in progress
+let marqueeState = null;     // rubber-band select in progress
+let pendingLowerShift = null; // {dc, dr, originalPositions} awaiting the include-lower-tiles answer
+let undoStack = [];           // deep-cloned tiles snapshots, most recent last
+const UNDO_LIMIT = 50;
+let lastLoadedData = null;    // the parsed JSON of the most recently Load-ed file, for Reload
+
+function pushUndo(){
+  undoStack.push(tiles.map(t=>({id:t.id, layer:t.layer, col:t.col, row:t.row})));
+  if(undoStack.length > UNDO_LIMIT) undoStack.shift();
+  document.getElementById('btn-undo').disabled = false;
+}
+function popUndo(){
+  // Discards the most recent snapshot without restoring it -- used
+  // when an action that called pushUndo() turned out to be a no-op
+  // (e.g. placement blocked by a collision), so Undo doesn't produce
+  // a step that visibly does nothing.
+  undoStack.pop();
+  document.getElementById('btn-undo').disabled = undoStack.length===0;
+}
+function undo(){
+  if(undoStack.length===0) return;
+  tiles = undoStack.pop();
+  nextId = tiles.reduce((m,t)=>Math.max(m,t.id+1), nextId);
+  selectedIds.clear();
+  document.getElementById('btn-undo').disabled = undoStack.length===0;
+  render();
+}
+
+function overlaps(a, b){
+  return a.col < b.col+2 && a.col+2 > b.col && a.row < b.row+2 && a.row+2 > b.row;
+}
+function sameLayerCollision(layer, col, row, excludeId){
+  return tiles.some(t => t.layer===layer && t.id!==excludeId && overlaps(t, {col, row}));
+}
+function findTileAt(layer, col, row){
+  return tiles.find(t => t.layer===layer && t.col===col && t.row===row);
+}
+function selectedTiles(){ return tiles.filter(t=> selectedIds.has(t.id)); }
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function render(){
+  canvas.querySelectorAll('.etile').forEach(el => el.remove());
+  tiles.forEach(t => {
+    const el = document.createElement('div');
+    let cls = 'etile';
+    if(t.layer === currentLayer) cls += '';
+    else if(t.layer < currentLayer) cls += ' below';
+    else cls += ' above';
+    if(selectedIds.has(t.id)) cls += ' selected';
+    el.className = cls;
+    el.style.left = colToPx(t.col) + 'px';
+    el.style.top = rowToPx(t.row) + 'px';
+    el.style.zIndex = String(100 + t.layer*10);
+    el.dataset.id = t.id;
+    el.addEventListener('mousedown', (e)=> onTileMouseDown(e, t.id));
+    canvas.appendChild(el);
+  });
+  updateCounters();
+  updateDpad();
+}
+
+function updateCounters(){
+  const n = tiles.length;
+  document.getElementById('count-placed').textContent = String(n);
+  const parityEl = document.getElementById('count-parity');
+  if(n % 2 === 0){
+    parityEl.textContent = n + ' is even ✓ (exportable)';
+    parityEl.className = 'parity-ok';
+  } else {
+    parityEl.textContent = n + ' is odd ✗ (can\'t be fully paired)';
+    parityEl.className = 'parity-bad';
+  }
+  for(let l=0; l<=maxLayer; l++){
+    const badge = document.getElementById('badge-'+l);
+    if(badge) badge.textContent = String(tiles.filter(t=>t.layer===l).length);
+  }
+}
+
+function updateDpad(){
+  const sel = selectedTiles();
+  const has = sel.length > 0;
+  ['dpad-up','dpad-down','dpad-left','dpad-right'].forEach(id=>{
+    document.getElementById(id).disabled = !has;
+  });
+  document.getElementById('btn-remove').disabled = !has;
+  const coordsEl = document.getElementById('dpad-coords');
+  if(sel.length === 0) coordsEl.textContent = '—';
+  else if(sel.length === 1) coordsEl.textContent = 'L'+sel[0].layer+' '+sel[0].col+','+sel[0].row;
+  else coordsEl.textContent = sel.length + ' selected';
+}
+
+/* =========================================================
+   PLACE / REMOVE
+   ========================================================= */
+function placeTile(layer, col, row){
+  if(col < COL_MIN || col > COL_MAX-2 || row < ROW_MIN || row > ROW_MAX-2) return null;
+  if(sameLayerCollision(layer, col, row, null)){
+    E.showToast(toastEl, 'That overlaps a tile already on this layer.');
+    return null;
+  }
+  const t = { id: nextId++, layer, col, row };
+  tiles.push(t);
+  return t;
+}
+function mirrorCol(col){ return -(col+2); }
+function mirrorRow(row){ return -(row+2); }
+
+// If Mirror H/V are on, a moved tile's mirror partner(s) get dragged
+// along too, each moving the opposite direction on whichever axis
+// it's reflected across so the reflection stays intact:
+//   H partner (col flipped, same row):  colSign -1, rowSign +1
+//   V partner (row flipped, same col):  colSign +1, rowSign -1
+//   diagonal (both flipped, only when BOTH toggles are on): -1, -1
+// Returns [{tile, colSign, rowSign}] -- colSign/rowSign +1 for the
+// tiles actually selected, -1 on whichever axis a given partner
+// mirrors across.
+function computeDragMembers(group){
+  const members = new Map();
+  group.forEach(t=> members.set(t.id, {tile:t, colSign:1, rowSign:1}));
+  group.forEach(t=>{
+    if(mirrorH){
+      const h = tiles.find(o=> o.layer===t.layer && o.row===t.row && o.col===mirrorCol(t.col));
+      if(h && !members.has(h.id)) members.set(h.id, {tile:h, colSign:-1, rowSign:1});
+    }
+    if(mirrorV){
+      const v = tiles.find(o=> o.layer===t.layer && o.col===t.col && o.row===mirrorRow(t.row));
+      if(v && !members.has(v.id)) members.set(v.id, {tile:v, colSign:1, rowSign:-1});
+    }
+    if(mirrorH && mirrorV){
+      const d = tiles.find(o=> o.layer===t.layer && o.col===mirrorCol(t.col) && o.row===mirrorRow(t.row));
+      if(d && !members.has(d.id)) members.set(d.id, {tile:d, colSign:-1, rowSign:-1});
+    }
+  });
+  return [...members.values()];
+}
+
+function offerLowerShift(dc, dr, originalPositions){
+  const lowerTiles = [];
+  originalPositions.forEach(pos=>{
+    tiles.forEach(t=>{
+      if(t.layer < pos.layer && t.col===pos.col && t.row===pos.row && !lowerTiles.includes(t)) lowerTiles.push(t);
+    });
+  });
+  if(lowerTiles.length > 0){
+    pendingLowerShift = { dc, dr, tiles: lowerTiles };
+    document.getElementById('lower-sub').textContent =
+      'There ' + (lowerTiles.length===1 ? 'is 1 tile' : 'are '+lowerTiles.length+' tiles') +
+      ' on a lower layer directly under where this selection started.';
+    document.getElementById('lower-overlay').classList.add('show');
+  }
+}
+
+function tryMoveGroup(dc, dr){
+  if(dc===0 && dr===0) return;
+  const group = selectedTiles();
+  if(group.length===0) return;
+  const members = computeDragMembers(group);
+
+  const proposed = members.map(m=>({
+    t: m.tile, colSign: m.colSign, rowSign: m.rowSign,
+    nc: Math.max(COL_MIN, Math.min(COL_MAX-2, m.tile.col + m.colSign*dc)),
+    nr: Math.max(ROW_MIN, Math.min(ROW_MAX-2, m.tile.row + m.rowSign*dr))
+  }));
+  // Bounds clamped any member? Reject the whole move rather than let the group split apart.
+  if(proposed.some(p => p.nc !== p.t.col+p.colSign*dc || p.nr !== p.t.row+p.rowSign*dr)){
+    E.showToast(toastEl, 'That would push the selection off the grid.');
+    return;
+  }
+  const memberIds = new Set(members.map(m=>m.tile.id));
+  const collides = proposed.some(p =>
+    tiles.some(other => !memberIds.has(other.id) && other.layer===p.t.layer && overlaps(other, {col:p.nc, row:p.nr}))
+  );
+  if(collides){
+    E.showToast(toastEl, 'That overlaps a tile already on this layer.');
+    return;
+  }
+
+  pushUndo();
+  const originalPositions = members.map(m=>({layer:m.tile.layer, col:m.tile.col, row:m.tile.row}));
+  proposed.forEach(p => { p.t.col = p.nc; p.t.row = p.nr; });
+  render();
+
+  if(members.length >= 2) offerLowerShift(dc, dr, originalPositions);
+}
+
+function removeSelected(){
+  if(selectedIds.size===0) return;
+  pushUndo();
+  tiles = tiles.filter(t=> !selectedIds.has(t.id));
+  selectedIds.clear();
+  render();
+}
+document.getElementById('btn-remove').addEventListener('click', removeSelected);
+
+/* =========================================================
+   GROUP MOVE (shared by drag-drop and D-pad/arrow-key nudging)
+   Moves every selected tile by the same (dc,dr) as one rigid group.
+   Rejects the whole move if ANY member would collide with a
+   non-selected tile on the same layer. For groups of 2+, offers to
+   also shift any lower-layer tile sitting directly under one of the
+   group's ORIGINAL positions by the same amount.
+   ========================================================= */
+document.getElementById('lower-yes').addEventListener('click', ()=>{
+  if(pendingLowerShift){
+    pendingLowerShift.tiles.forEach(t=>{ t.col += pendingLowerShift.dc; t.row += pendingLowerShift.dr; });
+    render();
+  }
+  pendingLowerShift = null;
+  document.getElementById('lower-overlay').classList.remove('show');
+});
+document.getElementById('lower-no').addEventListener('click', ()=>{
+  pendingLowerShift = null;
+  document.getElementById('lower-overlay').classList.remove('show');
+});
+
+document.getElementById('dpad-up').addEventListener('click', ()=> tryMoveGroup(0,-1));
+document.getElementById('dpad-down').addEventListener('click', ()=> tryMoveGroup(0,1));
+document.getElementById('dpad-left').addEventListener('click', ()=> tryMoveGroup(-1,0));
+document.getElementById('dpad-right').addEventListener('click', ()=> tryMoveGroup(1,0));
+window.addEventListener('keydown', (e)=>{
+  if(selectedIds.size===0) return;
+  if(e.key==='ArrowUp'){ tryMoveGroup(0,-1); e.preventDefault(); }
+  else if(e.key==='ArrowDown'){ tryMoveGroup(0,1); e.preventDefault(); }
+  else if(e.key==='ArrowLeft'){ tryMoveGroup(-1,0); e.preventDefault(); }
+  else if(e.key==='ArrowRight'){ tryMoveGroup(1,0); e.preventDefault(); }
+  else if(e.key==='Delete' || e.key==='Backspace'){ removeSelected(); e.preventDefault(); }
+});
+
+/* =========================================================
+   SELECT / PLACE / DRAG / MARQUEE
+   Everything funnels through canvas-level and tile-level mousedown,
+   rather than separate click handlers, so a single code path decides
+   "was this a click (select/place) or a drag/marquee (move/box-
+   select)" based on how far the mouse actually moved.
+   ========================================================= */
+const ghost = document.getElementById('snap-ghost');
+const marqueeBox = document.getElementById('marquee-box');
+const DRAG_THRESHOLD_PX = 4;
+
+function onTileMouseDown(e, id){
+  const t = tiles.find(x=>x.id===id);
+  if(!t || t.layer !== currentLayer) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const ctrl = e.ctrlKey || e.metaKey;
+
+  if(ctrl){
+    if(selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+    render();
+    if(!selectedIds.has(id)) return; // just deselected this one -- nothing to drag
+  } else if(!selectedIds.has(id) || selectedIds.size===1){
+    selectedIds = new Set([id]);
+    render();
+  }
+  // else: id is already part of a multi-selection -- keep the whole group selected and drag it
+
+  const group = selectedTiles();
+  const members = computeDragMembers(group);
+  const origins = new Map(members.map(m=>[m.tile.id, {col:m.tile.col, row:m.tile.row, colSign:m.colSign, rowSign:m.rowSign}]));
+  dragState = { startX:e.clientX, startY:e.clientY, moved:false, origins, memberIds: members.map(m=>m.tile.id), blocked:false, dc:0, dr:0 };
+}
+
+canvas.addEventListener('mousedown', (e)=>{
+  if(e.target !== canvas) return; // a tile (or the star/ghost) already handled it
+  marqueeState = { startX:e.clientX, startY:e.clientY, moved:false, ctrl: e.ctrlKey||e.metaKey };
+});
+
+canvas.addEventListener('mousemove', (e)=>{
+  const rect = canvas.getBoundingClientRect();
+
+  if(dragState){
+    const dxPx = e.clientX - dragState.startX, dyPx = e.clientY - dragState.startY;
+    if(Math.abs(dxPx) > DRAG_THRESHOLD_PX || Math.abs(dyPx) > DRAG_THRESHOLD_PX) dragState.moved = true;
+    if(!dragState.moved) return;
+    const dc = Math.round(dxPx/UNIT_W), dr = Math.round(dyPx/UNIT_H);
+    dragState.dc = dc; dragState.dr = dr;
+    const memberIds = new Set(dragState.memberIds);
+    let blocked = false;
+    dragState.origins.forEach((o, id)=>{
+      const t = tiles.find(x=>x.id===id);
+      const nc = o.col + o.colSign*dc, nr = o.row + o.rowSign*dr;
+      if(nc<COL_MIN || nc>COL_MAX-2 || nr<ROW_MIN || nr>ROW_MAX-2) blocked = true;
+      if(tiles.some(other=> !memberIds.has(other.id) && other.layer===t.layer && overlaps(other,{col:nc,row:nr}))) blocked = true;
+    });
+    dragState.blocked = blocked;
+    dragState.origins.forEach((o, id)=>{
+      const el = canvas.querySelector('.etile[data-id="'+id+'"]');
+      if(el){ el.style.left = colToPx(o.col+o.colSign*dc)+'px'; el.style.top = rowToPx(o.row+o.rowSign*dr)+'px'; el.classList.add('dragging'); }
+    });
+    ghost.style.display = 'none';
+    return;
+  }
+
+  if(marqueeState){
+    const dxPx = e.clientX - marqueeState.startX, dyPx = e.clientY - marqueeState.startY;
+    if(Math.abs(dxPx) > DRAG_THRESHOLD_PX || Math.abs(dyPx) > DRAG_THRESHOLD_PX) marqueeState.moved = true;
+    if(!marqueeState.moved) return;
+    const x0 = marqueeState.startX - rect.left, y0 = marqueeState.startY - rect.top;
+    const x1 = e.clientX - rect.left, y1 = e.clientY - rect.top;
+    const left = Math.min(x0,x1), top = Math.min(y0,y1);
+    marqueeBox.style.display = 'block';
+    marqueeBox.style.left = left+'px'; marqueeBox.style.top = top+'px';
+    marqueeBox.style.width = Math.abs(x1-x0)+'px'; marqueeBox.style.height = Math.abs(y1-y0)+'px';
+  }
+});
+
+window.addEventListener('mouseup', (e)=>{
+  if(dragState){
+    if(dragState.moved && !dragState.blocked && (dragState.dc!==0 || dragState.dr!==0)){
+      const dc = dragState.dc, dr = dragState.dr;
+      pushUndo();
+      const originalPositions = dragState.memberIds.map(id=>{
+        const t = tiles.find(x=>x.id===id);
+        return {layer:t.layer, col:t.col, row:t.row};
+      });
+      dragState.memberIds.forEach(id=>{
+        const t = tiles.find(x=>x.id===id);
+        const o = dragState.origins.get(id);
+        t.col = o.col + o.colSign*dc; t.row = o.row + o.rowSign*dr;
+      });
+      if(dragState.memberIds.length >= 2) offerLowerShift(dc, dr, originalPositions);
+    }
+    ghost.style.display = 'none';
+    dragState = null;
+    render();
+    return;
+  }
+
+  if(marqueeState){
+    if(marqueeState.moved){
+      const rect = canvas.getBoundingClientRect();
+      const x0 = marqueeState.startX - rect.left, y0 = marqueeState.startY - rect.top;
+      const x1 = e.clientX - rect.left, y1 = e.clientY - rect.top;
+      const left = Math.min(x0,x1), right = Math.max(x0,x1);
+      const top = Math.min(y0,y1), bottom = Math.max(y0,y1);
+      const hits = tiles.filter(t=>{
+        if(t.layer !== currentLayer) return false;
+        const tl = colToPx(t.col), tt = rowToPx(t.row);
+        return tl < right && tl+TILE_W > left && tt < bottom && tt+TILE_H > top;
+      });
+      if(!marqueeState.ctrl) selectedIds.clear();
+      hits.forEach(t=> selectedIds.add(t.id));
+      render();
+    } else {
+      // Plain click on empty grid: place a tile CENTERED on the click
+      // point. pxToCol/pxToRow snap to the nearest point for a tile's
+      // top-left corner, so the click position is offset by half a
+      // tile (one UNIT) first -- otherwise the tile's corner (not its
+      // center) would land where the cursor was.
+      const rect = canvas.getBoundingClientRect();
+      const col = pxToCol(marqueeState.startX - rect.left - UNIT_W);
+      const row = pxToRow(marqueeState.startY - rect.top - UNIT_H);
+      pushUndo();
+      const placed = placeTile(currentLayer, col, row);
+      if(placed){
+        const spots = new Set([col+','+row]);
+        if(mirrorH){
+          const mc = mirrorCol(col);
+          if(!spots.has(mc+','+row)){ spots.add(mc+','+row); placeTile(currentLayer, mc, row); }
+        }
+        if(mirrorV){
+          const mr = mirrorRow(row);
+          if(!spots.has(col+','+mr)){ spots.add(col+','+mr); placeTile(currentLayer, col, mr); }
+        }
+        if(mirrorH && mirrorV){
+          const mc = mirrorCol(col), mr = mirrorRow(row);
+          if(!spots.has(mc+','+mr)){ spots.add(mc+','+mr); placeTile(currentLayer, mc, mr); }
+        }
+      } else {
+        popUndo(); // placement failed (collision) -- nothing changed, drop the empty undo entry
+      }
+      selectedIds.clear();
+      render();
+    }
+    marqueeBox.style.display = 'none';
+    marqueeState = null;
+  }
+});
+
+/* =========================================================
+   LAYER TABS / MIRROR
+   Turtle's real (verified) dataset uses 5 layers (0-4), not the 4 the
+   editor originally offered — a fixed 4-tab UI made that 5th layer
+   unreachable once loaded, exactly the "no way to reach it" bug.
+   Fixed at 0-5 (6 layers, one spare beyond what Turtle needs) rather
+   than dynamically growing — no real board layout has needed more
+   than 5 layers, so this stays simple instead of open-ended.
+   ========================================================= */
+function renderLayerTabs(){
+  const wrap = document.getElementById('layer-tabs');
+  wrap.innerHTML = '';
+  for(let l=0; l<=maxLayer; l++){
+    const btn = document.createElement('button');
+    btn.className = 'layertab' + (l===currentLayer ? ' active' : '');
+    btn.dataset.layer = String(l);
+    btn.innerHTML = l + '<span class="count-badge" id="badge-'+l+'">0</span>';
+    btn.addEventListener('click', ()=>{
+      currentLayer = l;
+      selectedIds.clear();
+      renderLayerTabs();
+      render();
+    });
+    wrap.appendChild(btn);
+  }
+}
+document.getElementById('tog-mirror-h').addEventListener('change', (e)=>{ mirrorH = e.target.checked; });
+document.getElementById('tog-mirror-v').addEventListener('change', (e)=>{ mirrorV = e.target.checked; });
+
+/* =========================================================
+   CENTER
+   Shifts every placed tile (all layers) by the same amount so the
+   whole layout's bounding box is centered on the origin star.
+   ========================================================= */
+document.getElementById('btn-center').addEventListener('click', ()=>{
+  if(tiles.length===0) return;
+  const minCol = Math.min(...tiles.map(t=>t.col)), maxCol = Math.max(...tiles.map(t=>t.col+2));
+  const minRow = Math.min(...tiles.map(t=>t.row)), maxRow = Math.max(...tiles.map(t=>t.row+2));
+  let shiftCol = -Math.round((minCol+maxCol)/2);
+  let shiftRow = -Math.round((minRow+maxRow)/2);
+  // Clamp so the shift never pushes anything off the grid.
+  shiftCol = Math.max(COL_MIN - minCol, Math.min(COL_MAX - maxCol, shiftCol));
+  shiftRow = Math.max(ROW_MIN - minRow, Math.min(ROW_MAX - maxRow, shiftRow));
+  if(shiftCol===0 && shiftRow===0) return;
+  pushUndo();
+  tiles.forEach(t=>{ t.col += shiftCol; t.row += shiftRow; });
+  render();
+  E.showToast(toastEl, 'Centered on the origin star.');
+});
+document.getElementById('btn-undo').addEventListener('click', undo);
+window.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key==='z'){ undo(); e.preventDefault(); }
+});
+
+/* =========================================================
+   NEW / CLEAR
+   ========================================================= */
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-new').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{
+  if(tiles.length>0) pushUndo();
+  tiles = []; selectedIds.clear(); confirmOverlay.classList.remove('show'); render();
+});
+
+/* =========================================================
+   RELOAD
+   Re-applies the most recently Load-ed file's data, discarding any
+   changes made since then. Distinct from New/Clear (which empties
+   the grid entirely) and from Undo (which only steps back one
+   change at a time).
+   ========================================================= */
+function applyLoadedData(data){
+  const minCol = Math.min(...data.coords.map(c=>c[1]));
+  const maxCol = Math.max(...data.coords.map(c=>c[1]));
+  const minRow = Math.min(...data.coords.map(c=>c[2]));
+  const maxRow = Math.max(...data.coords.map(c=>c[2]));
+  const centerCol = Math.round((minCol+maxCol)/2);
+  const centerRow = Math.round((minRow+maxRow)/2);
+  tiles = data.coords.map(c => ({ id: nextId++, layer:c[0], col:c[1]-centerCol, row:c[2]-centerRow }));
+  selectedIds.clear();
+  const loadedMaxLayer = Math.max(...data.coords.map(c=>c[0]));
+  if(loadedMaxLayer > maxLayer){
+    E.showToast(toastEl, 'Warning: this file uses layer ' + loadedMaxLayer + ', beyond this editor\'s 0-'+maxLayer+' tabs. Those tiles loaded but can\'t be viewed/edited here.');
+  }
+  if(data.name) document.getElementById('export-name').value = data.name;
+  if(data.desc) document.getElementById('export-desc').value = data.desc;
+  render();
+}
+document.getElementById('btn-reload').addEventListener('click', ()=>{
+  if(!lastLoadedData) return;
+  pushUndo();
+  applyLoadedData(lastLoadedData);
+  E.showToast(toastEl, 'Reloaded ' + (lastLoadedData.name || 'the last file') + ' — changes since loading it were discarded.');
+});
+
+/* =========================================================
+   TEST SOLVABILITY
+   Same free-tile rule and random-legal-order solver Mahjong.html
+   uses, run directly against whatever's currently on the grid.
+   ========================================================= */
+function isFreeAmong(tile, active){
+  for(const t of active){
+    if(t===tile) continue;
+    if(t.layer > tile.layer && overlaps(t, tile)) return false;
+  }
+  let leftOpen = true, rightOpen = true;
+  for(const t of active){
+    if(t===tile) continue;
+    if(t.layer===tile.layer && t.row===tile.row){
+      if(t.col === tile.col-2) leftOpen = false;
+      if(t.col === tile.col+2) rightOpen = false;
+    }
+  }
+  return leftOpen || rightOpen;
+}
+function attemptClear(){
+  let active = tiles.map(t=>({layer:t.layer, col:t.col, row:t.row}));
+  let guard = 0;
+  while(active.length && guard++ < 10000){
+    const free = active.filter(t=> isFreeAmong(t, active));
+    if(free.length < 2) return false;
+    E.shuffle(free);
+    const a = free[0], b = free[1];
+    active = active.filter(t=> t!==a && t!==b);
+  }
+  return true;
+}
+function showMsg(kind, text){
+  const box = document.getElementById('msg-box');
+  const content = document.getElementById('msg-content');
+  box.style.display = 'block';
+  content.className = 'validation-msg ' + kind;
+  content.textContent = text;
+}
+document.getElementById('btn-test').addEventListener('click', ()=>{
+  if(tiles.length===0){ showMsg('bad', 'Nothing on the grid yet.'); return; }
+  if(tiles.length % 2 !== 0){ showMsg('bad', 'Odd tile count ('+tiles.length+') — can\'t be fully paired, so it can\'t be solvable.'); return; }
+  let solved = false;
+  for(let i=0;i<25;i++){ if(attemptClear()){ solved = true; break; } }
+  if(solved) showMsg('ok', '✓ Found a valid clearing order — this geometry is solvable.');
+  else showMsg('bad', '✗ Couldn\'t find a valid clearing order in 25 tries. May not be solvable as-is, or may need a wider spread of free tiles.');
+});
+
+/* =========================================================
+   EXPORT
+   ========================================================= */
+const exportOverlay = document.getElementById('export-overlay');
+document.getElementById('btn-export').addEventListener('click', ()=>{
+  const n = tiles.length;
+  const val = document.getElementById('export-validation');
+  if(n === 0){
+    val.className = 'validation-msg bad'; val.textContent = 'Nothing to export yet.';
+  } else if(n % 2 !== 0){
+    val.className = 'validation-msg bad';
+    val.textContent = 'Blocked: ' + n + ' tiles is odd — an odd count can never be fully paired off, so this layout is unwinnable in any tile arrangement. Add or remove one tile.';
+  } else if(n !== 144){
+    val.className = 'validation-msg info';
+    val.textContent = n + ' tiles (even, so it will export) — but Mahjong.html\'s current kind-generator expects exactly 144 to actually deal a playable game. This will download fine and can be edited further, just won\'t load into Mahjong.html yet.';
+  } else {
+    val.className = 'validation-msg ok';
+    val.textContent = '144 tiles — matches a full Mahjong set exactly.';
+  }
+  exportOverlay.classList.add('show');
+});
+document.getElementById('export-cancel').addEventListener('click', ()=> exportOverlay.classList.remove('show'));
+exportOverlay.addEventListener('click', (e)=>{ if(e.target===exportOverlay) exportOverlay.classList.remove('show'); });
+
+document.getElementById('export-confirm').addEventListener('click', ()=>{
+  const n = tiles.length;
+  if(n === 0 || n % 2 !== 0){
+    E.showToast(toastEl, 'Export blocked — tile count must be even and non-zero.');
+    return;
+  }
+  const name = document.getElementById('export-name').value.trim() || 'Untitled Layout';
+  const desc = document.getElementById('export-desc').value.trim() || '';
+
+  const minCol = Math.min(...tiles.map(t=>t.col));
+  const minRow = Math.min(...tiles.map(t=>t.row));
+  const coords = tiles
+    .map(t=> [t.layer, t.col-minCol, t.row-minRow])
+    .sort((a,b)=> a[0]-b[0] || a[2]-b[2] || a[1]-b[1]);
+
+  const data = { name, desc, coords };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'layout') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  exportOverlay.classList.remove('show');
+  E.showToast(toastEl, 'Downloaded ' + a.download);
+});
+
+/* =========================================================
+   LOAD
+   ========================================================= */
+document.getElementById('btn-load').addEventListener('click', ()=> document.getElementById('file-load').click());
+document.getElementById('file-load').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if(!Array.isArray(data.coords)) throw new Error('missing coords array');
+      if(tiles.length>0) pushUndo();
+      applyLoadedData(data);
+      lastLoadedData = data;
+      document.getElementById('btn-reload').disabled = false;
+      E.showToast(toastEl, 'Loaded ' + (data.name || file.name) + ' (' + tiles.length + ' tiles)');
+    } catch(err){
+      E.showToast(toastEl, 'Could not read that file as a layout — ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+/* =========================================================
+   HELP
+   ========================================================= */
+document.getElementById('btn-help').addEventListener('click', ()=> document.getElementById('help-overlay').classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> document.getElementById('help-overlay').classList.remove('show'));
+document.getElementById('help-overlay').addEventListener('click', (e)=>{ if(e.target===document.getElementById('help-overlay')) document.getElementById('help-overlay').classList.remove('show'); });
+
+/* =========================================================
+   INIT
+   ========================================================= */
+// No Settings modal in this page to show a version line the way
+// Mahjong.html's does -- PAGE_VERSION drives both the browser tab
+// title and the visible header instead, so there's still exactly one
+// place to update it.
+document.title = 'Layout Editor v' + PAGE_VERSION;
+document.getElementById('page-title').textContent = 'Layout Editor v' + PAGE_VERSION;
+document.documentElement.style.setProperty('--tile-color', '#f6efdd');
+renderLayerTabs();
+render();
+
+})();
+</script>
+</body>
+</html>
    Favicon added — no separate icon file, an inline SVG data URI
    reusing the same 🀄 emoji already used as the header crest, so the
    browser tab matches the page itself with nothing extra to host.
