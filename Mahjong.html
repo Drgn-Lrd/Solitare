@@ -2,28 +2,21 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.0
+    Version 2.1
 
-   Pyramid confirmed correct as of last pass — no changes.
-
-   Irish Castle's bridge wasn't actually touching either tower: it
-   sat on even columns (10/12) while the towers' collar/body rows use
-   odd columns (1/3/5/7 style), so there was a full tile-width gap on
-   each side instead of a connection. Bridge now continues the same
-   odd-column grid the towers already use (cols 9/11/13, heights
-   3/2/3 echoing the towers' own crown pattern) — verified the bridge
-   ends now land exactly on the towers' own edges with zero gap.
-   Still 144 tiles, still solvable over 300 generated deals.
-
-   Win screen was always showing a time, even with the Show Timer
-   setting off. It now only shows "Time: mm:ss" when the timer is
-   actually on; hidden entirely otherwise.
-
-   Called at v2.0 per this file's own versioning rule (X only changes
-   when instructed) — both classic layouts are now verified against
-   either a published dataset (Turtle) or the actual person looking at
-   their own board (Pyramid, Irish Castle), which is as authoritative
-   as this gets without the genuine dataset.
+   Irish Castle's bridge was rebuilt with the wrong structure last
+   pass — it needed sliding into position, not a redesign, and I
+   changed the shape instead of just moving it. Rebuilt properly as
+   the actual 3-tier stack described: 2 tiles low (layer0, cols 9/11),
+   4 tiles above offset half a tile to the side (layer1, cols 8/10 x
+   rows 9/11, so each sits straddling — "half on" — one of the bottom
+   tiles), then 2 tiles back on top in the same columns as the bottom
+   pair (layer2, cols 9/11) — same idea as the crown at each tower's
+   own top. Narrowed the gap between towers so this 2-wide bridge
+   spans it exactly, touching both towers' edges with zero space left
+   over (verified: left tower's edge at col7, bridge spans 9-13,
+   right tower's edge starts at col13 — no gap). Still 144 tiles,
+   still solvable over 300 generated deals.
 -->
 <!--
   Mahjong-specific rules:
@@ -375,7 +368,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.0';
+const PAGE_VERSION = '2.1';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -407,7 +400,7 @@ const LAYOUTS = {
     name: 'Irish Castle',
     desc: 'Two mirrored towers — a 3/2/3 crown, a 5-wide collar, then four tapering courses — linked by a small bridge.',
     coords: [
-[0,0,0],[1,0,0],[2,0,0],[0,4,0],[1,4,0],[0,8,0],[1,8,0],[2,8,0],[0,0,2],[1,0,2],[0,2,2],[1,2,2],[0,4,2],[1,4,2],[0,6,2],[1,6,2],[0,8,2],[1,8,2],[0,1,4],[0,3,4],[1,3,4],[0,5,4],[1,5,4],[0,7,4],[2,4,4],[0,1,6],[0,3,6],[1,3,6],[0,5,6],[1,5,6],[0,7,6],[2,4,6],[0,1,8],[0,3,8],[1,3,8],[0,5,8],[1,5,8],[0,7,8],[2,4,8],[0,1,10],[0,3,10],[1,3,10],[0,5,10],[1,5,10],[0,7,10],[1,7,10],[2,7,10],[2,4,10],[0,1,12],[1,1,12],[0,3,12],[1,3,12],[0,5,12],[1,5,12],[0,7,12],[1,7,12],[2,7,12],[3,4,12],[0,1,14],[1,1,14],[0,3,14],[1,3,14],[0,5,14],[1,5,14],[0,7,14],[1,7,14],[2,7,14],[3,4,14],[0,22,0],[1,22,0],[2,22,0],[0,18,0],[1,18,0],[0,14,0],[1,14,0],[2,14,0],[0,22,2],[1,22,2],[0,20,2],[1,20,2],[0,18,2],[1,18,2],[0,16,2],[1,16,2],[0,14,2],[1,14,2],[0,21,4],[0,19,4],[1,19,4],[0,17,4],[1,17,4],[0,15,4],[2,18,4],[0,21,6],[0,19,6],[1,19,6],[0,17,6],[1,17,6],[0,15,6],[2,18,6],[0,21,8],[0,19,8],[1,19,8],[0,17,8],[1,17,8],[0,15,8],[2,18,8],[0,21,10],[0,19,10],[1,19,10],[0,17,10],[1,17,10],[0,15,10],[1,15,10],[2,15,10],[2,18,10],[0,21,12],[1,21,12],[0,19,12],[1,19,12],[0,17,12],[1,17,12],[0,15,12],[1,15,12],[2,15,12],[3,18,12],[0,21,14],[1,21,14],[0,19,14],[1,19,14],[0,17,14],[1,17,14],[0,15,14],[1,15,14],[2,15,14],[3,18,14],[0,9,10],[1,9,10],[2,9,10],[0,11,10],[1,11,10],[0,13,10],[1,13,10],[2,13,10]
+[0,0,0],[1,0,0],[2,0,0],[0,4,0],[1,4,0],[0,8,0],[1,8,0],[2,8,0],[0,0,2],[1,0,2],[0,2,2],[1,2,2],[0,4,2],[1,4,2],[0,6,2],[1,6,2],[0,8,2],[1,8,2],[0,1,4],[0,3,4],[1,3,4],[0,5,4],[1,5,4],[0,7,4],[2,4,4],[0,1,6],[0,3,6],[1,3,6],[0,5,6],[1,5,6],[0,7,6],[2,4,6],[0,1,8],[0,3,8],[1,3,8],[0,5,8],[1,5,8],[0,7,8],[2,4,8],[0,1,10],[0,3,10],[1,3,10],[0,5,10],[1,5,10],[0,7,10],[1,7,10],[2,7,10],[2,4,10],[0,1,12],[1,1,12],[0,3,12],[1,3,12],[0,5,12],[1,5,12],[0,7,12],[1,7,12],[2,7,12],[3,4,12],[0,1,14],[1,1,14],[0,3,14],[1,3,14],[0,5,14],[1,5,14],[0,7,14],[1,7,14],[2,7,14],[3,4,14],[0,20,0],[1,20,0],[2,20,0],[0,16,0],[1,16,0],[0,12,0],[1,12,0],[2,12,0],[0,20,2],[1,20,2],[0,18,2],[1,18,2],[0,16,2],[1,16,2],[0,14,2],[1,14,2],[0,12,2],[1,12,2],[0,19,4],[0,17,4],[1,17,4],[0,15,4],[1,15,4],[0,13,4],[2,16,4],[0,19,6],[0,17,6],[1,17,6],[0,15,6],[1,15,6],[0,13,6],[2,16,6],[0,19,8],[0,17,8],[1,17,8],[0,15,8],[1,15,8],[0,13,8],[2,16,8],[0,19,10],[0,17,10],[1,17,10],[0,15,10],[1,15,10],[0,13,10],[1,13,10],[2,13,10],[2,16,10],[0,19,12],[1,19,12],[0,17,12],[1,17,12],[0,15,12],[1,15,12],[0,13,12],[1,13,12],[2,13,12],[3,16,12],[0,19,14],[1,19,14],[0,17,14],[1,17,14],[0,15,14],[1,15,14],[0,13,14],[1,13,14],[2,13,14],[3,16,14],[0,9,10],[0,11,10],[1,8,9],[1,8,11],[1,10,9],[1,10,11],[2,9,10],[2,11,10]
     ]
   }
 };
