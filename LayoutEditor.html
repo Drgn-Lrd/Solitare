@@ -2,21 +2,27 @@
 <!--
     LayoutEditor.html
     Written by: Johnathon Largent
-    Version 1.2
+    Version 1.3
 
-   Real bug: the editor only offered layer tabs 0-3, but Turtle's real
-   (verified) dataset uses 5 layers (0-4) — its single-tile peak sat on
-   layer 4, which had no tab to select it, no way to reach or edit it
-   at all. Layer tabs are fixed at 0-5 (6 layers, one spare beyond
-   what any layout has needed) instead of a narrower hardcoded range.
+   Grid resized to 20 tiles wide x 15 tall (was 30x20) — generous
+   headroom over every real layout (largest so far, Turtle, is 15
+   tiles wide x 8 tall) without an oversized canvas.
 
-   Mirror mode now works during drag, not just initial placement: drag
-   a tile (or a selection) while Mirror is on and its mirror partner
-   (found via the same mirrorCol() math placement already used) drags
-   along too, moving the opposite horizontal direction so the
-   reflection stays intact. Same logic now backs the D-pad/arrow keys
-   as well, so mirror-aware movement works identically everywhere a
-   move can happen, not just the mouse.
+   Mirror split into two independent toggles, H (left/right) and V
+   (top/bottom), usable together for 4-way symmetry — placing or
+   dragging one tile with both on now places/moves 4 tiles, each
+   equal distance from the origin star (verified: a tile at grid
+   center (10,11) produces partners at (-10,11), (10,-11), (-10,-11)).
+   Each partner only gets included if the mirror-image tile actually
+   exists at that position, same "only if present" behavior H-only
+   mirroring already had.
+
+   Added Undo (button, plus Ctrl/Cmd+Z) covering every mutating
+   action — place, move, remove, Center, Clear Grid, Load — up to 50
+   steps back. Added Reload, which re-applies the most recently Loaded
+   file's data fresh, discarding any edits made since loading it
+   (distinct from Undo, which only steps back one change, and from
+   New/Clear, which empties the grid instead of restoring a file).
 -->
 <html lang="en">
 <head>
@@ -157,11 +163,18 @@
   <div class="toolbar-group">
     <span class="toolbar-label">Mirror</span>
     <label class="switch" title="When on: placing a NEW tile also places its left/right mirror image, and dragging a tile takes its mirror partner along with it.">
-      <input type="checkbox" id="tog-mirror"><span class="slider"></span>
+      <input type="checkbox" id="tog-mirror-h"><span class="slider"></span>
     </label>
+    <span style="font-size:11px; color:#9fc9b6;">↔</span>
+    <label class="switch" title="Same idea, top/bottom instead of left/right. Turn both on together for 4-way symmetry, equal distance from center on every side.">
+      <input type="checkbox" id="tog-mirror-v"><span class="slider"></span>
+    </label>
+    <span style="font-size:11px; color:#9fc9b6;">↕</span>
   </div>
   <div class="toolbar-group">
     <button class="textbtn" id="btn-center" title="Shift every placed tile so the whole layout is centered on the origin star">Center</button>
+    <button class="textbtn" id="btn-undo" title="Undo the last change" disabled>Undo</button>
+    <button class="textbtn" id="btn-reload" title="Reload the last file you loaded, discarding changes since then" disabled>Reload</button>
   </div>
   <div class="toolbar-group" style="margin-left:auto;">
     <button class="textbtn" id="btn-load">Load…</button>
@@ -178,6 +191,7 @@
       <div class="snap-ghost" id="snap-ghost"></div>
       <div class="marquee-box" id="marquee-box"></div>
     </div>
+
   </div>
 
   <div class="side-panel">
@@ -256,14 +270,20 @@
         <li>The <b>★</b> marks the grid origin — build outward from it
         so left/right symmetry stays easy to eyeball. <b>Center</b>
         shifts the whole layout so it's centered on the star.</li>
-        <li><b>Mirror</b> auto-places a left/right mirrored tile
-        whenever you place a new one, and drags a tile's mirror
-        partner along with it too (moving/removing a selection that
-        has no mirror partner on the board is unaffected).</li>
+        <li><b>Mirror</b> has two independent switches, H (left/right)
+        and V (top/bottom) — either auto-places/drags a mirrored copy
+        of what you place or move; turn both on for 4-way symmetry
+        (up to 4 tiles at once, equal distance from the star on every
+        side). A given partner only comes along if it actually exists
+        on the board — placing/moving a tile that has no H, V, or
+        diagonal partner just affects that one tile.</li>
         <li>Tiles can't be placed or dragged on top of another tile on
         the <b>same layer</b> — different layers overlapping is normal
         (that's how "covered from above" works), same-layer overlap
         isn't a valid board state.</li>
+        <li><b>Undo</b> (or Ctrl/Cmd+Z) steps back through every
+        change — placing, moving, removing, Center, Clear Grid, Load —
+        up to 50 steps.</li>
         <li><b>Test Solvability</b> checks whether the current tiles
         (any layer) can be fully cleared in some order, using the same
         free-tile rule Mahjong.html plays by.</li>
@@ -275,7 +295,9 @@
         yet.</li>
         <li><b>Load</b> opens a previously exported .json (or any of
         Turtle/Pyramid/Irish Castle's own files) back into the grid,
-        re-centered on the origin star.</li>
+        re-centered on the origin star. <b>Reload</b> re-applies the
+        last file you loaded, discarding edits made since — different
+        from Undo (one step at a time) and New (empties the grid).</li>
       </ul>
     </div>
     <div class="modal-actions">
@@ -323,8 +345,8 @@ const E = SEngine;
    ========================================================= */
 const UNIT_W = 20, UNIT_H = 26;
 const TILE_W = UNIT_W*2, TILE_H = UNIT_H*2;
-const COL_MIN = -30, COL_MAX = 30;
-const ROW_MIN = -20, ROW_MAX = 20;
+const COL_MIN = -20, COL_MAX = 20;  // 20 tiles wide (40 half-cell units)
+const ROW_MIN = -15, ROW_MAX = 15;  // 15 tiles tall (30 half-cell units)
 
 function colToPx(col){ return (col - COL_MIN) * UNIT_W; }
 function rowToPx(row){ return (row - ROW_MIN) * UNIT_H; }
@@ -346,11 +368,37 @@ let tiles = [];              // {id, layer, col, row}
 let nextId = 1;
 let currentLayer = 0;
 let maxLayer = 5;            // fixed 0-5 (6 layers) -- Turtle's real data needs up to 4
-let mirrorMode = false;
+let mirrorH = false;
+let mirrorV = false;
 let selectedIds = new Set(); // ids of selected tiles, always on currentLayer
 let dragState = null;        // group-drag in progress
 let marqueeState = null;     // rubber-band select in progress
 let pendingLowerShift = null; // {dc, dr, originalPositions} awaiting the include-lower-tiles answer
+let undoStack = [];           // deep-cloned tiles snapshots, most recent last
+const UNDO_LIMIT = 50;
+let lastLoadedData = null;    // the parsed JSON of the most recently Load-ed file, for Reload
+
+function pushUndo(){
+  undoStack.push(tiles.map(t=>({id:t.id, layer:t.layer, col:t.col, row:t.row})));
+  if(undoStack.length > UNDO_LIMIT) undoStack.shift();
+  document.getElementById('btn-undo').disabled = false;
+}
+function popUndo(){
+  // Discards the most recent snapshot without restoring it -- used
+  // when an action that called pushUndo() turned out to be a no-op
+  // (e.g. placement blocked by a collision), so Undo doesn't produce
+  // a step that visibly does nothing.
+  undoStack.pop();
+  document.getElementById('btn-undo').disabled = undoStack.length===0;
+}
+function undo(){
+  if(undoStack.length===0) return;
+  tiles = undoStack.pop();
+  nextId = tiles.reduce((m,t)=>Math.max(m,t.id+1), nextId);
+  selectedIds.clear();
+  document.getElementById('btn-undo').disabled = undoStack.length===0;
+  render();
+}
 
 function overlaps(a, b){
   return a.col < b.col+2 && a.col+2 > b.col && a.row < b.row+2 && a.row+2 > b.row;
@@ -431,21 +479,34 @@ function placeTile(layer, col, row){
   return t;
 }
 function mirrorCol(col){ return -(col+2); }
+function mirrorRow(row){ return -(row+2); }
 
-// If mirrorMode is on, a moved tile's mirror partner (same layer/row,
-// col === mirrorCol(t.col)) gets dragged along too, moving in the
-// opposite horizontal direction so the reflection stays intact.
-// Returns [{tile, colSign}], colSign +1 for the tiles actually
-// selected, -1 for auto-included mirror partners.
+// If Mirror H/V are on, a moved tile's mirror partner(s) get dragged
+// along too, each moving the opposite direction on whichever axis
+// it's reflected across so the reflection stays intact:
+//   H partner (col flipped, same row):  colSign -1, rowSign +1
+//   V partner (row flipped, same col):  colSign +1, rowSign -1
+//   diagonal (both flipped, only when BOTH toggles are on): -1, -1
+// Returns [{tile, colSign, rowSign}] -- colSign/rowSign +1 for the
+// tiles actually selected, -1 on whichever axis a given partner
+// mirrors across.
 function computeDragMembers(group){
   const members = new Map();
-  group.forEach(t=> members.set(t.id, {tile:t, colSign:1}));
-  if(mirrorMode){
-    group.forEach(t=>{
-      const mp = tiles.find(o=> o.layer===t.layer && o.row===t.row && o.col===mirrorCol(t.col));
-      if(mp && !members.has(mp.id)) members.set(mp.id, {tile:mp, colSign:-1});
-    });
-  }
+  group.forEach(t=> members.set(t.id, {tile:t, colSign:1, rowSign:1}));
+  group.forEach(t=>{
+    if(mirrorH){
+      const h = tiles.find(o=> o.layer===t.layer && o.row===t.row && o.col===mirrorCol(t.col));
+      if(h && !members.has(h.id)) members.set(h.id, {tile:h, colSign:-1, rowSign:1});
+    }
+    if(mirrorV){
+      const v = tiles.find(o=> o.layer===t.layer && o.col===t.col && o.row===mirrorRow(t.row));
+      if(v && !members.has(v.id)) members.set(v.id, {tile:v, colSign:1, rowSign:-1});
+    }
+    if(mirrorH && mirrorV){
+      const d = tiles.find(o=> o.layer===t.layer && o.col===mirrorCol(t.col) && o.row===mirrorRow(t.row));
+      if(d && !members.has(d.id)) members.set(d.id, {tile:d, colSign:-1, rowSign:-1});
+    }
+  });
   return [...members.values()];
 }
 
@@ -472,12 +533,12 @@ function tryMoveGroup(dc, dr){
   const members = computeDragMembers(group);
 
   const proposed = members.map(m=>({
-    t: m.tile, colSign: m.colSign,
+    t: m.tile, colSign: m.colSign, rowSign: m.rowSign,
     nc: Math.max(COL_MIN, Math.min(COL_MAX-2, m.tile.col + m.colSign*dc)),
-    nr: Math.max(ROW_MIN, Math.min(ROW_MAX-2, m.tile.row+dr))
+    nr: Math.max(ROW_MIN, Math.min(ROW_MAX-2, m.tile.row + m.rowSign*dr))
   }));
   // Bounds clamped any member? Reject the whole move rather than let the group split apart.
-  if(proposed.some(p => p.nc !== p.t.col+p.colSign*dc || p.nr !== p.t.row+dr)){
+  if(proposed.some(p => p.nc !== p.t.col+p.colSign*dc || p.nr !== p.t.row+p.rowSign*dr)){
     E.showToast(toastEl, 'That would push the selection off the grid.');
     return;
   }
@@ -490,6 +551,7 @@ function tryMoveGroup(dc, dr){
     return;
   }
 
+  pushUndo();
   const originalPositions = members.map(m=>({layer:m.tile.layer, col:m.tile.col, row:m.tile.row}));
   proposed.forEach(p => { p.t.col = p.nc; p.t.row = p.nr; });
   render();
@@ -498,6 +560,8 @@ function tryMoveGroup(dc, dr){
 }
 
 function removeSelected(){
+  if(selectedIds.size===0) return;
+  pushUndo();
   tiles = tiles.filter(t=> !selectedIds.has(t.id));
   selectedIds.clear();
   render();
@@ -568,7 +632,7 @@ function onTileMouseDown(e, id){
 
   const group = selectedTiles();
   const members = computeDragMembers(group);
-  const origins = new Map(members.map(m=>[m.tile.id, {col:m.tile.col, row:m.tile.row, colSign:m.colSign}]));
+  const origins = new Map(members.map(m=>[m.tile.id, {col:m.tile.col, row:m.tile.row, colSign:m.colSign, rowSign:m.rowSign}]));
   dragState = { startX:e.clientX, startY:e.clientY, moved:false, origins, memberIds: members.map(m=>m.tile.id), blocked:false, dc:0, dr:0 };
 }
 
@@ -590,14 +654,14 @@ canvas.addEventListener('mousemove', (e)=>{
     let blocked = false;
     dragState.origins.forEach((o, id)=>{
       const t = tiles.find(x=>x.id===id);
-      const nc = o.col + o.colSign*dc, nr = o.row+dr;
+      const nc = o.col + o.colSign*dc, nr = o.row + o.rowSign*dr;
       if(nc<COL_MIN || nc>COL_MAX-2 || nr<ROW_MIN || nr>ROW_MAX-2) blocked = true;
       if(tiles.some(other=> !memberIds.has(other.id) && other.layer===t.layer && overlaps(other,{col:nc,row:nr}))) blocked = true;
     });
     dragState.blocked = blocked;
     dragState.origins.forEach((o, id)=>{
       const el = canvas.querySelector('.etile[data-id="'+id+'"]');
-      if(el){ el.style.left = colToPx(o.col+o.colSign*dc)+'px'; el.style.top = rowToPx(o.row+dr)+'px'; el.classList.add('dragging'); }
+      if(el){ el.style.left = colToPx(o.col+o.colSign*dc)+'px'; el.style.top = rowToPx(o.row+o.rowSign*dr)+'px'; el.classList.add('dragging'); }
     });
     ghost.style.display = 'none';
     return;
@@ -620,6 +684,7 @@ window.addEventListener('mouseup', (e)=>{
   if(dragState){
     if(dragState.moved && !dragState.blocked && (dragState.dc!==0 || dragState.dr!==0)){
       const dc = dragState.dc, dr = dragState.dr;
+      pushUndo();
       const originalPositions = dragState.memberIds.map(id=>{
         const t = tiles.find(x=>x.id===id);
         return {layer:t.layer, col:t.col, row:t.row};
@@ -627,7 +692,7 @@ window.addEventListener('mouseup', (e)=>{
       dragState.memberIds.forEach(id=>{
         const t = tiles.find(x=>x.id===id);
         const o = dragState.origins.get(id);
-        t.col = o.col + o.colSign*dc; t.row = o.row + dr;
+        t.col = o.col + o.colSign*dc; t.row = o.row + o.rowSign*dr;
       });
       if(dragState.memberIds.length >= 2) offerLowerShift(dc, dr, originalPositions);
     }
@@ -653,14 +718,29 @@ window.addEventListener('mouseup', (e)=>{
       hits.forEach(t=> selectedIds.add(t.id));
       render();
     } else {
-      // plain click on empty grid: place a tile at the nearest snap point
+      // plain click on empty grid: place a tile at the nearest snap point,
+      // plus its mirror copies for whichever of H/V are on (up to 4 total).
       const rect = canvas.getBoundingClientRect();
       const col = pxToCol(marqueeState.startX - rect.left);
       const row = pxToRow(marqueeState.startY - rect.top);
+      pushUndo();
       const placed = placeTile(currentLayer, col, row);
-      if(placed && mirrorMode){
-        const mc = mirrorCol(col);
-        if(mc !== col && !findTileAt(currentLayer, mc, row)) placeTile(currentLayer, mc, row);
+      if(placed){
+        const spots = new Set([col+','+row]);
+        if(mirrorH){
+          const mc = mirrorCol(col);
+          if(!spots.has(mc+','+row)){ spots.add(mc+','+row); placeTile(currentLayer, mc, row); }
+        }
+        if(mirrorV){
+          const mr = mirrorRow(row);
+          if(!spots.has(col+','+mr)){ spots.add(col+','+mr); placeTile(currentLayer, col, mr); }
+        }
+        if(mirrorH && mirrorV){
+          const mc = mirrorCol(col), mr = mirrorRow(row);
+          if(!spots.has(mc+','+mr)){ spots.add(mc+','+mr); placeTile(currentLayer, mc, mr); }
+        }
+      } else {
+        popUndo(); // placement failed (collision) -- nothing changed, drop the empty undo entry
       }
       selectedIds.clear();
       render();
@@ -696,7 +776,8 @@ function renderLayerTabs(){
     wrap.appendChild(btn);
   }
 }
-document.getElementById('tog-mirror').addEventListener('change', (e)=>{ mirrorMode = e.target.checked; });
+document.getElementById('tog-mirror-h').addEventListener('change', (e)=>{ mirrorH = e.target.checked; });
+document.getElementById('tog-mirror-v').addEventListener('change', (e)=>{ mirrorV = e.target.checked; });
 
 /* =========================================================
    CENTER
@@ -713,9 +794,14 @@ document.getElementById('btn-center').addEventListener('click', ()=>{
   shiftCol = Math.max(COL_MIN - minCol, Math.min(COL_MAX - maxCol, shiftCol));
   shiftRow = Math.max(ROW_MIN - minRow, Math.min(ROW_MAX - maxRow, shiftRow));
   if(shiftCol===0 && shiftRow===0) return;
+  pushUndo();
   tiles.forEach(t=>{ t.col += shiftCol; t.row += shiftRow; });
   render();
   E.showToast(toastEl, 'Centered on the origin star.');
+});
+document.getElementById('btn-undo').addEventListener('click', undo);
+window.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key==='z'){ undo(); e.preventDefault(); }
 });
 
 /* =========================================================
@@ -725,7 +811,39 @@ const confirmOverlay = document.getElementById('confirm-overlay');
 document.getElementById('btn-new').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
 document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
 document.getElementById('confirm-yes').addEventListener('click', ()=>{
+  if(tiles.length>0) pushUndo();
   tiles = []; selectedIds.clear(); confirmOverlay.classList.remove('show'); render();
+});
+
+/* =========================================================
+   RELOAD
+   Re-applies the most recently Load-ed file's data, discarding any
+   changes made since then. Distinct from New/Clear (which empties
+   the grid entirely) and from Undo (which only steps back one
+   change at a time).
+   ========================================================= */
+function applyLoadedData(data){
+  const minCol = Math.min(...data.coords.map(c=>c[1]));
+  const maxCol = Math.max(...data.coords.map(c=>c[1]));
+  const minRow = Math.min(...data.coords.map(c=>c[2]));
+  const maxRow = Math.max(...data.coords.map(c=>c[2]));
+  const centerCol = Math.round((minCol+maxCol)/2);
+  const centerRow = Math.round((minRow+maxRow)/2);
+  tiles = data.coords.map(c => ({ id: nextId++, layer:c[0], col:c[1]-centerCol, row:c[2]-centerRow }));
+  selectedIds.clear();
+  const loadedMaxLayer = Math.max(...data.coords.map(c=>c[0]));
+  if(loadedMaxLayer > maxLayer){
+    E.showToast(toastEl, 'Warning: this file uses layer ' + loadedMaxLayer + ', beyond this editor\'s 0-'+maxLayer+' tabs. Those tiles loaded but can\'t be viewed/edited here.');
+  }
+  if(data.name) document.getElementById('export-name').value = data.name;
+  if(data.desc) document.getElementById('export-desc').value = data.desc;
+  render();
+}
+document.getElementById('btn-reload').addEventListener('click', ()=>{
+  if(!lastLoadedData) return;
+  pushUndo();
+  applyLoadedData(lastLoadedData);
+  E.showToast(toastEl, 'Reloaded ' + (lastLoadedData.name || 'the last file') + ' — changes since loading it were discarded.');
 });
 
 /* =========================================================
@@ -841,21 +959,10 @@ document.getElementById('file-load').addEventListener('change', (e)=>{
     try {
       const data = JSON.parse(reader.result);
       if(!Array.isArray(data.coords)) throw new Error('missing coords array');
-      const minCol = Math.min(...data.coords.map(c=>c[1]));
-      const maxCol = Math.max(...data.coords.map(c=>c[1]));
-      const minRow = Math.min(...data.coords.map(c=>c[2]));
-      const maxRow = Math.max(...data.coords.map(c=>c[2]));
-      const centerCol = Math.round((minCol+maxCol)/2);
-      const centerRow = Math.round((minRow+maxRow)/2);
-      tiles = data.coords.map(c => ({ id: nextId++, layer:c[0], col:c[1]-centerCol, row:c[2]-centerRow }));
-      selectedIds.clear();
-      const loadedMaxLayer = Math.max(...data.coords.map(c=>c[0]));
-      if(loadedMaxLayer > maxLayer){
-        E.showToast(toastEl, 'Warning: this file uses layer ' + loadedMaxLayer + ', beyond this editor\'s 0-'+maxLayer+' tabs. Those tiles loaded but can\'t be viewed/edited here.');
-      }
-      if(data.name) document.getElementById('export-name').value = data.name;
-      if(data.desc) document.getElementById('export-desc').value = data.desc;
-      render();
+      if(tiles.length>0) pushUndo();
+      applyLoadedData(data);
+      lastLoadedData = data;
+      document.getElementById('btn-reload').disabled = false;
       E.showToast(toastEl, 'Loaded ' + (data.name || file.name) + ' (' + tiles.length + ' tiles)');
     } catch(err){
       E.showToast(toastEl, 'Could not read that file as a layout — ' + err.message);
