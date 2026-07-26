@@ -2,21 +2,21 @@
 <!--
     LayoutEditor.html
     Written by: Johnathon Largent
-    Version 1.8
+    Version 2.0
 
-   Grid now also centers vertically (align-items:center, was
-   flex-start) — was only centered width-wise before, still pinned to
-   the top edge.
-
-   Favicon redesigned after actually test-rendering it (wkhtmltoimage,
-   checked at real 16px/32px favicon sizes, not just guessed at) — the
-   🀄 emoji glyph turns out to already render as its own small tile
-   icon with a baked-in light background, so putting it on my OWN
-   black background produced a tile-inside-a-tile look, not a dark
-   tile with an outline. Replaced the emoji with a plain drawn glyph
-   (中, red, serif) that has no background of its own, directly on the
-   black rounded rect with the white outline — confirmed legible down
-   to 16px this time before shipping it.
+   Added support/gravity validation — a tile above layer 0 now needs
+   at least 1/4 of its own footprint (area 1, out of a full tile's
+   2x2=4) covered by some tile on a lower layer, or it can't be
+   placed or dragged/nudged there. Layer 0 always passes (it's the
+   table itself). Applied everywhere a tile's position changes:
+   placeTile() (covers new placement AND mirror copies in one place),
+   the D-pad/arrow-key group move, and the live mouse-drag preview
+   (which mouseup already deferred to via dragState.blocked, so no
+   separate check needed there). Verified two ways: overlap-area math
+   checked against known cases (full/quarter/less-than-quarter/zero
+   overlap), and all three real layouts (Turtle, Pyramid, Irish
+   Castle) scanned tile-by-tile — zero violations, confirming the
+   rule matches how a genuinely valid board is actually built.
 -->
 <html lang="en">
 <head>
@@ -76,7 +76,7 @@
     background: var(--tile-color, #f6efdd);
     box-shadow: 0 2px 0 rgba(0,0,0,.32), 0 4px 6px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.3);
   }
-  .etile.below{ opacity:.28; }
+  .etile.below{ opacity:.28; pointer-events:none; }
   .etile.above{ opacity:.12; pointer-events:none; }
   .etile.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 0 12px rgba(126,230,168,.7), 0 2px 0 rgba(0,0,0,.32); }
   .etile.dragging{ opacity:.85; z-index:998 !important; cursor:grabbing; }
@@ -287,6 +287,10 @@
         the <b>same layer</b> — different layers overlapping is normal
         (that's how "covered from above" works), same-layer overlap
         isn't a valid board state.</li>
+        <li>Above layer 0, a tile needs at least <b>1/4 of its own
+        footprint</b> resting on something in a lower layer — no
+        floating tiles with nothing underneath them, same as every
+        real mahjong layout.</li>
         <li><b>Undo</b> (or Ctrl/Cmd+Z) steps back through every
         change — placing, moving, removing, Center, Clear Grid, Load —
         up to 50 steps.</li>
@@ -343,7 +347,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '1.8';
+const PAGE_VERSION = '2.0';
 
 /* =========================================================
    GRID GEOMETRY
@@ -415,6 +419,27 @@ function overlaps(a, b){
 function sameLayerCollision(layer, col, row, excludeId){
   return tiles.some(t => t.layer===layer && t.id!==excludeId && overlaps(t, {col, row}));
 }
+// A tile above layer 0 needs at least 1/4 of its own footprint (area
+// 1, out of a full tile's area 2x2=4) covered by SOME tile on a lower
+// layer -- no floating tiles with zero support underneath them, same
+// as every real mahjong layout is actually built. Layer 0 always
+// passes (it's the table itself, nothing needed under it).
+const SUPPORT_FRACTION = 0.25;
+function overlapArea(a, b){
+  const xOverlap = Math.max(0, Math.min(a.col+2, b.col+2) - Math.max(a.col, b.col));
+  const yOverlap = Math.max(0, Math.min(a.row+2, b.row+2) - Math.max(a.row, b.row));
+  return xOverlap * yOverlap;
+}
+function hasSupport(layer, col, row){
+  if(layer === 0) return true;
+  const need = 4 * SUPPORT_FRACTION;
+  let covered = 0;
+  for(const t of tiles){
+    if(t.layer < layer) covered += overlapArea({col,row}, t);
+    if(covered >= need - 1e-9) return true;
+  }
+  return false;
+}
 function findTileAt(layer, col, row){
   return tiles.find(t => t.layer===layer && t.col===col && t.row===row);
 }
@@ -481,6 +506,10 @@ function placeTile(layer, col, row){
   if(col < COL_MIN || col > COL_MAX-2 || row < ROW_MIN || row > ROW_MAX-2) return null;
   if(sameLayerCollision(layer, col, row, null)){
     E.showToast(toastEl, 'That overlaps a tile already on this layer.');
+    return null;
+  }
+  if(!hasSupport(layer, col, row)){
+    E.showToast(toastEl, 'Needs at least 1/4 of the tile resting on a lower layer — nothing floats.');
     return null;
   }
   const t = { id: nextId++, layer, col, row };
@@ -557,6 +586,11 @@ function tryMoveGroup(dc, dr){
   );
   if(collides){
     E.showToast(toastEl, 'That overlaps a tile already on this layer.');
+    return;
+  }
+  const unsupported = proposed.some(p => !hasSupport(p.t.layer, p.nc, p.nr));
+  if(unsupported){
+    E.showToast(toastEl, 'Needs at least 1/4 of the tile resting on a lower layer — nothing floats.');
     return;
   }
 
@@ -666,6 +700,7 @@ canvas.addEventListener('mousemove', (e)=>{
       const nc = o.col + o.colSign*dc, nr = o.row + o.rowSign*dr;
       if(nc<COL_MIN || nc>COL_MAX-2 || nr<ROW_MIN || nr>ROW_MAX-2) blocked = true;
       if(tiles.some(other=> !memberIds.has(other.id) && other.layer===t.layer && overlaps(other,{col:nc,row:nr}))) blocked = true;
+      if(!hasSupport(t.layer, nc, nr)) blocked = true;
     });
     dragState.blocked = blocked;
     dragState.origins.forEach((o, id)=>{
