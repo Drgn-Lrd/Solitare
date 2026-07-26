@@ -2,44 +2,27 @@
 <!--
     LayoutEditor.html
     Written by: Johnathon Largent
-    Version 1.0
+    Version 1.1
 
-   Standalone board-layout builder for Mahjong.html. Click (or drag,
-   or D-pad-nudge) tiles onto a grid, one layer (0-3) at a time, and
-   export a JSON file in the exact {name, desc, coords:[[layer,col,
-   row],...]} shape Mahjong.html's own LAYOUTS registry already uses —
-   so a layout built here is a straight copy-paste (or, once
-   Mahjong.html is wired to load external layouts, a straight drop-in)
-   away from being playable.
-
-   Grid resolution matches the engine exactly: a tile is 2 half-cell
-   units wide/tall, and every INTEGER half-cell position is a valid
-   snap point — meaning every tile-width already contains 2 snap
-   points across and 2 down (the classic "half-tile brick offset"
-   used throughout Turtle/Pyramid/Irish Castle). No separate snapping
-   mode needed; this is just the coordinate system Mahjong.html
-   already runs on, exposed directly.
-
-   The star glyph sits at grid origin (0,0) as a fixed, non-placeable
-   reference point — build outward from it and left/right symmetry
-   (Mirror mode) stays trivial to keep track of.
-
-   Same-layer overlaps are hard-blocked at placement/drag time (not
-   just warned about) — Irish Castle's bridge went through several
-   rounds of exactly this kind of geometry bug, so the editor now
-   catches it immediately instead of letting it ship silently.
-
-   Export is blocked unless the tile count is even (unpaired tiles
-   are unwinnable in any configuration) — the exported JSON is still
-   whatever count the person built, no forced 144, but a persistent
-   note explains that Mahjong.html's current kind-generator specifically
-   expects 144 to work (34 kinds x4 + 4 Flowers + 4 Seasons), so
-   layouts of a different (even) size will export fine but won't be
-   playable in-game until that generator supports variable counts.
-
-   Load accepts the same JSON shape and re-centers the loaded layout's
-   bounding-box middle on the origin star, so opening an existing
-   layout to edit it starts from a sensible, centered view.
+   Four additions:
+     - Center button — shifts every placed tile (all layers, as one
+       rigid group) so the whole layout's bounding box lands on the
+       origin star, clamped so nothing gets pushed off-grid.
+     - Mirror toggle now has a tooltip explaining what it does (auto-
+       places a left/right mirrored tile on new placements only —
+       doesn't affect moving or deleting existing tiles).
+     - Multi-select: click-drag an empty area for a rubber-band/
+       marquee select (like desktop icon selection), or Ctrl-click to
+       toggle individual tiles in/out of the selection. A selected
+       group moves together — via mouse-drag or the D-pad/arrow keys —
+       as one rigid structure, rejecting the whole move if ANY member
+       would collide with a tile outside the group. Moving a group of
+       2+ tiles checks for lower-layer tiles sitting directly under
+       where the group started and offers to bring them along too,
+       rather than silently leaving stacked tiles behind.
+     - Origin star's z-index raised above every tile layer (was only
+       above layer 0-ish before) so it stays visible no matter how
+       tall a stack sits on top of it.
 -->
 <html lang="en">
 <head>
@@ -85,9 +68,10 @@
     background-size: 20px 26px, 40px 52px, 40px 52px;
   }
   .origin-star{
-    position:absolute; width:20px; height:20px; margin-left:-10px; margin-top:-10px;
-    display:flex; align-items:center; justify-content:center; font-size:16px;
-    color:var(--brass-light); pointer-events:none; z-index:1; text-shadow:0 0 6px rgba(0,0,0,.8);
+    position:absolute; width:22px; height:22px; margin-left:-11px; margin-top:-11px;
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+    color:var(--brass-light); pointer-events:none; z-index:9999;
+    text-shadow: 0 0 3px #000, 0 0 6px #000, 0 0 10px rgba(0,0,0,.9);
   }
   .etile{
     position:absolute; width:40px; height:52px; border-radius:14%; cursor:pointer;
@@ -97,12 +81,16 @@
   .etile.below{ opacity:.28; }
   .etile.above{ opacity:.12; pointer-events:none; }
   .etile.selected{ box-shadow: 0 0 0 3px #7ee6a8, 0 0 12px rgba(126,230,168,.7), 0 2px 0 rgba(0,0,0,.32); }
-  .etile.dragging{ opacity:.85; z-index:999 !important; cursor:grabbing; }
+  .etile.dragging{ opacity:.85; z-index:998 !important; cursor:grabbing; }
   .snap-ghost{
     position:absolute; width:40px; height:52px; border-radius:14%;
-    border:2px dashed rgba(126,230,168,.55); pointer-events:none; display:none;
+    border:2px dashed rgba(126,230,168,.55); pointer-events:none; display:none; z-index:997;
   }
   .snap-ghost.blocked{ border-color: rgba(220,90,90,.75); }
+  .marquee-box{
+    position:absolute; border:1.5px dashed #7ee6a8; background: rgba(126,230,168,.12);
+    pointer-events:none; display:none; z-index:996;
+  }
 
   .side-panel{
     width:220px; flex-shrink:0; background: rgba(0,0,0,.22); border-left:1px solid var(--panel-line);
@@ -177,7 +165,12 @@
   </div>
   <div class="toolbar-group">
     <span class="toolbar-label">Mirror</span>
-    <label class="switch"><input type="checkbox" id="tog-mirror"><span class="slider"></span></label>
+    <label class="switch" title="When on, placing a NEW tile also places its left/right mirror image around the origin star. Doesn't affect moving or removing tiles.">
+      <input type="checkbox" id="tog-mirror"><span class="slider"></span>
+    </label>
+  </div>
+  <div class="toolbar-group">
+    <button class="textbtn" id="btn-center" title="Shift every placed tile so the whole layout is centered on the origin star">Center</button>
   </div>
   <div class="toolbar-group" style="margin-left:auto;">
     <button class="textbtn" id="btn-load">Load…</button>
@@ -192,6 +185,7 @@
     <div id="grid-canvas">
       <div class="origin-star">★</div>
       <div class="snap-ghost" id="snap-ghost"></div>
+      <div class="marquee-box" id="marquee-box"></div>
     </div>
   </div>
 
@@ -209,7 +203,7 @@
     </div>
 
     <div class="panel-box">
-      <h4>Position (Selected Tile)</h4>
+      <h4>Position (Selection)</h4>
       <div class="dpad">
         <button class="dpad-up" id="dpad-up" disabled>▲</button>
         <button class="dpad-left" id="dpad-left" disabled>◀</button>
@@ -218,6 +212,9 @@
         <button class="dpad-down" id="dpad-down" disabled>▼</button>
       </div>
       <button class="textbtn full-btn" id="btn-remove" disabled>Remove Selected</button>
+      <div style="font-size:11px; color:#9fc9b6; margin-top:8px; line-height:1.5;">
+        Click a tile to select it. Ctrl-click or drag a box around several to select multiple and move them as one group.
+      </div>
     </div>
 
     <div class="panel-box" id="msg-box" style="display:none;">
@@ -256,12 +253,18 @@
       <ul>
         <li>Click an empty grid point to place a tile on the current
         <b>Layer</b> tab. Click an existing tile to select it.</li>
-        <li>Drag a selected tile to move it, or use the <b>D-pad</b> to
-        nudge it one snap-step at a time.</li>
+        <li>Drag a selection to move it, or use the <b>D-pad</b> (or
+        arrow keys) to nudge it one snap-step at a time.</li>
+        <li><b>Multi-select</b>: click-drag an empty area to box-select
+        several tiles at once, or Ctrl-click to add/remove individual
+        tiles from the selection. A multi-tile selection moves as one
+        rigid group; if that group started directly on top of tiles on
+        a lower layer, you'll be asked whether to bring those along too.</li>
         <li>Every tile-width has 2 snap points across and 2 down — the
         same half-tile offsets Turtle/Pyramid/Irish Castle use.</li>
         <li>The <b>★</b> marks the grid origin — build outward from it
-        so left/right symmetry stays easy to eyeball.</li>
+        so left/right symmetry stays easy to eyeball. <b>Center</b>
+        shifts the whole layout so it's centered on the star.</li>
         <li><b>Mirror</b> auto-places a left/right mirrored tile
         whenever you place a new one (doesn't affect moving/removing).</li>
         <li>Tiles can't be placed or dragged on top of another tile on
@@ -296,6 +299,18 @@
     <div class="modal-actions">
       <button class="textbtn" id="confirm-cancel">Cancel</button>
       <button class="textbtn primary" id="confirm-yes">Clear Grid</button>
+    </div>
+  </div>
+</div>
+
+<!-- INCLUDE LOWER TILES (shown after moving a multi-tile selection) -->
+<div class="overlay" id="lower-overlay">
+  <div class="modal">
+    <h3>Include Tiles Below?</h3>
+    <div class="sub" id="lower-sub">There are tiles on lower layers directly under this selection.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="lower-no">Leave Them</button>
+      <button class="textbtn primary" id="lower-yes">Move Them Too</button>
     </div>
   </div>
 </div>
@@ -338,8 +353,10 @@ let tiles = [];              // {id, layer, col, row}
 let nextId = 1;
 let currentLayer = 0;
 let mirrorMode = false;
-let selectedId = null;
-let dragState = null;        // {id, offsetX, offsetY}
+let selectedIds = new Set(); // ids of selected tiles, always on currentLayer
+let dragState = null;        // group-drag in progress
+let marqueeState = null;     // rubber-band select in progress
+let pendingLowerShift = null; // {dc, dr, originalPositions} awaiting the include-lower-tiles answer
 
 function overlaps(a, b){
   return a.col < b.col+2 && a.col+2 > b.col && a.row < b.row+2 && a.row+2 > b.row;
@@ -350,6 +367,7 @@ function sameLayerCollision(layer, col, row, excludeId){
 function findTileAt(layer, col, row){
   return tiles.find(t => t.layer===layer && t.col===col && t.row===row);
 }
+function selectedTiles(){ return tiles.filter(t=> selectedIds.has(t.id)); }
 
 /* =========================================================
    RENDER
@@ -362,14 +380,13 @@ function render(){
     if(t.layer === currentLayer) cls += '';
     else if(t.layer < currentLayer) cls += ' below';
     else cls += ' above';
-    if(t.id === selectedId) cls += ' selected';
+    if(selectedIds.has(t.id)) cls += ' selected';
     el.className = cls;
     el.style.left = colToPx(t.col) + 'px';
     el.style.top = rowToPx(t.row) + 'px';
     el.style.zIndex = String(100 + t.layer*10);
     el.dataset.id = t.id;
     el.addEventListener('mousedown', (e)=> onTileMouseDown(e, t.id));
-    el.addEventListener('click', (e)=> { e.stopPropagation(); onTileClick(t.id); });
     canvas.appendChild(el);
   });
   updateCounters();
@@ -393,17 +410,20 @@ function updateCounters(){
 }
 
 function updateDpad(){
-  const sel = tiles.find(t=>t.id===selectedId);
-  const has = !!sel;
+  const sel = selectedTiles();
+  const has = sel.length > 0;
   ['dpad-up','dpad-down','dpad-left','dpad-right'].forEach(id=>{
     document.getElementById(id).disabled = !has;
   });
   document.getElementById('btn-remove').disabled = !has;
-  document.getElementById('dpad-coords').textContent = has ? ('L'+sel.layer+' '+sel.col+','+sel.row) : '—';
+  const coordsEl = document.getElementById('dpad-coords');
+  if(sel.length === 0) coordsEl.textContent = '—';
+  else if(sel.length === 1) coordsEl.textContent = 'L'+sel[0].layer+' '+sel[0].col+','+sel[0].row;
+  else coordsEl.textContent = sel.length + ' selected';
 }
 
 /* =========================================================
-   PLACE / SELECT / MOVE / REMOVE
+   PLACE / REMOVE
    ========================================================= */
 function placeTile(layer, col, row){
   if(col < COL_MIN || col > COL_MAX-2 || row < ROW_MIN || row > ROW_MAX-2) return null;
@@ -415,112 +435,234 @@ function placeTile(layer, col, row){
   tiles.push(t);
   return t;
 }
-
 function mirrorCol(col){ return -(col+2); }
 
-function onCanvasClick(e){
-  const rect = canvas.getBoundingClientRect();
-  const col = pxToCol(e.clientX - rect.left);
-  const row = pxToRow(e.clientY - rect.top);
-  const existing = findTileAt(currentLayer, col, row);
-  if(existing){
-    selectedId = (selectedId === existing.id) ? null : existing.id;
-    render();
+function removeSelected(){
+  tiles = tiles.filter(t=> !selectedIds.has(t.id));
+  selectedIds.clear();
+  render();
+}
+document.getElementById('btn-remove').addEventListener('click', removeSelected);
+
+/* =========================================================
+   GROUP MOVE (shared by drag-drop and D-pad/arrow-key nudging)
+   Moves every selected tile by the same (dc,dr) as one rigid group.
+   Rejects the whole move if ANY member would collide with a
+   non-selected tile on the same layer. For groups of 2+, offers to
+   also shift any lower-layer tile sitting directly under one of the
+   group's ORIGINAL positions by the same amount.
+   ========================================================= */
+function tryMoveGroup(dc, dr){
+  if(dc===0 && dr===0) return;
+  const group = selectedTiles();
+  if(group.length===0) return;
+
+  const proposed = group.map(t=>({
+    t, nc: Math.max(COL_MIN, Math.min(COL_MAX-2, t.col+dc)),
+    nr: Math.max(ROW_MIN, Math.min(ROW_MAX-2, t.row+dr))
+  }));
+  // Bounds clamped any member? Reject the whole move rather than let the group split apart.
+  if(proposed.some(p => p.nc !== p.t.col+dc || p.nr !== p.t.row+dr)){
+    E.showToast(toastEl, 'That would push the selection off the grid.');
     return;
   }
-  const placed = placeTile(currentLayer, col, row);
-  if(placed && mirrorMode){
-    const mc = mirrorCol(col);
-    if(mc !== col && !findTileAt(currentLayer, mc, row)){
-      placeTile(currentLayer, mc, row);
-    }
-  }
-  selectedId = null;
-  render();
-}
-canvas.addEventListener('click', onCanvasClick);
-
-function onTileClick(id){
-  const t = tiles.find(x=>x.id===id);
-  if(!t || t.layer !== currentLayer) return; // clicks on other-layer ghosts do nothing
-  selectedId = (selectedId===id) ? null : id;
-  render();
-}
-
-function nudgeSelected(dc, dr){
-  const t = tiles.find(x=>x.id===selectedId);
-  if(!t) return;
-  const nc = Math.max(COL_MIN, Math.min(COL_MAX-2, t.col+dc));
-  const nr = Math.max(ROW_MIN, Math.min(ROW_MAX-2, t.row+dr));
-  if(sameLayerCollision(t.layer, nc, nr, t.id)){
+  const groupIds = new Set(group.map(t=>t.id));
+  const collides = proposed.some(p =>
+    tiles.some(other => !groupIds.has(other.id) && other.layer===p.t.layer && overlaps(other, {col:p.nc, row:p.nr}))
+  );
+  if(collides){
     E.showToast(toastEl, 'That overlaps a tile already on this layer.');
     return;
   }
-  t.col = nc; t.row = nr;
+
+  const originalPositions = group.map(t=>({layer:t.layer, col:t.col, row:t.row}));
+  proposed.forEach(p => { p.t.col = p.nc; p.t.row = p.nr; });
   render();
-}
-document.getElementById('dpad-up').addEventListener('click', ()=> nudgeSelected(0,-1));
-document.getElementById('dpad-down').addEventListener('click', ()=> nudgeSelected(0,1));
-document.getElementById('dpad-left').addEventListener('click', ()=> nudgeSelected(-1,0));
-document.getElementById('dpad-right').addEventListener('click', ()=> nudgeSelected(1,0));
-document.getElementById('btn-remove').addEventListener('click', ()=>{
-  tiles = tiles.filter(t=>t.id!==selectedId);
-  selectedId = null;
-  render();
-});
-window.addEventListener('keydown', (e)=>{
-  if(!selectedId) return;
-  if(e.key==='ArrowUp'){ nudgeSelected(0,-1); e.preventDefault(); }
-  else if(e.key==='ArrowDown'){ nudgeSelected(0,1); e.preventDefault(); }
-  else if(e.key==='ArrowLeft'){ nudgeSelected(-1,0); e.preventDefault(); }
-  else if(e.key==='ArrowRight'){ nudgeSelected(1,0); e.preventDefault(); }
-  else if(e.key==='Delete' || e.key==='Backspace'){
-    tiles = tiles.filter(t=>t.id!==selectedId); selectedId=null; render(); e.preventDefault();
+
+  if(group.length >= 2){
+    const lowerTiles = [];
+    originalPositions.forEach(pos=>{
+      tiles.forEach(t=>{
+        if(t.layer < pos.layer && t.col===pos.col && t.row===pos.row && !lowerTiles.includes(t)) lowerTiles.push(t);
+      });
+    });
+    if(lowerTiles.length > 0){
+      pendingLowerShift = { dc, dr, tiles: lowerTiles };
+      document.getElementById('lower-sub').textContent =
+        'There ' + (lowerTiles.length===1 ? 'is 1 tile' : 'are '+lowerTiles.length+' tiles') +
+        ' on a lower layer directly under where this selection started.';
+      document.getElementById('lower-overlay').classList.add('show');
+    }
   }
+}
+document.getElementById('lower-yes').addEventListener('click', ()=>{
+  if(pendingLowerShift){
+    pendingLowerShift.tiles.forEach(t=>{ t.col += pendingLowerShift.dc; t.row += pendingLowerShift.dr; });
+    render();
+  }
+  pendingLowerShift = null;
+  document.getElementById('lower-overlay').classList.remove('show');
+});
+document.getElementById('lower-no').addEventListener('click', ()=>{
+  pendingLowerShift = null;
+  document.getElementById('lower-overlay').classList.remove('show');
+});
+
+document.getElementById('dpad-up').addEventListener('click', ()=> tryMoveGroup(0,-1));
+document.getElementById('dpad-down').addEventListener('click', ()=> tryMoveGroup(0,1));
+document.getElementById('dpad-left').addEventListener('click', ()=> tryMoveGroup(-1,0));
+document.getElementById('dpad-right').addEventListener('click', ()=> tryMoveGroup(1,0));
+window.addEventListener('keydown', (e)=>{
+  if(selectedIds.size===0) return;
+  if(e.key==='ArrowUp'){ tryMoveGroup(0,-1); e.preventDefault(); }
+  else if(e.key==='ArrowDown'){ tryMoveGroup(0,1); e.preventDefault(); }
+  else if(e.key==='ArrowLeft'){ tryMoveGroup(-1,0); e.preventDefault(); }
+  else if(e.key==='ArrowRight'){ tryMoveGroup(1,0); e.preventDefault(); }
+  else if(e.key==='Delete' || e.key==='Backspace'){ removeSelected(); e.preventDefault(); }
 });
 
 /* =========================================================
-   DRAG
+   SELECT / PLACE / DRAG / MARQUEE
+   Everything funnels through canvas-level and tile-level mousedown,
+   rather than separate click handlers, so a single code path decides
+   "was this a click (select/place) or a drag/marquee (move/box-
+   select)" based on how far the mouse actually moved.
    ========================================================= */
 const ghost = document.getElementById('snap-ghost');
+const marqueeBox = document.getElementById('marquee-box');
+const DRAG_THRESHOLD_PX = 4;
+
 function onTileMouseDown(e, id){
   const t = tiles.find(x=>x.id===id);
   if(!t || t.layer !== currentLayer) return;
   e.preventDefault();
-  selectedId = id;
-  dragState = { id, origCol:t.col, origRow:t.row };
-  render();
-  const el = canvas.querySelector('.etile[data-id="'+id+'"]');
-  if(el) el.classList.add('dragging');
-}
-canvas.addEventListener('mousemove', (e)=>{
-  if(!dragState) return;
-  const rect = canvas.getBoundingClientRect();
-  const col = pxToCol(e.clientX - rect.left);
-  const row = pxToRow(e.clientY - rect.top);
-  const t = tiles.find(x=>x.id===dragState.id);
-  const blocked = sameLayerCollision(t.layer, col, row, t.id);
-  ghost.style.display = 'block';
-  ghost.style.left = colToPx(col) + 'px';
-  ghost.style.top = rowToPx(row) + 'px';
-  ghost.classList.toggle('blocked', blocked);
-  const el = canvas.querySelector('.etile[data-id="'+t.id+'"]');
-  if(el){ el.style.left = colToPx(col)+'px'; el.style.top = rowToPx(row)+'px'; }
-  dragState.previewCol = col; dragState.previewRow = row; dragState.blocked = blocked;
-});
-window.addEventListener('mouseup', ()=>{
-  if(!dragState) return;
-  const t = tiles.find(x=>x.id===dragState.id);
-  ghost.style.display = 'none';
-  if(t){
-    if(dragState.blocked || dragState.previewCol===undefined){
-      // revert
-    } else {
-      t.col = dragState.previewCol; t.row = dragState.previewRow;
-    }
+  e.stopPropagation();
+  const ctrl = e.ctrlKey || e.metaKey;
+
+  if(ctrl){
+    if(selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+    render();
+    if(!selectedIds.has(id)) return; // just deselected this one -- nothing to drag
+  } else if(!selectedIds.has(id) || selectedIds.size===1){
+    selectedIds = new Set([id]);
+    render();
   }
-  dragState = null;
-  render();
+  // else: id is already part of a multi-selection -- keep the whole group selected and drag it
+
+  const group = selectedTiles();
+  const origins = new Map(group.map(t=>[t.id, {col:t.col, row:t.row}]));
+  dragState = { startX:e.clientX, startY:e.clientY, moved:false, origins, blocked:false, dc:0, dr:0 };
+}
+
+canvas.addEventListener('mousedown', (e)=>{
+  if(e.target !== canvas) return; // a tile (or the star/ghost) already handled it
+  marqueeState = { startX:e.clientX, startY:e.clientY, moved:false, ctrl: e.ctrlKey||e.metaKey };
+});
+
+canvas.addEventListener('mousemove', (e)=>{
+  const rect = canvas.getBoundingClientRect();
+
+  if(dragState){
+    const dxPx = e.clientX - dragState.startX, dyPx = e.clientY - dragState.startY;
+    if(Math.abs(dxPx) > DRAG_THRESHOLD_PX || Math.abs(dyPx) > DRAG_THRESHOLD_PX) dragState.moved = true;
+    if(!dragState.moved) return;
+    const dc = Math.round(dxPx/UNIT_W), dr = Math.round(dyPx/UNIT_H);
+    dragState.dc = dc; dragState.dr = dr;
+    const group = selectedTiles();
+    const groupIds = new Set(group.map(t=>t.id));
+    let blocked = false;
+    group.forEach(t=>{
+      const o = dragState.origins.get(t.id);
+      const nc = o.col+dc, nr = o.row+dr;
+      if(nc<COL_MIN || nc>COL_MAX-2 || nr<ROW_MIN || nr>ROW_MAX-2) blocked = true;
+      if(tiles.some(other=> !groupIds.has(other.id) && other.layer===t.layer && overlaps(other,{col:nc,row:nr}))) blocked = true;
+    });
+    dragState.blocked = blocked;
+    group.forEach(t=>{
+      const o = dragState.origins.get(t.id);
+      const el = canvas.querySelector('.etile[data-id="'+t.id+'"]');
+      if(el){ el.style.left = colToPx(o.col+dc)+'px'; el.style.top = rowToPx(o.row+dr)+'px'; el.classList.add('dragging'); }
+    });
+    ghost.style.display = 'none';
+    return;
+  }
+
+  if(marqueeState){
+    const dxPx = e.clientX - marqueeState.startX, dyPx = e.clientY - marqueeState.startY;
+    if(Math.abs(dxPx) > DRAG_THRESHOLD_PX || Math.abs(dyPx) > DRAG_THRESHOLD_PX) marqueeState.moved = true;
+    if(!marqueeState.moved) return;
+    const x0 = marqueeState.startX - rect.left, y0 = marqueeState.startY - rect.top;
+    const x1 = e.clientX - rect.left, y1 = e.clientY - rect.top;
+    const left = Math.min(x0,x1), top = Math.min(y0,y1);
+    marqueeBox.style.display = 'block';
+    marqueeBox.style.left = left+'px'; marqueeBox.style.top = top+'px';
+    marqueeBox.style.width = Math.abs(x1-x0)+'px'; marqueeBox.style.height = Math.abs(y1-y0)+'px';
+  }
+});
+
+window.addEventListener('mouseup', (e)=>{
+  if(dragState){
+    const group = selectedTiles();
+    if(dragState.moved && !dragState.blocked && (dragState.dc!==0 || dragState.dr!==0)){
+      const dc = dragState.dc, dr = dragState.dr;
+      const originalPositions = group.map(t=>({layer:t.layer, col:t.col, row:t.row}));
+      group.forEach(t=>{ const o = dragState.origins.get(t.id); t.col=o.col+dc; t.row=o.row+dr; });
+      if(group.length >= 2){
+        const lowerTiles = [];
+        originalPositions.forEach(pos=>{
+          tiles.forEach(t=>{
+            if(t.layer < pos.layer && t.col===pos.col && t.row===pos.row && !lowerTiles.includes(t)) lowerTiles.push(t);
+          });
+        });
+        if(lowerTiles.length > 0){
+          pendingLowerShift = { dc, dr, tiles: lowerTiles };
+          document.getElementById('lower-sub').textContent =
+            'There ' + (lowerTiles.length===1 ? 'is 1 tile' : 'are '+lowerTiles.length+' tiles') +
+            ' on a lower layer directly under where this selection started.';
+          document.getElementById('lower-overlay').classList.add('show');
+        }
+      }
+    } else if(!dragState.moved){
+      // plain click on a tile that was already selected before mousedown handling above
+      // (ctrl-click toggling already happened in onTileMouseDown; nothing else to do here)
+    }
+    ghost.style.display = 'none';
+    dragState = null;
+    render();
+    return;
+  }
+
+  if(marqueeState){
+    if(marqueeState.moved){
+      const rect = canvas.getBoundingClientRect();
+      const x0 = marqueeState.startX - rect.left, y0 = marqueeState.startY - rect.top;
+      const x1 = e.clientX - rect.left, y1 = e.clientY - rect.top;
+      const left = Math.min(x0,x1), right = Math.max(x0,x1);
+      const top = Math.min(y0,y1), bottom = Math.max(y0,y1);
+      const hits = tiles.filter(t=>{
+        if(t.layer !== currentLayer) return false;
+        const tl = colToPx(t.col), tt = rowToPx(t.row);
+        return tl < right && tl+TILE_W > left && tt < bottom && tt+TILE_H > top;
+      });
+      if(!marqueeState.ctrl) selectedIds.clear();
+      hits.forEach(t=> selectedIds.add(t.id));
+      render();
+    } else {
+      // plain click on empty grid: place a tile at the nearest snap point
+      const rect = canvas.getBoundingClientRect();
+      const col = pxToCol(marqueeState.startX - rect.left);
+      const row = pxToRow(marqueeState.startY - rect.top);
+      const placed = placeTile(currentLayer, col, row);
+      if(placed && mirrorMode){
+        const mc = mirrorCol(col);
+        if(mc !== col && !findTileAt(currentLayer, mc, row)) placeTile(currentLayer, mc, row);
+      }
+      selectedIds.clear();
+      render();
+    }
+    marqueeBox.style.display = 'none';
+    marqueeState = null;
+  }
 });
 
 /* =========================================================
@@ -531,11 +673,31 @@ document.querySelectorAll('.layertab').forEach(btn=>{
     document.querySelectorAll('.layertab').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     currentLayer = Number(btn.dataset.layer);
-    selectedId = null;
+    selectedIds.clear();
     render();
   });
 });
 document.getElementById('tog-mirror').addEventListener('change', (e)=>{ mirrorMode = e.target.checked; });
+
+/* =========================================================
+   CENTER
+   Shifts every placed tile (all layers) by the same amount so the
+   whole layout's bounding box is centered on the origin star.
+   ========================================================= */
+document.getElementById('btn-center').addEventListener('click', ()=>{
+  if(tiles.length===0) return;
+  const minCol = Math.min(...tiles.map(t=>t.col)), maxCol = Math.max(...tiles.map(t=>t.col+2));
+  const minRow = Math.min(...tiles.map(t=>t.row)), maxRow = Math.max(...tiles.map(t=>t.row+2));
+  let shiftCol = -Math.round((minCol+maxCol)/2);
+  let shiftRow = -Math.round((minRow+maxRow)/2);
+  // Clamp so the shift never pushes anything off the grid.
+  shiftCol = Math.max(COL_MIN - minCol, Math.min(COL_MAX - maxCol, shiftCol));
+  shiftRow = Math.max(ROW_MIN - minRow, Math.min(ROW_MAX - maxRow, shiftRow));
+  if(shiftCol===0 && shiftRow===0) return;
+  tiles.forEach(t=>{ t.col += shiftCol; t.row += shiftRow; });
+  render();
+  E.showToast(toastEl, 'Centered on the origin star.');
+});
 
 /* =========================================================
    NEW / CLEAR
@@ -544,7 +706,7 @@ const confirmOverlay = document.getElementById('confirm-overlay');
 document.getElementById('btn-new').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
 document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
 document.getElementById('confirm-yes').addEventListener('click', ()=>{
-  tiles = []; selectedId = null; confirmOverlay.classList.remove('show'); render();
+  tiles = []; selectedIds.clear(); confirmOverlay.classList.remove('show'); render();
 });
 
 /* =========================================================
@@ -667,7 +829,7 @@ document.getElementById('file-load').addEventListener('change', (e)=>{
       const centerCol = Math.round((minCol+maxCol)/2);
       const centerRow = Math.round((minRow+maxRow)/2);
       tiles = data.coords.map(c => ({ id: nextId++, layer:c[0], col:c[1]-centerCol, row:c[2]-centerRow }));
-      selectedId = null;
+      selectedIds.clear();
       if(data.name) document.getElementById('export-name').value = data.name;
       if(data.desc) document.getElementById('export-desc').value = data.desc;
       render();
