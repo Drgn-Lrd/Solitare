@@ -2,25 +2,23 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.3
+    Version 2.4
 
-   Irish Castle's bridge had the wrong axis of offset, not just the
-   wrong direction — the middle tier was shifted sideways (different
-   columns than the bottom/top tiers) when it should stay on the SAME
-   two columns as bottom/top throughout, and instead split vertically
-   into two rows straddling the bridge's own row by half a tile. That
-   also resolves the collision from last pass without needing to
-   relocate anything: since the middle tier never leaves the bridge's
-   own two columns, it never reaches into the towers' edge column at
-   all, so the tower's height-3 "final rows" boost could move back to
-   its original row (the actual 3rd-from-bottom row, matching the
-   person's own count) with zero collisions. Verified: 144 tiles, zero
-   same-layer overlaps anywhere on the board, solvable over 300
-   generated deals.
+   Help modal's Flower/Season swatches weren't actually matching the
+   text-size slider's max effect — they were a bigger box with the
+   art fitted neatly inside via object-fit:contain, which is NOT what
+   the real slider does. The live slider scales the image itself
+   (transform:scale) so it overflows past the tile's own edges — that
+   overflow is what makes max setting look dramatically bigger, not
+   just "the box is bigger." Swatches now use that same transform-
+   scale-and-overflow trick, pinned to 1.5x (the slider's max),
+   instead of a fitted-content bigger box.
 
-   How To Play's Flowers/Seasons rule now shows the actual tile art
-   (all 4 Flower faces, then all 4 Season faces) instead of describing
-   them in words only.
+   Filed away for next time (not yet acted on, per instruction to
+   wait for testing first): tile art stays in tiles/, but going
+   forward NEW layout JSON files should live in tiles/layout/ instead
+   of loose in tiles/ — a distinct subfolder for board data vs. tile
+   images.
 -->
 <!--
   Mahjong-specific rules:
@@ -154,18 +152,24 @@
   .helpbody{ font-size:13px; line-height:1.7; color:#dce9df; }
   .helpbody b{ color:var(--brass-light); }
   .helpbody ul{ margin:6px 0 14px; padding-left:20px; }
-  .help-tile-row{ display:flex; gap:8px; margin:8px 0; flex-wrap:wrap; }
-  /* Sized at the text-size slider's max (1.5x) always, regardless of
-     the person's current slider setting elsewhere on the page — the
-     point here is to show the art clearly, not to reflect a live
-     preference. */
+  .help-tile-row{ display:flex; gap:14px; margin:10px 4px; flex-wrap:wrap; }
+  /* Uses the exact same mechanism as the live page's text-size slider
+     (.mtile-body img's transform:scale(var(--tile-glyph-scale))),
+     pinned to that slider's max (1.5x) — a fixed-size box that lets
+     the artwork overflow past its own edges, not just a bigger box
+     with the art fitted neatly inside. That overflow is what actually
+     makes the slider's max setting look "significantly larger," so
+     the help example needed the same trick to match it. */
   .help-tile-swatch{
-    width:57px; height:75px; border-radius:14%; flex-shrink:0;
-    background: var(--tile-color);
+    width:38px; height:50px; border-radius:14%; flex-shrink:0;
+    background: var(--tile-color); overflow:visible; position:relative;
     box-shadow: 0 2px 0 rgba(0,0,0,.32), 0 4px 6px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.3);
-    padding:7px; box-sizing:border-box;
+    padding:5px; box-sizing:border-box;
   }
-  .help-tile-swatch img{ width:100%; height:100%; object-fit:contain; display:block; }
+  .help-tile-swatch img{
+    width:100%; height:100%; object-fit:contain; display:block;
+    transform: scale(1.5); transform-origin:center;
+  }
   .help-or{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:#9fc9b6; margin:4px 0; }
 
   /* ===== Layouts gallery ===== */
@@ -399,7 +403,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.3';
+const PAGE_VERSION = '2.4';
 
 /* =========================================================
    BOARD LAYOUTS
