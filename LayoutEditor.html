@@ -2,17 +2,16 @@
 <!--
     LayoutEditor.html
     Written by: Johnathon Largent
-    Version 1.11
+    Version 1.12
 
-   Export's valid range widened from "must be exactly 144" to 32-144
-   (even) — real mahjong sets legitimately come in sizes smaller than
-   the full 144, this was never actually a hard requirement, just an
-   assumption baked into the earlier messaging. Both the export-time
-   hard block and the counter/modal messaging now reflect the real
-   range instead of treating anything under 144 as a lesser/unsupported
-   case. Matches the corresponding change on the Mahjong.html side,
-   which now generates a correctly-scaled, still-guaranteed-pairable
-   deck for any size in that range, not just 144.
+   Proactive fix, not a reported bug here yet: .grid-wrap used the
+   same justify-content/align-items:center pattern that turned out to
+   be a real scroll-trap bug on Mahjong.html's board (center on a
+   scrollable flex container doesn't reserve matching scroll room on
+   the "before" side, so that edge becomes unreachable once content
+   outgrows the container — same wall would've hit here the first time
+   this grid ever exceeded someone's viewport). Fixed with "safe
+   center" before it became its own bug report.
 -->
 <html lang="en">
 <head>
@@ -50,7 +49,7 @@
   .editor-main{ flex:1; display:flex; overflow:hidden; }
   .grid-wrap{
     flex:1; overflow:auto; background:#0d1a12; position:relative;
-    display:flex; justify-content:center; align-items:center;
+    display:flex; justify-content:safe center; align-items:safe center;
   }
   #grid-canvas{
     position:relative; flex-shrink:0;
@@ -341,7 +340,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '1.11';
+const PAGE_VERSION = '1.12';
 
 /* =========================================================
    GRID GEOMETRY
