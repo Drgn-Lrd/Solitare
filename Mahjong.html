@@ -2,29 +2,22 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.10
+    Version 2.11
 
-   Mobile zoom placement was a real guess last pass and it showed —
-   turns out the floating desktop-style control was still rendering
-   over the board on mobile, not "under the header" like intended.
-   Fixed properly this time, working from an actual screenshot: the
-   header wraps to 2 rows on narrow screens (brand-actions under the
-   title, hud's overflow under Change Layout), leaving an empty gap in
-   that second row between "New Game" and the wrapped hud icon — that
-   gap is exactly where the mobile buttons sit now (new
-   .zoom-buttons-mobile, absolutely positioned against <header>).
-   Mobile also drops the slider entirely per request, just the two
-   buttons — a slider is harder to hit precisely on a touchscreen than
-   two taps anyway. The desktop floating slider+buttons stay exactly
-   as they were, just hidden on narrow screens now instead of
-   attempting to reposition in place.
-
-   Desktop still had more room to give: trimmed .stage/.table-frame/
-   .table-felt padding further, and shrunk the bottom bar specifically
-   on desktop (min-width:561px) — smaller buttons/padding recover real
-   vertical space on a row that's just 3 icons + 2 chips once you're
-   not on a touchscreen needing bigger tap targets. Mobile's bottom
-   bar sizing is untouched.
+   The hardcoded top:112px guess from last pass was wrong on the
+   actual device — the mobile buttons ended up overflowing below the
+   header entirely, floating over the top of the board instead of
+   sitting in the header's row-2 gap. Two guesses at a fixed px value
+   in a row that didn't hold up is a sign the number itself was never
+   going to be reliable — header height/wrapping genuinely varies by
+   device (font rendering, viewport width, etc.), so this is fixed
+   properly now instead of re-guessed: positionMobileZoomButtons()
+   measures .brand-actions's (Home/New Game) actual getBoundingClientRect()
+   at runtime and vertically centers the zoom buttons on wherever that
+   real position turns out to be, re-measuring on resize/orientation
+   change since the gap shifts with viewport width. Called once at
+   init, once more after a 300ms delay in case fonts hadn't finished
+   settling yet, and on every resize/orientationchange after that.
 -->
 <!--
   Mahjong-specific rules:
@@ -144,17 +137,21 @@
   /* Mobile: the header wraps to 2 rows (brand-actions under the
      title, hud's overflow under Change Layout), which leaves an
      empty gap in that second row between "New Game" and the wrapped
-     hud icon — that's exactly where these sit. Absolutely positioned
-     against <header> (given position:relative below) rather than
-     floating over the board like the desktop version, and it's just
-     the two buttons, no slider — a slider is harder to use precisely
-     on a touchscreen than two taps. */
+     hud icon — that's exactly where these sit. A fixed px guess for
+     "top" was wrong twice in a row here (header height/wrapping
+     varies enough by device that a hardcoded number doesn't hold up),
+     so position is now set by JS measuring .brand-actions's actual
+     rendered center and matching it — see positionMobileZoomButtons()
+     — rather than assumed. Absolutely positioned against <header>
+     (given position:relative below), and it's just the two buttons,
+     no slider — a slider is harder to use precisely on a touchscreen
+     than two taps. */
   header{ position:relative; }
   .zoom-buttons-mobile{ display:none; }
   @media (max-width:560px){
     .zoom-control{ display:none; }
     .zoom-buttons-mobile{
-      display:flex; gap:8px; position:absolute; left:50%; top:112px; transform:translateX(-50%);
+      display:flex; gap:8px; position:absolute; left:50%;
       z-index:20;
     }
     .zoom-buttons-mobile .zoom-btn{
@@ -492,7 +489,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.10';
+const PAGE_VERSION = '2.11';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -1181,6 +1178,27 @@ document.getElementById('zoom-out').addEventListener('click', ()=> applyZoom(Num
 document.getElementById('zoom-in-mobile').addEventListener('click', ()=> applyZoom(zoomMultiplier*100+10));
 document.getElementById('zoom-out-mobile').addEventListener('click', ()=> applyZoom(zoomMultiplier*100-10));
 
+// Mobile zoom buttons land wherever .brand-actions (Home/New Game)
+// actually rendered, vertically centered on it -- a measured position
+// instead of a guessed px offset, since header height/wrapping varies
+// enough across real devices that a hardcoded number kept landing
+// wrong. Re-measures on resize/orientation change since that gap's
+// position shifts with viewport width.
+function positionMobileZoomButtons(){
+  const btns = document.getElementById('zoom-buttons-mobile');
+  const actions = document.querySelector('.brand-actions');
+  const header = document.querySelector('header');
+  if(!btns || !actions || !header) return;
+  if(window.innerWidth > 560){ btns.style.top = ''; btns.style.transform = ''; return; }
+  const actionsRect = actions.getBoundingClientRect();
+  const headerRect = header.getBoundingClientRect();
+  const centerY = actionsRect.top + actionsRect.height/2 - headerRect.top;
+  btns.style.top = centerY + 'px';
+  btns.style.transform = 'translate(-50%, -50%)';
+}
+window.addEventListener('resize', positionMobileZoomButtons);
+window.addEventListener('orientationchange', positionMobileZoomButtons);
+
 /* =========================================================
    CUSTOM LAYOUTS (tiles/layout/)
    LayoutEditor.html exports plain .json files, but this was the
@@ -1232,6 +1250,8 @@ async function loadCustomLayouts(){
 applyTileColors();
 newGame();
 loadCustomLayouts();
+positionMobileZoomButtons();
+setTimeout(positionMobileZoomButtons, 300);
 
 })();
 </script>
