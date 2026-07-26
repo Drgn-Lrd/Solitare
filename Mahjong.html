@@ -2,25 +2,29 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.9
+    Version 2.10
 
-   Trimmed .stage/.table-frame/.table-felt padding locally (shared
-   styles.css's clamp() values are tuned generously for games with
-   less board area) — recovers a few px that were tipping some
-   layouts into a small, unnecessary scrollbar within the felt.
+   Mobile zoom placement was a real guess last pass and it showed —
+   turns out the floating desktop-style control was still rendering
+   over the board on mobile, not "under the header" like intended.
+   Fixed properly this time, working from an actual screenshot: the
+   header wraps to 2 rows on narrow screens (brand-actions under the
+   title, hud's overflow under Change Layout), leaving an empty gap in
+   that second row between "New Game" and the wrapped hud icon — that
+   gap is exactly where the mobile buttons sit now (new
+   .zoom-buttons-mobile, absolutely positioned against <header>).
+   Mobile also drops the slider entirely per request, just the two
+   buttons — a slider is harder to hit precisely on a touchscreen than
+   two taps anyway. The desktop floating slider+buttons stay exactly
+   as they were, just hidden on narrow screens now instead of
+   attempting to reposition in place.
 
-   Added a board zoom control: a vertical slider (100-250%, same
-   ~130px footprint the old horizontal text-size slider had, just
-   rotated) with +/- buttons, floating on the right edge so it takes
-   no layout space of its own. Scales tileW/tileH as a multiplier ON
-   TOP of fitBoard()'s own auto-fit output rather than replacing it —
-   default 100% is exactly today's unchanged auto-fit behavior ("most
-   zoomed out"), and the slider only ever scales further IN from
-   there. Scrolling stays scoped to .table-felt itself either way,
-   unaffected by this — zooming in just makes using that scroll more
-   likely, not different in kind. Repositioned via media query on
-   narrow screens to sit under the header instead of floating mid-
-   board.
+   Desktop still had more room to give: trimmed .stage/.table-frame/
+   .table-felt padding further, and shrunk the bottom bar specifically
+   on desktop (min-width:561px) — smaller buttons/padding recover real
+   vertical space on a row that's just 3 icons + 2 chips once you're
+   not on a touchscreen needing bigger tap targets. Mobile's bottom
+   bar sizing is untouched.
 -->
 <!--
   Mahjong-specific rules:
@@ -89,9 +93,22 @@
      trimmed down here specifically, since Mahjong boards can span
      close to the full viewport height and a few extra px of padding
      was tipping some layouts into an unnecessary ~5px scrollbar. */
-  .stage{ padding: clamp(4px,1vw,10px) clamp(6px,1.6vw,14px) clamp(4px,1vw,8px); }
-  .table-frame{ padding: clamp(6px,1vw,10px); }
-  .table-felt{ padding: clamp(6px,1.2vw,14px) clamp(6px,1.4vw,12px) 8px; }
+  .stage{ padding: 3px clamp(6px,1.6vw,14px) 3px; }
+  .table-frame{ padding: clamp(4px,0.8vw,8px); }
+  .table-felt{ padding: clamp(4px,1vw,10px) clamp(6px,1.4vw,12px) 6px; }
+
+  /* Desktop-only: the bottom bar's default sizing (from shared
+     styles.css) is generous for a row that, on wide screens, is just
+     3 icon buttons plus 2 chips — shrinking it recovers real vertical
+     room for the felt. Left alone on mobile (max-width:560px),
+     where the bottom bar is the primary touch target row and the
+     original sizing matters more than it does here. */
+  @media (min-width:561px){
+    .bottombar{ padding: 4px clamp(10px,2vw,20px) 4px; }
+    .bottombtn{ padding:5px 14px; min-width:60px; }
+    .bottombtn .bicon{ font-size:16px; }
+    .bottombtn .blabel{ font-size:9px; }
+  }
 
   /* Board zoom — a vertical version of the old horizontal text-size
      slider (same ~130px footprint, just rotated), floating on the
@@ -99,7 +116,9 @@
      Scrolling stays scoped to .table-felt itself either way; this
      just lets someone trade "whole board visible, smaller tiles" for
      "bigger tiles, more scrolling" on purpose instead of only ever
-     getting whichever fitBoard() picks automatically. */
+     getting whichever fitBoard() picks automatically. Desktop-only —
+     mobile gets its own separate button pair, no slider, positioned
+     in the header instead (see .zoom-buttons-mobile below). */
   .zoom-control{
     position: fixed; right: 14px; top: 50%; transform: translateY(-50%);
     display:flex; flex-direction:column; align-items:center; gap:8px;
@@ -121,10 +140,35 @@
     writing-mode: vertical-lr; direction: rtl;
     width:8px; height:130px; accent-color: var(--brass); cursor:pointer;
   }
+
+  /* Mobile: the header wraps to 2 rows (brand-actions under the
+     title, hud's overflow under Change Layout), which leaves an
+     empty gap in that second row between "New Game" and the wrapped
+     hud icon — that's exactly where these sit. Absolutely positioned
+     against <header> (given position:relative below) rather than
+     floating over the board like the desktop version, and it's just
+     the two buttons, no slider — a slider is harder to use precisely
+     on a touchscreen than two taps. */
+  header{ position:relative; }
+  .zoom-buttons-mobile{ display:none; }
   @media (max-width:560px){
-    /* Under the header's hud row (where Change Layout ends up on
-       narrow screens) instead of floating mid-screen over the board. */
-    .zoom-control{ top:96px; transform:none; right:8px; }
+    .zoom-control{ display:none; }
+    .zoom-buttons-mobile{
+      display:flex; gap:8px; position:absolute; left:50%; top:112px; transform:translateX(-50%);
+      z-index:20;
+    }
+    .zoom-buttons-mobile .zoom-btn{
+      width:34px; height:34px; border-radius:10px; flex-shrink:0;
+      background: var(--panel); border:1px solid var(--panel-line); color: var(--brass-light);
+      font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+      position:relative;
+    }
+    .zoom-buttons-mobile .zoom-btn .zoom-sign{
+      position:absolute; right:-2px; bottom:-2px; font-size:11px; font-weight:700;
+      background:#0a2a1f; border-radius:50%; width:14px; height:14px; line-height:14px; text-align:center;
+      color: var(--brass-light);
+    }
+    .zoom-buttons-mobile .zoom-btn:active{ transform: scale(.92); }
   }
 
   /* ===== Board ===== */
@@ -262,6 +306,10 @@
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
       </div>
     </div>
+  </div>
+  <div class="zoom-buttons-mobile" id="zoom-buttons-mobile">
+    <button class="zoom-btn" id="zoom-in-mobile" title="Zoom in" aria-label="Zoom in">🔍<span class="zoom-sign">+</span></button>
+    <button class="zoom-btn" id="zoom-out-mobile" title="Zoom out" aria-label="Zoom out">🔍<span class="zoom-sign">−</span></button>
   </div>
   <div class="hud">
     <button class="textbtn" id="btn-layouts">Change Layout</button>
@@ -444,7 +492,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.9';
+const PAGE_VERSION = '2.10';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -1130,6 +1178,8 @@ function applyZoom(pct){
 zoomSlider.addEventListener('input', (e)=> applyZoom(Number(e.target.value)));
 document.getElementById('zoom-in').addEventListener('click', ()=> applyZoom(Number(zoomSlider.value)+10));
 document.getElementById('zoom-out').addEventListener('click', ()=> applyZoom(Number(zoomSlider.value)-10));
+document.getElementById('zoom-in-mobile').addEventListener('click', ()=> applyZoom(zoomMultiplier*100+10));
+document.getElementById('zoom-out-mobile').addEventListener('click', ()=> applyZoom(zoomMultiplier*100-10));
 
 /* =========================================================
    CUSTOM LAYOUTS (tiles/layout/)
