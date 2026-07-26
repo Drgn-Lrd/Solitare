@@ -1,0 +1,6 @@
+{
+  "_readme": "List your layout filenames in the files array below, one per entry, in double quotes, comma-separated between entries. Quotes matter -- unquoted or single-quoted entries break the whole file. This _readme field itself is ignored by the loader, same as any other key besides 'files' -- safe to leave in, edit, or delete.",
+  "files": [
+    "snowflake.json"
+  ]
+}
