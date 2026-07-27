@@ -2,16 +2,20 @@
 <!--
     LayoutEditor.html
     Written by: Johnathon Largent
-    Version 1.12
+    Version 1.14
 
-   Proactive fix, not a reported bug here yet: .grid-wrap used the
-   same justify-content/align-items:center pattern that turned out to
-   be a real scroll-trap bug on Mahjong.html's board (center on a
-   scrollable flex container doesn't reserve matching scroll room on
-   the "before" side, so that edge becomes unreachable once content
-   outgrows the container — same wall would've hit here the first time
-   this grid ever exceeded someone's viewport). Fixed with "safe
-   center" before it became its own bug report.
+   Preview switched from an embedded iframe to window.open() — the
+   iframe-in-a-modal approach caused exactly the sizing problem it was
+   trying to avoid, squeezing the whole site (header/toolbar/board/
+   bottombar) into a ~900px box instead of letting it render at its
+   natural full size. Now opens Mahjong.html as its own real window
+   (named, so repeat Preview clicks refocus and resend to the same
+   window instead of spawning duplicates), and waits for that window's
+   own 'mahjong-preview-ready' postMessage (new, see Mahjong.html's
+   changelog) before sending the layout, rather than guessing how long
+   a fresh page load takes. Falls back to a toast if the popup gets
+   blocked. Same 32-144/even validation as Export either way, since an
+   invalid tile count can't be previewed any more than exported.
 -->
 <html lang="en">
 <head>
@@ -181,6 +185,7 @@
     <button class="textbtn" id="btn-load">Load…</button>
     <input type="file" id="file-load" accept="application/json,.json" style="display:none">
     <button class="textbtn" id="btn-test">Test Solvability</button>
+    <button class="textbtn" id="btn-preview">Preview…</button>
     <button class="textbtn primary" id="btn-export">Export…</button>
   </div>
 </div>
@@ -292,6 +297,11 @@
         <li><b>Test Solvability</b> checks whether the current tiles
         (any layer) can be fully cleared in some order, using the same
         free-tile rule Mahjong.html plays by.</li>
+        <li><b>Preview</b> opens the current grid in its own real
+        Mahjong.html window (full size, not squeezed into a modal;
+        nothing saved) — actual tile art and board rendering, not an
+        approximation. Reuses the same window on repeat clicks. Same
+        32-144/even requirement as Export.</li>
         <li><b>Export</b> is blocked unless the tile count is even and
         between 32 and 144 — real mahjong sets come in that range,
         both smaller and full-size; anything else can't be dealt into
@@ -340,7 +350,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '1.12';
+const PAGE_VERSION = '1.14';
 
 /* =========================================================
    GRID GEOMETRY
@@ -932,6 +942,59 @@ document.getElementById('btn-test').addEventListener('click', ()=>{
   for(let i=0;i<25;i++){ if(attemptClear()){ solved = true; break; } }
   if(solved) showMsg('ok', '✓ Found a valid clearing order — this geometry is solvable.');
   else showMsg('bad', '✗ Couldn\'t find a valid clearing order in 25 tries. May not be solvable as-is, or may need a wider spread of free tiles.');
+});
+
+/* =========================================================
+   PREVIEW
+   Embeds Mahjong.html itself in an iframe and hands it the current
+   (possibly unsaved) grid via postMessage once it's loaded — the
+   preview is rendered by the real game's own code, not a second copy
+   of the rendering logic living here that could drift out of sync.
+   ========================================================= */
+// Opens Mahjong.html as its own real window/tab instead of squeezing
+// the whole site into a small embedded iframe -- that cramped-modal
+// approach caused real sizing problems (the header/toolbar/board/
+// bottombar all fighting for space in a ~900px box instead of a full
+// viewport). A named window target means repeated Preview clicks
+// reuse the same window (refocusing + resending updated data) rather
+// than spawning duplicates. Mahjong.html signals back once it's
+// actually ready to receive (see its own 'mahjong-preview-ready'
+// postMessage on load) instead of guessing how long a fresh load
+// takes before sending the layout.
+let previewWin = null;
+window.addEventListener('message', (e)=>{
+  if(e.origin !== window.location.origin) return;
+  if(!e.data || e.data.type !== 'mahjong-preview-ready') return;
+  if(!previewWin || e.source !== previewWin) return;
+  sendPreviewLayout();
+});
+function sendPreviewLayout(){
+  if(!previewWin || previewWin.closed) return;
+  const minCol = Math.min(...tiles.map(t=>t.col));
+  const minRow = Math.min(...tiles.map(t=>t.row));
+  const coords = tiles.map(t=> [t.layer, t.col-minCol, t.row-minRow]);
+  const name = document.getElementById('export-name').value.trim() || 'Preview';
+  const desc = document.getElementById('export-desc').value.trim() || '';
+  previewWin.postMessage({ type:'mahjong-preview-layout', coords, name, desc }, window.location.origin);
+}
+document.getElementById('btn-preview').addEventListener('click', ()=>{
+  const n = tiles.length;
+  if(n === 0){ E.showToast(toastEl, 'Nothing on the grid to preview yet.'); return; }
+  if(n % 2 !== 0 || n < 32 || n > 144){
+    E.showToast(toastEl, 'Preview needs an even tile count between 32 and 144 — same range Mahjong.html requires to deal a valid game.');
+    return;
+  }
+  if(previewWin && !previewWin.closed){
+    previewWin.focus();
+    sendPreviewLayout(); // already loaded and ready -- just resend the current grid
+    return;
+  }
+  previewWin = window.open('Mahjong.html?preview=1&_=' + Date.now(), 'mahjong-preview');
+  if(!previewWin){
+    E.showToast(toastEl, 'Preview window was blocked — allow popups for this site and try again.');
+  }
+  // If this is a fresh window, its own load handler sends 'mahjong-preview-ready'
+  // and the listener above sends the layout at that point, not here.
 });
 
 /* =========================================================
