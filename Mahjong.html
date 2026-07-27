@@ -2,29 +2,18 @@
 <!--
     Mahjong.html
     Written by: Johnathon Largent
-    Version 2.12
+    Version 2.14
 
-   Two real bugs found from the follow-up screenshot:
-     - Horizontal positioning was never actually implemented — last
-       pass only measured/set `top`, and left the CSS's static
-       left:50% in place, which centers on the HEADER's total width
-       (skewed way right of the actual row-2 gap by the wide
-       crest+title block on the left). Now measures BOTH edges of the
-       real gap — .brand-actions' right edge and the Settings button's
-       left edge — and centers between those specifically.
-     - "Can't scroll to see the left side while zoomed in" was a real
-       CSS bug, not a fluke: justify-content/align-items:center on a
-       scrollable flex container is a known trap — centering doesn't
-       reserve matching scroll room on the "before" side once content
-       outgrows the container, so that edge becomes permanently
-       unreachable no matter how far you scroll. Fixed with "safe
-       center" (CSS Box Alignment) on .table-felt, which centers
-       normally while content fits and falls back to reachable start-
-       alignment the moment it doesn't. Same latent bug existed in
-       LayoutEditor.html's own grid-wrap (identical pattern, would've
-       hit the same wall once that grid ever exceeded the viewport) —
-       fixed there too proactively rather than waiting for the same
-       report twice.
+   LayoutEditor.html's Preview switched from an embedded iframe to
+   window.open() (the iframe squeezed this whole site into a small
+   modal box, causing real sizing problems — see LayoutEditor.html's
+   changelog). The postMessage listener itself didn't need to change
+   for that — it already worked the same regardless of iframe vs.
+   popup — but added the other half of the handshake: if opened via
+   window.open() by another same-origin page, this now sends
+   'mahjong-preview-ready' back to window.opener once actually ready
+   to receive, so the editor doesn't have to guess how long a fresh
+   page load takes before it's safe to postMessage the layout.
 -->
 <!--
   Mahjong-specific rules:
@@ -87,6 +76,13 @@
     background-attachment: fixed;
   }
   .brand .crest{ font-size:30px; }
+
+  body.preview-mode::before{
+    content: "PREVIEW"; position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+    background: var(--brass); color:#241c08; font-weight:700; font-size:11px;
+    letter-spacing:2px; padding:3px 14px; border-radius:0 0 8px 8px; z-index:10000;
+    pointer-events:none;
+  }
 
   /* Shared styles.css's .stage/.table-frame/.table-felt padding is
      tuned generously for games with fewer/smaller board elements —
@@ -505,7 +501,7 @@
 (function(){
 "use strict";
 const E = SEngine;
-const PAGE_VERSION = '2.12';
+const PAGE_VERSION = '2.14';
 
 /* =========================================================
    BOARD LAYOUTS
@@ -1268,6 +1264,44 @@ async function loadCustomLayouts(){
   } catch(manifestErr){
     // no tiles/layout/index.json yet -- nothing to do
   }
+}
+
+/* =========================================================
+   PREVIEW MODE (postMessage from LayoutEditor.html)
+   There's no browser equivalent of dot-sourcing another script file
+   for two standalone HTML pages — but opening this page as its own
+   window (window.open, not squeezed into an embedded iframe — that
+   caused real sizing problems fitting the whole site into a small
+   modal box) and passing it data via postMessage is the real browser-
+   native version of that: the OTHER page's actual code does the
+   rendering (real tile art, real free-tile logic, real solvable-deck
+   generation), not a separate reimplementation in the editor that
+   could quietly drift out of sync with this file over time. Only
+   accepts messages from the same origin, and only a well-formed
+   coords array in the 32-144/even range this file already requires
+   everywhere else.
+   ========================================================= */
+window.addEventListener('message', (e)=>{
+  if(e.origin !== window.location.origin) return;
+  if(!e.data || e.data.type !== 'mahjong-preview-layout') return;
+  const coords = e.data.coords;
+  if(!Array.isArray(coords) || coords.length===0) return;
+  if(coords.length % 2 !== 0 || coords.length < 32 || coords.length > 144) return;
+  const key = '__preview__';
+  LAYOUTS[key] = { name: e.data.name || 'Preview', desc: e.data.desc || 'Previewing an unsaved layout from the editor.', coords };
+  if(!LAYOUTS_ORDER.includes(key)) LAYOUTS_ORDER.push(key);
+  layoutCardsBuilt = false;
+  state.currentLayoutKey = key;
+  newGame();
+  document.body.classList.add('preview-mode');
+});
+// If opened via window.open() by another same-origin page (rather
+// than navigated to directly), tell that opener we're actually ready
+// to receive a layout -- avoids the opener having to guess how long a
+// fresh page load takes before it's safe to postMessage.
+if(window.opener){
+  try { window.opener.postMessage({ type:'mahjong-preview-ready' }, window.location.origin); }
+  catch(e){ /* cross-origin opener or similar -- nothing to do */ }
 }
 
 /* =========================================================
