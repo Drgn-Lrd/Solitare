@@ -2,16 +2,15 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.1
+    Version 1.2
 
-   Extended the palette from 6 to 8 elements — added Steel (silver/
-   grey, gear glyph) and Magma (orange, volcano glyph) — and replaced
-   the Settings 4/5/6 segmented picker with a proper 3-8 slider so
-   every step in between is reachable, including a "Master" 8-element
-   difficulty. Since floodMatch/findFloating/pickNextColor/the legend
-   list all just read from the COLORS array and state.numColors rather
-   than hardcoding a count, the two new elements needed nothing beyond
-   their own array entry + CSS gradient to work everywhere in the game.
+   Replaced the header crest's plain bubble emoji with a proper badge:
+   a plus-sign cross divides the existing brass circle into 4
+   quadrants, one representative elemental glyph in each (fire/water/
+   leaf/lightning) — a "four elements" mark instead of a single icon.
+   The circle itself is still the shared .crest gradient from
+   styles.css; only the cross divider + glyph positions are added
+   here, same layering approach as Klondike's own crest override.
 -->
 <html lang="en">
 <head>
@@ -26,7 +25,31 @@
      shared styles.css; only the board itself is defined here, the
      same way Klondike's own <style> block only overrides its crest.
      ========================================================= */
-  .brand .crest{ font-size:32px; }
+  /* Crest: an orb split by a plus-sign cross into 4 quadrants, one
+     representative elemental glyph per quadrant, instead of a single
+     centered emoji — a small "four elements" badge rather than just
+     a bubble icon. The brass gradient circle itself still comes from
+     the shared .crest rule in styles.css; this only adds the cross
+     divider + positions the four glyphs inside it, the same way
+     Klondike's own override layers art on top of that same circle. */
+  .brand .crest{ position:relative; overflow:hidden; }
+  .crest-cross::before, .crest-cross::after{
+    content:""; position:absolute; background: rgba(58,42,8,0.55);
+    box-shadow: 0 0 2px rgba(255,255,255,0.45);
+    border-radius: 2px;
+  }
+  .crest-cross::before{ left:50%; top:9%; bottom:9%; width:2.5px; transform:translateX(-50%); }
+  .crest-cross::after{ top:50%; left:9%; right:9%; height:2.5px; transform:translateY(-50%); }
+  .crest-glyph{
+    position:absolute; width:20px; height:20px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:15px; line-height:1; transform:translate(-50%,-50%);
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.4));
+  }
+  .crest-glyph.q-tl{ left:24%; top:24%; }
+  .crest-glyph.q-tr{ left:76%; top:24%; }
+  .crest-glyph.q-bl{ left:24%; top:76%; }
+  .crest-glyph.q-br{ left:76%; top:76%; }
 
   #board-wrap{
     flex:1; min-height:0; width:100%;
@@ -131,7 +154,13 @@
 
 <header>
   <div class="brand">
-    <div class="crest" aria-hidden="true">&#129476;</div>
+    <div class="crest" aria-hidden="true">
+      <div class="crest-cross"></div>
+      <span class="crest-glyph q-tl">&#128293;</span>
+      <span class="crest-glyph q-tr">&#128167;</span>
+      <span class="crest-glyph q-bl">&#127811;</span>
+      <span class="crest-glyph q-br">&#9889;</span>
+    </div>
     <div class="brand-text">
       <h1>Bubble Shooter<span class="title-suffix"> - Elemental Match 3</span></h1>
       <div class="brand-actions">
@@ -265,7 +294,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.1';
+const PAGE_VERSION = '1.2';
 
 /* =========================================================
    ELEMENTAL PALETTE
