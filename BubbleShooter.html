@@ -2,27 +2,48 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.4
+    Version 1.6
 
-   Void no longer uses an emoji glyph at all — &#128302; was reading as
-   a crystal ball (or a blacked-out mushroom, depending on the font),
-   which undercuts the whole point of glyphs being unambiguous. It's
-   now a hand-drawn .void-glyph: a CSS radial-gradient core that gets
-   darker toward the center plus a slow rotating conic-gradient ring
-   on top, giving a singularity/accretion-disk look that can't be
-   misread as a different object. bubbleContentHTML(id) is the new
-   single spot every bubble-rendering call site (grid, shooter, next,
-   flying, both legends) goes through, so void's swap-out only needed
-   to happen once. Also swapped the crest badge's bottom-left quadrant
-   from Leaf to Magma per request.
+   Added two Settings helpers: Show Bounce Path draws the aim guide's
+   real reflected route off the side walls instead of a single
+   straight segment, and its sub-setting Show Landing Spot (disabled
+   until Bounce Path is on) rings the exact cell the shot would land
+   in — including the case it exists for, aiming for an opening but
+   the shot actually catching on it instead. Both are powered by a
+   new simulateShot(dir): it steps through the identical wall-bounce/
+   ceiling/first-bubble-collision rules fireShot()'s animation loop
+   uses, just synchronously instead of over frames, so the preview can
+   never promise a shot the real physics wouldn't deliver. Even with
+   Bounce Path off, the simple straight guide now stops at the first
+   real collision too, rather than a fixed-length line pointing past
+   whatever's actually in the way — the same class of bug flagged in
+   the index.html mini preview, fixed here at the source.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Bubble Shooter</title>
+<link rel="preload" as="image" href="images/BubbleShooter.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
+  /* Bubble Shooter-only background: swaps the shared black/vignette
+     body background (see html,body in styles.css) for this preloaded
+     photo, exactly the way FreeCell.html does it for its own — a CSS
+     background-image reference, so it's a pure no-op (falls back to
+     styles.css's default dark vignette) until images/BubbleShooter.webp
+     actually exists, nothing to break in the meantime. The wood frame
+     + green felt (.table-frame/.table-felt) sit on their own elements
+     on top of this, already semi-transparent via styles.css's shared
+     --table-opacity, so the photo shows through them once it's there —
+     no separate opacity override needed here, same as FreeCell. */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/BubbleShooter.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
   /* =========================================================
      BUBBLE SHOOTER — game-specific look. Everything about the overall
      suite chrome (header, buttons, chips, modals) comes from the
@@ -73,13 +94,30 @@
     font-size:9px; letter-spacing:2px; color:rgba(224,72,58,0.75);
   }
 
+  /* One .aim-line div per straight segment of the aim preview — a
+     bent (bounced) preview is just several of these end to end, built
+     fresh each time the aim updates (see renderAimSegment/updateAim).
+     No more single #aim-line id/fade — segments are created and
+     cleared outright, since there's no longer a fixed count of them. */
   .aim-line{
     position:absolute; left:0; top:0; height:3px; width:0;
     transform-origin:0 50%;
     background: repeating-linear-gradient(90deg, rgba(232,200,115,0.85) 0 8px, transparent 8px 16px);
-    pointer-events:none; z-index:15; opacity:0; transition:opacity .15s ease;
+    pointer-events:none; z-index:15;
     border-radius:2px;
   }
+  /* "Show Landing Spot": a dashed ghost ring at the exact cell the
+     current aim would actually land in — including the case the
+     setting exists for, where you're aiming for open space past a
+     gap but the shot gets caught on the opening instead. */
+  .bubble.landing-marker{
+    border: 2px dashed rgba(232,200,115,0.9);
+    background: rgba(232,200,115,0.1);
+    box-shadow: 0 0 8px rgba(232,200,115,0.4);
+    pointer-events:none; z-index:14;
+    animation: landingPulse 1s ease-in-out infinite;
+  }
+  @keyframes landingPulse{ 0%,100%{ transform:scale(1); opacity:.7; } 50%{ transform:scale(1.08); opacity:1; } }
 
   .bubble{
     position:absolute; width:var(--bubble-w,40px); height:var(--bubble-w,40px);
@@ -181,6 +219,8 @@
   #legend-list-settings .legend-row{ margin-bottom:4px; transition: opacity .15s ease; }
   #legend-list-settings .legend-row.locked{ opacity:0.35; }
   #legend-list-settings .legend-row.locked .legend-name{ text-decoration: line-through; }
+  #field-landing{ transition: opacity .15s ease; }
+  #field-landing.sub-disabled{ opacity: 0.4; }
 </style>
 </head>
 <body>
@@ -215,7 +255,8 @@
         <div id="bubble-field">
           <div id="danger-line" class="danger-line"></div>
           <div id="grid-layer"></div>
-          <div id="aim-line" class="aim-line"></div>
+          <div id="aim-path-layer"></div>
+          <div id="landing-marker" class="bubble landing-marker" style="display:none;"></div>
           <div id="next-label" class="next-label">NEXT</div>
           <div id="next-bubble" class="bubble mini" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
           <div id="shooter-bubble" class="bubble shooter" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
@@ -316,6 +357,21 @@
     </div>
 
     <div class="field">
+      <div class="toggrow">
+        <span>Show Bounce Path</span>
+        <label class="switch"><input type="checkbox" id="tog-bounce"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Draws the aim line's real path — including wall bounces — instead of a single straight guide.</div>
+    </div>
+    <div class="field" id="field-landing">
+      <div class="toggrow">
+        <span>Show Landing Spot</span>
+        <label class="switch"><input type="checkbox" id="tog-landing"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Requires Show Bounce Path. Rings the exact cell your shot would land in — useful when you're aiming for an opening but the shot would actually get caught on it instead.</div>
+    </div>
+
+    <div class="field">
       <label>About</label>
       <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
     </div>
@@ -333,7 +389,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.4';
+const PAGE_VERSION = '1.6';
 
 /* =========================================================
    ELEMENTAL PALETTE
@@ -413,10 +469,12 @@ const state = {
   shotsFired: 0,
   showTimer: false,
   showScore: false,
+  showBounce: false,
+  showLanding: false,
   timerHandle: null,
   backStyle: null
 };
-const pendingSettings = { numColors:5, showTimer:false, showScore:false };
+const pendingSettings = { numColors:5, showTimer:false, showScore:false, showBounce:false, showLanding:false };
 
 let busy = false;      // true while a shot is flying or resolving
 let flyReq = null;      // requestAnimationFrame handle for the current shot
@@ -537,9 +595,6 @@ function computeSize(){
   const nextLabel = document.getElementById('next-label');
   nextLabel.style.left = (nextX - bubbleW*0.55)+'px';
   nextLabel.style.top = (shooterPos.y - bubbleW*0.95)+'px';
-
-  document.getElementById('aim-line').style.left = shooterPos.x+'px';
-  document.getElementById('aim-line').style.top = shooterPos.y+'px';
 }
 
 /* =========================================================
@@ -587,8 +642,74 @@ function renderAll(){
 
 /* =========================================================
    AIMING
+   simulateShot() walks the exact same collision rules fireShot()'s
+   animation loop uses (wall bounce, ceiling stop, first-bubble stop)
+   but does it instantly, step by step, instead of over animation
+   frames — so the aim preview can never promise a shot that the real
+   physics wouldn't actually deliver. That was the bug in the old
+   single straight-line preview: it pointed at cells behind other
+   bubbles that a real shot could never reach without hitting whatever
+   was in front of them first.
    ========================================================= */
 const MAX_AIM_ANGLE = 75 * Math.PI/180;
+function simulateShot(dir){
+  const r = bubbleW/2;
+  const step = Math.max(2, bubbleW*0.12);
+  let x = shooterPos.x, y = shooterPos.y;
+  let vx = dir.x, vy = dir.y;
+  const points = [{x,y}];
+  let guard = 0;
+  while(guard++ < 900){
+    x += vx*step; y += vy*step;
+    let bounced = false;
+    if(x-r < 0){ x = r; vx = -vx; bounced = true; }
+    else if(x+r > fieldWpx){ x = fieldWpx-r; vx = -vx; bounced = true; }
+    if(bounced) points.push({x,y});
+
+    let hit = null;
+    outer:
+    for(let rr=0; rr<MAX_ROWS; rr++){
+      for(let cc=0; cc<COLS; cc++){
+        if(!state.grid[rr][cc]) continue;
+        const cp = cellCenter(rr,cc);
+        if(distSq({x,y}, cp) < (bubbleW*0.92)*(bubbleW*0.92)){ hit = {row:rr, col:cc}; break outer; }
+      }
+    }
+
+    if(y-r <= 0 || hit){
+      points.push({x,y});
+      let landing = null;
+      if(hit){
+        const empties = neighborsOf(hit.row, hit.col).filter(n => !state.grid[n.row][n.col]);
+        if(empties.length){
+          empties.sort((a,b)=> distSq(cellCenter(a.row,a.col),{x,y}) - distSq(cellCenter(b.row,b.col),{x,y}));
+          landing = empties[0];
+        } else {
+          landing = findNearestEmptyCell(x,y);
+        }
+      } else {
+        const colGuess = clamp(Math.round((x - bubbleW/2)/bubbleW), 0, COLS-1);
+        landing = !state.grid[0][colGuess] ? {row:0, col:colGuess} : findNearestEmptyCell(x,y);
+      }
+      return { points, landing };
+    }
+  }
+  points.push({x,y});
+  return { points, landing: null };
+}
+function renderAimSegment(container, a, b){
+  const dx = b.x-a.x, dy = b.y-a.y;
+  const len = Math.hypot(dx,dy);
+  if(len < 0.5) return;
+  const angleDeg = Math.atan2(dy,dx) * 180/Math.PI;
+  const seg = document.createElement('div');
+  seg.className = 'aim-line';
+  seg.style.left = a.x+'px';
+  seg.style.top = a.y+'px';
+  seg.style.width = len+'px';
+  seg.style.transform = 'rotate('+angleDeg+'deg)';
+  container.appendChild(seg);
+}
 function updateAim(clientX, clientY){
   if(busy) return;
   const field = document.getElementById('bubble-field');
@@ -600,14 +721,40 @@ function updateAim(clientX, clientY){
   let ang = Math.atan2(vx, -vy); // angle from straight up, + = right
   ang = clamp(ang, -MAX_AIM_ANGLE, MAX_AIM_ANGLE);
   aimDir = { x: Math.sin(ang), y: -Math.cos(ang) };
-  const aimEl = document.getElementById('aim-line');
-  const len = Math.min(fieldHpx*0.85, 320);
-  const angleDeg = Math.atan2(aimDir.y, aimDir.x) * 180/Math.PI;
-  aimEl.style.width = len+'px';
-  aimEl.style.transform = 'rotate('+angleDeg+'deg)';
-  aimEl.style.opacity = '1';
+
+  const sim = simulateShot(aimDir);
+  const layer = document.getElementById('aim-path-layer');
+  layer.innerHTML = '';
+  if(state.showBounce){
+    // Full real path: every bounce segment through to the landing point.
+    for(let i=0; i<sim.points.length-1; i++) renderAimSegment(layer, sim.points[i], sim.points[i+1]);
+  } else {
+    // Simple mode still respects the first collision — just the
+    // initial straight segment, capped to a readable length, rather
+    // than an arbitrary fixed-length line pointing past whatever's
+    // actually in the way.
+    const capLen = Math.min(fieldHpx*0.85, 320);
+    const first = sim.points[0], second = sim.points[1] || first;
+    const dx = second.x-first.x, dy = second.y-first.y;
+    const realLen = Math.hypot(dx,dy);
+    const t = realLen>0 ? Math.min(1, capLen/realLen) : 0;
+    renderAimSegment(layer, first, { x: first.x+dx*t, y: first.y+dy*t });
+  }
+
+  const marker = document.getElementById('landing-marker');
+  if(state.showBounce && state.showLanding && sim.landing){
+    const pos = cellCenter(sim.landing.row, sim.landing.col);
+    marker.style.left = (pos.x - bubbleW/2)+'px';
+    marker.style.top = (pos.y - bubbleW/2)+'px';
+    marker.style.display = 'block';
+  } else {
+    marker.style.display = 'none';
+  }
 }
-function hideAim(){ document.getElementById('aim-line').style.opacity = '0'; }
+function hideAim(){
+  document.getElementById('aim-path-layer').innerHTML = '';
+  document.getElementById('landing-marker').style.display = 'none';
+}
 
 /* =========================================================
    FIRING / PHYSICS
@@ -898,6 +1045,25 @@ document.getElementById('rng-colors').addEventListener('input', (e)=>{
   pendingSettings.numColors = Number(e.target.value);
   refreshColorsPicker();
 });
+function refreshLandingFieldEnabled(){
+  const landingToggle = document.getElementById('tog-landing');
+  landingToggle.disabled = !state.showBounce;
+  document.getElementById('field-landing').classList.toggle('sub-disabled', !state.showBounce);
+}
+document.getElementById('tog-bounce').addEventListener('change', (e)=>{
+  pendingSettings.showBounce = e.target.checked;
+  state.showBounce = e.target.checked;
+  if(!state.showBounce){
+    state.showLanding = false;
+    pendingSettings.showLanding = false;
+    document.getElementById('tog-landing').checked = false;
+  }
+  refreshLandingFieldEnabled();
+});
+document.getElementById('tog-landing').addEventListener('change', (e)=>{
+  pendingSettings.showLanding = e.target.checked;
+  state.showLanding = e.target.checked;
+});
 function refreshVersionInfo(){
   const stylesVersion = E.getStylesheetVersion() || 'unknown';
   document.getElementById('version-info').textContent =
@@ -911,9 +1077,21 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraSnapshot: ()=>({ numColors: pendingSettings.numColors }),
-  extraRestore: (snap)=>{ pendingSettings.numColors = snap.numColors; refreshColorsPicker(); },
-  extraOnOpen: ()=>{ pendingSettings.numColors = state.numColors; refreshColorsPicker(); refreshVersionInfo(); }
+  extraSnapshot: ()=>({ numColors: pendingSettings.numColors, showBounce: pendingSettings.showBounce, showLanding: pendingSettings.showLanding }),
+  extraRestore: (snap)=>{
+    pendingSettings.numColors = snap.numColors; refreshColorsPicker();
+    pendingSettings.showBounce = snap.showBounce; state.showBounce = snap.showBounce;
+    document.getElementById('tog-bounce').checked = snap.showBounce;
+    pendingSettings.showLanding = snap.showLanding; state.showLanding = snap.showLanding;
+    document.getElementById('tog-landing').checked = snap.showLanding;
+    refreshLandingFieldEnabled();
+  },
+  extraOnOpen: ()=>{
+    pendingSettings.numColors = state.numColors; refreshColorsPicker(); refreshVersionInfo();
+    document.getElementById('tog-bounce').checked = state.showBounce;
+    document.getElementById('tog-landing').checked = state.showLanding;
+    refreshLandingFieldEnabled();
+  }
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
