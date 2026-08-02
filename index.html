@@ -2,18 +2,15 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 6.4
+    Version 6.5
 
-   Bubble Shooter's mini board now reshuffles its elements on every
-   reload, same reload-randomization idea as the card art and mahjong
-   tile passes above, just as a third pass at the bottom of the shared
-   script. The two bottom-row bubbles + the shooter carry a new
-   .mc-match class so all three always land on the SAME randomly
-   picked element as each other — the "shoot here for a match" demo
-   stays true no matter which element it lands on; every other bubble
-   in the grid is independent scenery. Also swapped Leaf's glyph to a
-   shamrock (matches BubbleShooter.html's own change) in both the
-   static markup and this new randomizer's element list.
+   Match 3's mini board now reshuffles its tiles on every reload, same
+   idea as the card/mahjong/bubble passes above it — a fourth pass at
+   the bottom of the shared script repaints all 24 .mc-m3-tile squares
+   with a random candy (glyph + color) from the same 6-item Candies set
+   Match3.html itself defaults to, keeping the fixed 6x4 block layout.
+   Two tiles are also randomly promoted to a striped or bomb power-up
+   overlay each load, echoing what a run of 4/5+ creates in-game.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -30,8 +27,9 @@
   instead of cards/) so the two asset sets never cross. Bubble
   Shooter's mini tiles use their own .mc-bubble class for the same
   reason — round, glyphed, colored per-element, nothing to randomize.
-  Match 3's mini preview uses its own .mc-m3-* class — plain colored
-  squares, nothing to randomize either.
+  Match 3's mini tiles use their own .mc-m3-tile class similarly —
+  square, glyphed, colored per-candy, reshuffled fresh each reload the
+  same as the other three passes.
 
   Every tile except Klondike gets a real photo background from /images
   (GameName.webp) — a dark gradient scrim sits between the photo and
@@ -355,7 +353,24 @@
     display:grid; grid-template-columns: repeat(6, 15px); grid-template-rows: repeat(4, 15px);
     gap:3px; justify-content:center; margin:0 auto;
   }
-  .mc-m3-tile{ width:15px; height:15px; border-radius:4px; box-shadow: 0 1px 2px rgba(0,0,0,.45); }
+  .mc-m3-tile{
+    width:15px; height:15px; border-radius:4px; box-shadow: 0 1px 2px rgba(0,0,0,.45);
+    display:flex; align-items:center; justify-content:center; position:relative;
+    font-size:9px; line-height:1; color: var(--ivory);
+  }
+  .mc-m3-tile.dark{ color:#241708; }
+  /* Mini versions of Match3.html's own special-tile overlays — a
+     stripe sliver for a striped candy, an outer glow ring for a bomb —
+     same idea as the real game's .m3-special-striped-*/.m3-special-bomb,
+     just simplified (no row/column orientation distinction) since
+     there's no room to read that at 15px. */
+  .mc-m3-tile.m3-special-striped::after{
+    content:""; position:absolute; left:15%; right:15%; top:40%; height:20%;
+    background:rgba(255,255,255,.85); border-radius:2px; pointer-events:none;
+  }
+  .mc-m3-tile.m3-special-bomb{
+    box-shadow: 0 0 0 2px rgba(255,255,255,.7), 0 0 4px rgba(255,255,255,.8), 0 1px 2px rgba(0,0,0,.45);
+  }
 </style>
 </head>
 <body>
@@ -621,34 +636,34 @@
           <div class="tile-bg-art art-match3"></div>
           <div class="tile-head"><h2>Match 3</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
-            <div class="mc-m3-grid">
-              <div class="mc-m3-tile" style="background:#d1447e;"></div>
-              <div class="mc-m3-tile" style="background:#c62828;"></div>
-              <div class="mc-m3-tile" style="background:#6b4226;"></div>
-              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
-              <div class="mc-m3-tile" style="background:#a565c9;"></div>
-              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
+            <div class="mc-m3-grid" id="m3-mini-board">
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
 
-              <div class="mc-m3-tile" style="background:#c62828;"></div>
-              <div class="mc-m3-tile" style="background:#6b4226;"></div>
-              <div class="mc-m3-tile" style="background:#6b4226;"></div>
-              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
-              <div class="mc-m3-tile" style="background:#d1447e;"></div>
-              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
 
-              <div class="mc-m3-tile" style="background:#a565c9;"></div>
-              <div class="mc-m3-tile" style="background:#6b4226;"></div>
-              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
-              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
-              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
-              <div class="mc-m3-tile" style="background:#c62828;"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
 
-              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
-              <div class="mc-m3-tile" style="background:#d1447e;"></div>
-              <div class="mc-m3-tile" style="background:#a565c9;"></div>
-              <div class="mc-m3-tile" style="background:#c62828;"></div>
-              <div class="mc-m3-tile" style="background:#6b4226;"></div>
-              <div class="mc-m3-tile" style="background:#a565c9;"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
             </div>
           </div>
         </div>
@@ -833,6 +848,47 @@
   // duplicates and all, exactly like a real board's own randomness.
   board.querySelectorAll('.mc-bubble[data-color]:not(.mc-match)').forEach(el=>{
     paint(el, randomElement());
+  });
+})();
+
+// Fourth pass, same reload-randomization idea again, for Match 3:
+// every reload gets a fresh mix of candies in the SAME 6x4 block grid
+// — same Candies palette Match3.html itself defaults to (Settings >
+// Tile Theme), so the preview always matches what a new player
+// actually sees first. A couple of tiles (POWERUP_COUNT) are randomly
+// promoted to a striped or bomb power-up, same as a real run of 4/5+
+// would create in-game — purely decorative here, no matching logic,
+// just enough to hint that specials exist.
+(function(){
+  const board = document.getElementById('m3-mini-board');
+  if(!board) return;
+  const CANDIES = [
+    { glyph:'\u{1F36C}', color:'#d1447e' }, // 🍬
+    { glyph:'\u{1F36D}', color:'#c62828' }, // 🍭
+    { glyph:'\u{1F36B}', color:'#6b4226' }, // 🍫
+    { glyph:'\u{1F369}', color:'#d98a3d' }, // 🍩
+    { glyph:'\u{1F9C1}', color:'#a565c9' }, // 🧁
+    { glyph:'\u{1F361}', color:'#3f9e5c' }  // 🍡
+  ];
+  const POWERUP_COUNT = 2;
+  const POWERUP_TYPES = ['m3-special-striped','m3-special-bomb'];
+  function randomCandy(){ return CANDIES[Math.floor(Math.random()*CANDIES.length)]; }
+
+  const tiles = Array.from(board.querySelectorAll('.mc-m3-tile'));
+  tiles.forEach(el=>{
+    const candy = randomCandy();
+    el.style.background = candy.color;
+    el.textContent = candy.glyph;
+    el.classList.remove('dark', ...POWERUP_TYPES);
+  });
+
+  // Pick a couple of distinct tiles to carry a power-up overlay —
+  // their candy/color stays whatever was just painted, same as a real
+  // special tile still shows its own color underneath the overlay.
+  const shuffled = tiles.slice().sort(()=> Math.random()-0.5);
+  shuffled.slice(0, Math.min(POWERUP_COUNT, tiles.length)).forEach(el=>{
+    const kind = POWERUP_TYPES[Math.floor(Math.random()*POWERUP_TYPES.length)];
+    el.classList.add(kind);
   });
 })();
 </script>
