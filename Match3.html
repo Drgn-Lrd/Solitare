@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<!--
+    Match3.html
+    Written by: Johnathon Largent
+    Version 1.0
+
+   Initial build. Casino-themed match-3 gravity game (swap adjacent
+   tiles to make a run of 3+, matches clear and everything above falls
+   to fill the gaps, endless score-attack play). Reuses the suite's
+   shared header/HUD/bottombar/overlay markup and CSS from styles.css,
+   and reuses engine.js's genuinely game-agnostic helpers (showToast,
+   pulse/pulseAll, applyHudVisibility, getStylesheetVersion) — but the
+   board itself, its interaction model (swap/drag instead of drag-to-
+   pile), and its win condition are nothing like a card game, so the
+   grid engine, match/cascade/gravity logic, and Settings' tile-theme
+   picker are all local to this file rather than forced into engine.js.
+
+   Six selectable tile themes (Settings > Tile Theme), defaulting to
+   Candies: Candies, Slot Symbols, Card Suits, Poker Chips (denomination
+   text doubles as colorblind-safe labeling), Gems (each cut a distinct
+   shape, not just a distinct color, for the same reason), and Dice
+   (pip count only — fully colorblind-safe by construction). Matching a
+   run of exactly 4 creates a striped tile (clears its row or column
+   when it next matches or is swapped); a run of 5+ creates a bomb
+   (clears every tile of one color). Swapping a special directly into
+   any neighbor activates it immediately, matched or not, same as the
+   genre standard.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Match 3</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Plain glyph crest (no dedicated art asset for this game yet) —
+     sits inside the shared .brand .crest brass circle from styles.css
+     the same way an emoji-based crest would on any other game. */
+  .brand .crest{ font-size:32px; }
+
+  /* =========================================================
+     BOARD
+     .m3-arena is sized in JS (fitMatchBoard) to exactly fit whatever
+     the felt has room for, same spirit as SEngine.fitBoard for cards —
+     tile size is solved from available space, never hardcoded, and
+     every tile's left/top is plain px math off that solved size so
+     swap/fall animations are just a left/top transition.
+     ========================================================= */
+  .m3-arena{ position:relative; margin:auto; }
+  .m3-tile{
+    position:absolute; width:var(--tile-w); height:var(--tile-h);
+    border-radius: calc(var(--tile-w)*0.24);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 4px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.10);
+    cursor:grab; touch-action:none; user-select:none;
+    transition: left .18s ease, top .18s ease, opacity .2s ease, transform .15s ease, background .15s ease;
+    color: var(--ivory);
+  }
+  .m3-tile:active{ cursor:grabbing; }
+  .m3-tile.m3-dark-text{ color:#241708; }
+  .m3-tile .m3-glyph{
+    font-size: calc(var(--tile-w)*0.54); line-height:1;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.35));
+  }
+  .m3-tile.m3-chip{ border:3px dashed rgba(255,255,255,.4); }
+  .m3-tile .m3-chiptext{ font-size: calc(var(--tile-w)*0.22); font-weight:bold; letter-spacing:.5px; }
+  .m3-tile .m3-gem{ width:60%; height:60%; box-shadow: inset 0 0 6px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.4); }
+  .m3-gem-hex{ clip-path: polygon(25% 5%,75% 5%,100% 50%,75% 95%,25% 95%,0% 50%); }
+  .m3-gem-emerald{ clip-path: polygon(20% 0%,80% 0%,100% 20%,100% 80%,80% 100%,20% 100%,0% 80%,0% 20%); }
+  .m3-gem-oval{ border-radius:50%; }
+  .m3-gem-kite{ clip-path: polygon(50% 0%,100% 50%,50% 100%,0% 50%); }
+  .m3-gem-pentagon{ clip-path: polygon(50% 0%,100% 38%,82% 100%,18% 100%,0% 38%); }
+  .m3-gem-brilliant{ clip-path: polygon(50% 0%,80% 22%,100% 62%,50% 100%,0% 62%,20% 22%); }
+
+  .m3-tile.selected{ box-shadow:0 0 0 3px #7ee6a8, 0 0 10px rgba(0,0,0,.5); transform:scale(1.06); z-index:5; }
+  .m3-tile.m3-pop{ animation: m3PopOut .26s ease forwards; }
+  @keyframes m3PopOut{ to{ transform:scale(0); opacity:0; } }
+  .m3-tile.m3-spawn{ transition:none !important; opacity:0; transform:scale(.3); }
+
+  /* Special-tile overlays — layered on top of whatever the tile's
+     normal glyph/gem/chip content already is, so a special still
+     reads as "the same color, but special" rather than replacing its
+     identity outright. */
+  .m3-special-striped-h::after{
+    content:""; position:absolute; left:8%; right:8%; top:44%; height:12%;
+    background:rgba(255,255,255,.85); border-radius:4px; pointer-events:none;
+  }
+  .m3-special-striped-v::after{
+    content:""; position:absolute; top:8%; bottom:8%; left:44%; width:12%;
+    background:rgba(255,255,255,.85); border-radius:4px; pointer-events:none;
+  }
+  .m3-special-bomb{
+    box-shadow:0 0 0 3px rgba(255,255,255,.65), 0 0 16px rgba(255,255,255,.75), 0 2px 4px rgba(0,0,0,.45);
+  }
+
+  .m3-scorepop{
+    position:absolute; left:0; top:0; pointer-events:none; z-index:20;
+    font-size:15px; font-weight:bold; color: var(--brass-light);
+    text-shadow:0 1px 3px #000; animation: m3FloatUp .8s ease forwards;
+    transform: translate(-50%,-50%);
+  }
+  @keyframes m3FloatUp{
+    from{ opacity:1; transform:translate(-50%,-50%); }
+    to{ opacity:0; transform:translate(-50%,-130%); }
+  }
+
+  /* =========================================================
+     SETTINGS — tile theme picker, styled like the card-back picker
+     (.backpicker/.backswatch in styles.css) but showing a 2x2 sample
+     of each theme's own tiles instead of a card thumbnail.
+     ========================================================= */
+  .tilesetpicker{ display:flex; gap:10px; flex-wrap:wrap; }
+  .tilesetswatch{
+    width:56px; height:56px; border-radius:12px; cursor:pointer;
+    border:2px solid transparent; overflow:hidden; box-shadow:0 2px 5px rgba(0,0,0,.4);
+    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr;
+  }
+  .tilesetswatch.active{ border-color:#7ee6a8; }
+  .tilesetswatch .mini{ display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--ivory); overflow:hidden; }
+  .tilesetswatch .mini.dark{ color:#241708; }
+  .tilesetswatch .mini .gem-mini{ width:65%; height:65%; }
+  .tilesetlabel{ font-size:11px; letter-spacing:.5px; color:#9fc9b6; margin-top:4px; text-align:center; }
+  .tilesetgrid{ display:flex; gap:14px; flex-wrap:wrap; }
+  .tilesetcell{ display:flex; flex-direction:column; align-items:center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true">🎰</div>
+    <div class="brand-text">
+      <h1>Match 3<span class="title-suffix"> - Gravity Match</span></h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt" style="display:flex; align-items:center; justify-content:center;">
+      <div class="m3-arena" id="m3-arena"></div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-shuffle" title="Shuffle the board"><span class="bicon">🔀</span><span class="blabel">Shuffle</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current board and score will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Match 3 - Gravity Match</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Swap two adjacent tiles to line up 3 or more of the same kind in a row or column.</li>
+      <li>Matched tiles clear, everything above falls to fill the gap, and new tiles drop in from the top.</li>
+      <li>A run of exactly 4 creates a <b>striped</b> tile — matching or swapping it clears its whole row or column.</li>
+      <li>A run of 5 or more creates a <b>bomb</b> — swapping it with any tile clears every tile of that tile's color.</li>
+      <li>Swapping a special tile into any neighbor activates it immediately, even without a new match.</li>
+      <li><b>Hint</b> highlights one swap you can currently make. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left).</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Tile theme applies instantly. Timer/score too.</div>
+
+    <div class="field">
+      <label>Tile Theme</label>
+      <div class="tilesetgrid" id="tileset-picker"></div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn primary" id="settings-apply">Apply</button>
+    </div>
+    <div style="text-align:center; font-size:10px; color:#7a9686; margin-top:14px; letter-spacing:.5px;" id="version-info"></div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const PAGE_VERSION = '1.0';
+const E = window.SEngine;
+
+/* =========================================================
+   TILE THEMES
+   Every theme has exactly 6 types, so difficulty is identical no
+   matter which one is picked. `dark:true` means the tile's text/glyph
+   should render in dark ink instead of ivory (light background).
+   `text` (poker chips) and `shape` (gems) render differently from a
+   plain emoji `glyph` — see renderTileContent below — specifically so
+   more than one theme is colorblind-safe by shape/label, not just hue.
+   ========================================================= */
+const TILESETS = {
+  candy: { label:'Candies', types:[
+    {glyph:'🍬', color:'#d1447e'},
+    {glyph:'🍭', color:'#c62828'},
+    {glyph:'🍫', color:'#6b4226'},
+    {glyph:'🍩', color:'#d98a3d'},
+    {glyph:'🧁', color:'#a565c9'},
+    {glyph:'🍡', color:'#3f9e5c'}
+  ]},
+  slots: { label:'Slot Symbols', types:[
+    {glyph:'🍒', color:'#c62828'},
+    {glyph:'🔔', color:'#c99a1f'},
+    {glyph:'7️⃣', color:'#8c1f3b'},
+    {glyph:'🍋', color:'#b8a91f'},
+    {glyph:'💎', color:'#2a7fb8'},
+    {glyph:'🍀', color:'#2f8f4e'}
+  ]},
+  suits: { label:'Card Suits', types:[
+    {glyph:'♠', color:'#16233f'},
+    {glyph:'♥', color:'#8c1f3b'},
+    {glyph:'♦', color:'#b5432f'},
+    {glyph:'♣', color:'#1c5340'},
+    {glyph:'★', color:'#8a6a26', dark:true},
+    {glyph:'🃏', color:'#5b2a86'}
+  ]},
+  chips: { label:'Poker Chips', types:[
+    {text:'$1',  color:'#e8e2d0', dark:true},
+    {text:'$5',  color:'#b5432f'},
+    {text:'$25', color:'#1c5340'},
+    {text:'$100',color:'#16233f'},
+    {text:'$500',color:'#5b2a86'},
+    {text:'$1K', color:'#c9a24b', dark:true}
+  ]},
+  gems: { label:'Gems', types:[
+    {shape:'hex',       color:'#c62828'}, // ruby
+    {shape:'emerald',   color:'#2f8f4e'}, // emerald
+    {shape:'oval',      color:'#2a7fb8'}, // sapphire
+    {shape:'kite',      color:'#d4a017'}, // topaz
+    {shape:'pentagon',  color:'#7a4bb0'}, // amethyst
+    {shape:'brilliant', color:'#dfe7ea'}  // diamond
+  ]},
+  dice: { label:'Dice', types:[
+    {glyph:'⚀', color:'#f5f0e6', dark:true},
+    {glyph:'⚁', color:'#f5f0e6', dark:true},
+    {glyph:'⚂', color:'#f5f0e6', dark:true},
+    {glyph:'⚃', color:'#f5f0e6', dark:true},
+    {glyph:'⚄', color:'#f5f0e6', dark:true},
+    {glyph:'⚅', color:'#f5f0e6', dark:true}
+  ]}
+};
+const TYPE_COUNT = 6;
+const COLS = 8, ROWS = 8;
+
+/* =========================================================
+   STATE
+   ========================================================= */
+const state = { score:0, tileset:'candy', showTimer:false, showScore:true, seconds:0 };
+const pendingSettings = { tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore };
+
+let grid = [];          // grid[r][c] = {id,r,c,type,special} | null
+let domMap = {};        // id -> element
+let nextId = 1;
+let selectedId = null;
+let pointerDownInfo = null;
+let animating = false;
+let TILE_SIZE = 56, TILE_GAP = 8;
+
+const arena = document.getElementById('m3-arena');
+const toastEl = document.getElementById('hint-toast');
+
+function sleep(ms){ return new Promise(res=> setTimeout(res, ms)); }
+function newTileObj(r,c,type){ return { id:'t'+(nextId++), r, c, type, special:null }; }
+function getEl(id){ return domMap[id]; }
+function cellKey(cell){ return cell.r+','+cell.c; }
+function keyToRC(key){ const p=key.split(','); return { r:+p[0], c:+p[1] }; }
+function colToPx(c){ return c*(TILE_SIZE+TILE_GAP); }
+function rowToPx(r){ return r*(TILE_SIZE+TILE_GAP); }
+
+/* =========================================================
+   BOARD FIT (screen-size solve, no hardcoded pixel constants — same
+   principle as SEngine.fitBoard for cards, just solved locally since
+   this board is a square grid rather than columns of cards)
+   ========================================================= */
+function fitMatchBoard(){
+  const header = document.querySelector('header');
+  const stage = document.querySelector('.stage');
+  const frame = document.querySelector('.table-frame');
+  const felt = document.querySelector('.table-felt');
+  const bottombar = document.querySelector('.bottombar');
+  if(!header || !stage || !frame || !felt) return;
+
+  const headerH = header.getBoundingClientRect().height;
+  const bottombarH = bottombar ? bottombar.getBoundingClientRect().height : 0;
+  const stageCS = getComputedStyle(stage), frameCS = getComputedStyle(frame), feltCS = getComputedStyle(felt);
+  const vPad = parseFloat(stageCS.paddingTop)+parseFloat(stageCS.paddingBottom)
+             + parseFloat(frameCS.paddingTop)+parseFloat(frameCS.paddingBottom)
+             + parseFloat(feltCS.paddingTop)+parseFloat(feltCS.paddingBottom);
+  const hPad = parseFloat(stageCS.paddingLeft)+parseFloat(stageCS.paddingRight)
+             + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
+             + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
+
+  const availH = window.innerHeight - headerH - bottombarH - vPad - 10;
+  const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
+
+  const gap = Math.max(4, Math.round(Math.min(availW, availH) * 0.012));
+  const tileByW = (availW - gap*(COLS-1)) / COLS;
+  const tileByH = (availH - gap*(ROWS-1)) / ROWS;
+  const tile = Math.max(28, Math.min(72, Math.floor(Math.min(tileByW, tileByH))));
+
+  TILE_SIZE = tile; TILE_GAP = gap;
+  document.documentElement.style.setProperty('--tile-w', tile+'px');
+  document.documentElement.style.setProperty('--tile-h', tile+'px');
+
+  arena.style.width = (tile*COLS + gap*(COLS-1))+'px';
+  arena.style.height = (tile*ROWS + gap*(ROWS-1))+'px';
+
+  // Instant reposition (no transition) — a resize shouldn't animate
+  // every tile sliding to its new spot.
+  arena.classList.add('m3-instant');
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cell = grid[r] && grid[r][c];
+    if(!cell) continue;
+    const el = getEl(cell.id);
+    if(!el) continue;
+    el.style.left = colToPx(c)+'px';
+    el.style.top = rowToPx(r)+'px';
+  }
+  void arena.offsetWidth;
+  arena.classList.remove('m3-instant');
+}
+// .m3-instant kills the left/top transition during a resize reflow.
+const styleEl = document.createElement('style');
+styleEl.textContent = '.m3-arena.m3-instant .m3-tile{ transition:none !important; }';
+document.head.appendChild(styleEl);
+
+/* =========================================================
+   TILE RENDERING
+   ========================================================= */
+function renderTileContent(el, cell){
+  const t = TILESETS[state.tileset].types[cell.type];
+  el.innerHTML = '';
+  el.classList.remove('m3-dark-text','m3-chip');
+  if(t.shape){
+    el.style.background = 'rgba(255,255,255,0.07)';
+    const g = document.createElement('div');
+    g.className = 'm3-gem m3-gem-'+t.shape;
+    g.style.background = t.color;
+    el.appendChild(g);
+  } else if(t.text){
+    el.style.background = t.color;
+    el.classList.add('m3-chip');
+    if(t.dark) el.classList.add('m3-dark-text');
+    const span = document.createElement('span');
+    span.className = 'm3-chiptext'; span.textContent = t.text;
+    el.appendChild(span);
+  } else {
+    el.style.background = t.color;
+    if(t.dark) el.classList.add('m3-dark-text');
+    const span = document.createElement('span');
+    span.className = 'm3-glyph'; span.textContent = t.glyph;
+    el.appendChild(span);
+  }
+  el.classList.toggle('m3-special-striped-h', cell.special==='striped-row');
+  el.classList.toggle('m3-special-striped-v', cell.special==='striped-col');
+  el.classList.toggle('m3-special-bomb', cell.special==='bomb');
+}
+function createTileEl(cell){
+  const el = document.createElement('div');
+  el.className = 'm3-tile';
+  el.dataset.id = cell.id;
+  el.style.left = colToPx(cell.c)+'px';
+  el.style.top = rowToPx(cell.r)+'px';
+  renderTileContent(el, cell);
+  attachTileEvents(el, cell.id);
+  return el;
+}
+function moveElTo(cell){
+  const el = getEl(cell.id);
+  if(!el) return;
+  el.style.left = colToPx(cell.c)+'px';
+  el.style.top = rowToPx(cell.r)+'px';
+}
+
+/* =========================================================
+   BOARD GENERATION
+   ========================================================= */
+function initGrid(){
+  grid = Array.from({length:ROWS}, ()=> Array(COLS).fill(null));
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      let type;
+      let guard = 0;
+      do{
+        type = Math.floor(Math.random()*TYPE_COUNT);
+        guard++;
+      } while(guard<40 && (
+        (c>=2 && grid[r][c-1] && grid[r][c-2] && grid[r][c-1].type===type && grid[r][c-2].type===type) ||
+        (r>=2 && grid[r-1][c] && grid[r-2][c] && grid[r-1][c].type===type && grid[r-2][c].type===type)
+      ));
+      grid[r][c] = newTileObj(r,c,type);
+    }
+  }
+  if(!hasAnyMove()) initGrid();
+}
+function renderBoardFresh(){
+  arena.innerHTML = '';
+  domMap = {};
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cell = grid[r][c];
+    const el = createTileEl(cell);
+    el.classList.add('m3-spawn');
+    arena.appendChild(el);
+    domMap[cell.id] = el;
+  }
+  void arena.offsetWidth;
+  requestAnimationFrame(()=>{
+    arena.querySelectorAll('.m3-spawn').forEach(e=> e.classList.remove('m3-spawn'));
+  });
+}
+
+/* =========================================================
+   MATCH DETECTION
+   ========================================================= */
+function findMatchGroups(){
+  const matched = Array.from({length:ROWS}, ()=> Array(COLS).fill(false));
+  const runs = [];
+  for(let r=0;r<ROWS;r++){
+    let c=0;
+    while(c<COLS){
+      const cell = grid[r][c];
+      if(!cell){ c++; continue; }
+      let c2=c+1;
+      while(c2<COLS && grid[r][c2] && grid[r][c2].type===cell.type) c2++;
+      const len = c2-c;
+      if(len>=3){
+        const cells=[];
+        for(let k=c;k<c2;k++){ matched[r][k]=true; cells.push(r+','+k); }
+        runs.push({dir:'h', length:len, cells});
+      }
+      c=c2;
+    }
+  }
+  for(let c=0;c<COLS;c++){
+    let r=0;
+    while(r<ROWS){
+      const cell = grid[r][c];
+      if(!cell){ r++; continue; }
+      let r2=r+1;
+      while(r2<ROWS && grid[r2][c] && grid[r2][c].type===cell.type) r2++;
+      const len = r2-r;
+      if(len>=3){
+        const cells=[];
+        for(let k=r;k<r2;k++){ matched[k][c]=true; cells.push(k+','+c); }
+        runs.push({dir:'v', length:len, cells});
+      }
+      r=r2;
+    }
+  }
+  if(runs.length===0) return [];
+  const visited = Array.from({length:ROWS}, ()=> Array(COLS).fill(false));
+  const groups = [];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    if(matched[r][c] && !visited[r][c]){
+      const stack=[[r,c]]; visited[r][c]=true;
+      const cellsSet = new Set();
+      while(stack.length){
+        const [rr,cc] = stack.pop();
+        cellsSet.add(rr+','+cc);
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr,dc])=>{
+          const nr=rr+dr, nc=cc+dc;
+          if(nr>=0 && nr<ROWS && nc>=0 && nc<COLS && matched[nr][nc] && !visited[nr][nc]){
+            visited[nr][nc]=true; stack.push([nr,nc]);
+          }
+        });
+      }
+      const groupRuns = runs.filter(run=> run.cells.some(k=> cellsSet.has(k)));
+      groups.push({cells:cellsSet, runs:groupRuns});
+    }
+  }
+  return groups;
+}
+function hasMatchAnywhere(){
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cell = grid[r][c];
+    if(!cell) continue;
+    if(c<=COLS-3 && grid[r][c+1] && grid[r][c+2] && grid[r][c+1].type===cell.type && grid[r][c+2].type===cell.type) return true;
+    if(r<=ROWS-3 && grid[r+1][c] && grid[r+2][c] && grid[r+1][c].type===cell.type && grid[r+2][c].type===cell.type) return true;
+  }
+  return false;
+}
+function wouldMatchIfSwapped(r1,c1,r2,c2){
+  const a=grid[r1][c1], b=grid[r2][c2];
+  const t1=a.type, t2=b.type;
+  a.type=t2; b.type=t1;
+  const result = hasMatchAnywhere();
+  a.type=t1; b.type=t2;
+  return result;
+}
+function findHintMove(){
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cell = grid[r][c];
+    if(c<COLS-1){
+      const nb = grid[r][c+1];
+      if(cell.special || nb.special || wouldMatchIfSwapped(r,c,r,c+1)) return {a:cell,b:nb};
+    }
+    if(r<ROWS-1){
+      const nb = grid[r+1][c];
+      if(cell.special || nb.special || wouldMatchIfSwapped(r,c,r+1,c)) return {a:cell,b:nb};
+    }
+  }
+  return null;
+}
+function hasAnyMove(){ return !!findHintMove(); }
+
+/* =========================================================
+   SPECIAL TILES
+   ========================================================= */
+function getSpecialClearKeys(cell, otherType){
+  const keys = [];
+  if(cell.special==='striped-row'){
+    for(let c=0;c<COLS;c++) if(grid[cell.r][c]) keys.push(cell.r+','+c);
+  } else if(cell.special==='striped-col'){
+    for(let r=0;r<ROWS;r++) if(grid[r][cell.c]) keys.push(r+','+cell.c);
+  } else if(cell.special==='bomb'){
+    const target = otherType!=null ? otherType : cell.type;
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      if(grid[r][c] && grid[r][c].type===target) keys.push(r+','+c);
+    }
+  }
+  return keys;
+}
+
+/* =========================================================
+   CLEAR + GRAVITY + CASCADE
+   ========================================================= */
+function centroidPx(keys){
+  let sx=0, sy=0, n=0;
+  keys.forEach(k=>{
+    const {r,c} = keyToRC(k);
+    sx += colToPx(c) + TILE_SIZE/2;
+    sy += rowToPx(r) + TILE_SIZE/2;
+    n++;
+  });
+  return n ? {x:sx/n, y:sy/n} : {x:0,y:0};
+}
+function spawnScorePop(text, x, y){
+  const span = document.createElement('span');
+  span.className = 'm3-scorepop';
+  span.textContent = text;
+  span.style.left = x+'px';
+  span.style.top = y+'px';
+  arena.appendChild(span);
+  setTimeout(()=> span.remove(), 820);
+}
+function updateScoreDisplay(){
+  document.getElementById('score-val').textContent = state.score;
+}
+
+// Clears `clearKeys` (expanding once through any specials caught up in
+// them), scores it, animates it, applies gravity/refill, then checks
+// for a resulting cascade and recurses. `specialMap` (key -> new
+// special type) reserves anchor cells that get UPGRADED instead of
+// cleared — how a fresh striped/bomb tile actually gets created.
+async function resolveBoard(clearKeys, comboLevel, specialMap){
+  specialMap = specialMap || {};
+  // Chain reaction: any special tile already sitting among the cells
+  // about to clear fires too, one pass (keeps this from ever looping
+  // forever on a pathological board).
+  const expanded = new Set(clearKeys);
+  let guard = 0;
+  let grew = true;
+  while(grew && guard<6){
+    grew = false; guard++;
+    const snapshot = Array.from(expanded);
+    for(const k of snapshot){
+      if(specialMap[k]) continue; // this one's being upgraded, not cleared/activated
+      const {r,c} = keyToRC(k);
+      const cell = grid[r][c];
+      if(cell && cell.special){
+        getSpecialClearKeys(cell, null).forEach(k2=>{
+          if(!expanded.has(k2)){ expanded.add(k2); grew = true; }
+        });
+      }
+    }
+  }
+
+  const centroid = centroidPx(expanded);
+  const points = expanded.size * 10 * comboLevel;
+  state.score += points;
+  updateScoreDisplay();
+  spawnScorePop('+'+points+(comboLevel>1 ? ' x'+comboLevel : ''), centroid.x, centroid.y);
+
+  // Upgrade special anchors first (keep the tile, change its face).
+  Object.keys(specialMap).forEach(k=>{
+    const {r,c} = keyToRC(k);
+    const cell = grid[r][c];
+    if(!cell) return;
+    cell.special = specialMap[k];
+    renderTileContent(getEl(cell.id), cell);
+  });
+
+  // Pop everything else.
+  const toRemove = [];
+  expanded.forEach(k=>{
+    if(specialMap[k]) return;
+    const {r,c} = keyToRC(k);
+    const cell = grid[r][c];
+    if(!cell) return;
+    toRemove.push(cell);
+    const el = getEl(cell.id);
+    if(el) el.classList.add('m3-pop');
+  });
+  if(toRemove.length) await sleep(240);
+  toRemove.forEach(cell=>{
+    const el = getEl(cell.id);
+    if(el) el.remove();
+    delete domMap[cell.id];
+    grid[cell.r][cell.c] = null;
+  });
+
+  await applyGravityAndRefill();
+
+  const nextGroups = findMatchGroups();
+  if(nextGroups.length>0){
+    const {clearKeys:nk, specialMap:nsm} = computeGroupsAndSpecials(nextGroups, null);
+    await resolveBoard(nk, comboLevel+1, nsm);
+  }
+}
+
+function computeGroupsAndSpecials(groups, anchorPrefKeys){
+  const clearKeys = new Set();
+  const specialMap = {};
+  groups.forEach(g=>{
+    g.cells.forEach(k=> clearKeys.add(k));
+    let chosen = null;
+    g.runs.forEach(run=>{
+      if(run.length>=4 && (!chosen || run.length>chosen.length)) chosen = run;
+    });
+    if(chosen){
+      let anchorKey = null;
+      if(anchorPrefKeys) anchorKey = anchorPrefKeys.find(k=> chosen.cells.indexOf(k)!==-1);
+      if(!anchorKey) anchorKey = chosen.cells[Math.floor(chosen.cells.length/2)];
+      const specialType = chosen.length>=5 ? 'bomb' : (chosen.dir==='h' ? 'striped-col' : 'striped-row');
+      specialMap[anchorKey] = specialType;
+    }
+  });
+  return { clearKeys, specialMap };
+}
+
+async function applyGravityAndRefill(){
+  let anyMoved = false;
+  for(let c=0;c<COLS;c++){
+    let writeR = ROWS-1;
+    for(let r=ROWS-1;r>=0;r--){
+      if(grid[r][c]){
+        if(r!==writeR){
+          const cell = grid[r][c];
+          grid[writeR][c] = cell; grid[r][c] = null;
+          cell.r = writeR; cell.c = c;
+          moveElTo(cell);
+          anyMoved = true;
+        }
+        writeR--;
+      }
+    }
+    let newCount = 0;
+    for(let r=writeR;r>=0;r--){
+      newCount++;
+      const type = Math.floor(Math.random()*TYPE_COUNT);
+      const cell = newTileObj(r,c,type);
+      grid[r][c] = cell;
+      const el = createTileEl(cell);
+      el.style.top = rowToPx(r-newCount)+'px';
+      arena.appendChild(el);
+      domMap[cell.id] = el;
+      anyMoved = true;
+    }
+  }
+  if(anyMoved){
+    void arena.offsetWidth;
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      moveElTo(grid[r][c]);
+    }
+    await sleep(260);
+  }
+}
+
+/* =========================================================
+   SWAP / INPUT
+   ========================================================= */
+function findCellById(id){
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    if(grid[r][c] && grid[r][c].id===id) return grid[r][c];
+  }
+  return null;
+}
+function isAdjacent(a,b){ return (Math.abs(a.r-b.r)+Math.abs(a.c-b.c))===1; }
+function neighborInDir(cell, dir){
+  let r=cell.r, c=cell.c;
+  if(dir==='left') c--; else if(dir==='right') c++; else if(dir==='up') r--; else if(dir==='down') r++;
+  if(r<0||r>=ROWS||c<0||c>=COLS) return null;
+  return grid[r][c];
+}
+function swapModel(a,b){
+  const ar=a.r, ac=a.c, br=b.r, bc=b.c;
+  grid[ar][ac]=b; grid[br][bc]=a;
+  b.r=ar; b.c=ac; a.r=br; a.c=bc;
+}
+function clearSelectionVisual(){
+  if(selectedId){
+    const el = getEl(selectedId);
+    if(el) el.classList.remove('selected');
+  }
+  selectedId = null;
+}
+
+async function doSwapAttempt(a,b){
+  if(animating) return;
+  animating = true;
+  try{
+    const aHadSpecial = a.special, bHadSpecial = b.special;
+    swapModel(a,b);
+    moveElTo(a); moveElTo(b);
+    await sleep(200);
+
+    if(aHadSpecial || bHadSpecial){
+      const toClear = new Set();
+      if(aHadSpecial) getSpecialClearKeys(a, b.type).forEach(k=> toClear.add(k));
+      if(bHadSpecial) getSpecialClearKeys(b, a.type).forEach(k=> toClear.add(k));
+      toClear.add(cellKey(a)); toClear.add(cellKey(b));
+      await resolveBoard(toClear, 1, {});
+      checkNoMoves();
+      return;
+    }
+
+    const groups = findMatchGroups();
+    if(groups.length===0){
+      swapModel(a,b);
+      moveElTo(a); moveElTo(b);
+      await sleep(200);
+      return;
+    }
+    const {clearKeys, specialMap} = computeGroupsAndSpecials(groups, [cellKey(a), cellKey(b)]);
+    await resolveBoard(clearKeys, 1, specialMap);
+    checkNoMoves();
+  } finally {
+    animating = false;
+  }
+}
+function checkNoMoves(){
+  if(!hasAnyMove()){
+    E.showToast(toastEl, 'No moves left — reshuffling...', 1800);
+    setTimeout(reshuffleBoard, 700);
+  }
+}
+async function reshuffleBoard(){
+  if(animating) return;
+  animating = true;
+  Object.values(domMap).forEach(el=> el.classList.add('m3-pop'));
+  await sleep(240);
+  initGrid();
+  renderBoardFresh();
+  animating = false;
+}
+
+function attachTileEvents(el, id){
+  el.addEventListener('pointerdown', (e)=>{
+    if(animating) return;
+    try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    pointerDownInfo = { id, x:e.clientX, y:e.clientY };
+  });
+  el.addEventListener('pointerup', (e)=>{
+    if(animating || !pointerDownInfo){ pointerDownInfo=null; return; }
+    const dx = e.clientX - pointerDownInfo.x, dy = e.clientY - pointerDownInfo.y;
+    const dist = Math.hypot(dx,dy);
+    const startId = pointerDownInfo.id;
+    pointerDownInfo = null;
+    const startCell = findCellById(startId);
+    if(!startCell) return;
+
+    if(dist > TILE_SIZE*0.28){
+      let dir;
+      if(Math.abs(dx) > Math.abs(dy)) dir = dx>0 ? 'right' : 'left';
+      else dir = dy>0 ? 'down' : 'up';
+      const target = neighborInDir(startCell, dir);
+      clearSelectionVisual();
+      if(target) doSwapAttempt(startCell, target);
+      return;
+    }
+
+    // Tap: two-tap select/swap.
+    if(selectedId===null){
+      selectedId = startId;
+      getEl(startId).classList.add('selected');
+    } else if(selectedId===startId){
+      clearSelectionVisual();
+    } else {
+      const selCell = findCellById(selectedId);
+      clearSelectionVisual();
+      if(selCell && isAdjacent(selCell, startCell)){
+        doSwapAttempt(selCell, startCell);
+      } else {
+        selectedId = startId;
+        getEl(startId).classList.add('selected');
+      }
+    }
+  });
+}
+
+/* =========================================================
+   NEW GAME / HINT / SHUFFLE
+   ========================================================= */
+function newGame(){
+  clearSelectionVisual();
+  state.score = 0;
+  state.seconds = 0;
+  updateScoreDisplay();
+  updateTimeDisplay();
+  initGrid();
+  fitMatchBoard();
+  renderBoardFresh();
+}
+function updateTimeDisplay(){
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+let timerInterval = null;
+function syncTimerInterval(){
+  clearInterval(timerInterval);
+  if(state.showTimer){
+    timerInterval = setInterval(()=>{ state.seconds++; updateTimeDisplay(); }, 1000);
+  }
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+
+document.getElementById('btn-hint').addEventListener('click', ()=>{
+  if(animating) return;
+  const move = findHintMove();
+  if(move){
+    E.pulseAll([getEl(move.a.id), getEl(move.b.id)], 1000);
+  } else {
+    E.showToast(toastEl, 'No moves available', 1500);
+  }
+});
+document.getElementById('btn-shuffle').addEventListener('click', ()=>{
+  if(animating) return;
+  E.showToast(toastEl, 'Board shuffled', 1200);
+  reshuffleBoard();
+});
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{
+  confirmOverlay.classList.remove('show');
+  newGame();
+});
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+/* =========================================================
+   SETTINGS
+   ========================================================= */
+function buildTilesetPicker(){
+  const wrap = document.getElementById('tileset-picker');
+  wrap.innerHTML = '';
+  Object.keys(TILESETS).forEach(key=>{
+    const theme = TILESETS[key];
+    const cellWrap = document.createElement('div');
+    cellWrap.className = 'tilesetcell';
+    const sw = document.createElement('div');
+    sw.className = 'tilesetswatch';
+    sw.dataset.val = key;
+    theme.types.slice(0,4).forEach(t=>{
+      const mini = document.createElement('div');
+      mini.className = 'mini' + (t.dark ? ' dark' : '');
+      if(t.shape){
+        mini.style.background = 'rgba(255,255,255,0.07)';
+        const g = document.createElement('div');
+        g.className = 'm3-gem m3-gem-'+t.shape+' gem-mini';
+        g.style.background = t.color;
+        mini.appendChild(g);
+      } else {
+        mini.style.background = t.color;
+        mini.textContent = t.text || t.glyph;
+        if(t.text) mini.style.fontSize = '9px';
+      }
+      sw.appendChild(mini);
+    });
+    sw.addEventListener('click', ()=>{
+      pendingSettings.tileset = key;
+      state.tileset = key;
+      refreshTilesetPicker();
+      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+        const cell = grid[r][c];
+        if(cell) renderTileContent(getEl(cell.id), cell);
+      }
+    });
+    const label = document.createElement('div');
+    label.className = 'tilesetlabel';
+    label.textContent = theme.label;
+    cellWrap.appendChild(sw);
+    cellWrap.appendChild(label);
+    wrap.appendChild(cellWrap);
+  });
+  refreshTilesetPicker();
+}
+function refreshTilesetPicker(){
+  document.querySelectorAll('.tilesetswatch').forEach(sw=>{
+    sw.classList.toggle('active', sw.dataset.val===pendingSettings.tileset);
+  });
+}
+
+let settingsSnapshot = null;
+const settingsOverlay = document.getElementById('settings-overlay');
+const togTimer = document.getElementById('tog-timer');
+const togScore = document.getElementById('tog-score');
+
+function openSettings(){
+  settingsSnapshot = { tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore };
+  pendingSettings.tileset = state.tileset;
+  pendingSettings.showTimer = state.showTimer;
+  pendingSettings.showScore = state.showScore;
+  togTimer.checked = state.showTimer;
+  togScore.checked = state.showScore;
+  refreshTilesetPicker();
+  refreshVersionInfo();
+  settingsOverlay.classList.add('show');
+}
+function revertSettings(){
+  if(!settingsSnapshot) return;
+  state.tileset = settingsSnapshot.tileset;
+  state.showTimer = settingsSnapshot.showTimer;
+  state.showScore = settingsSnapshot.showScore;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cell = grid[r][c];
+    if(cell) renderTileContent(getEl(cell.id), cell);
+  }
+  syncTimerInterval();
+  applyHudVisibility();
+}
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'Match3.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
+document.getElementById('btn-settings').addEventListener('click', openSettings);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  revertSettings();
+  settingsOverlay.classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  settingsOverlay.classList.remove('show');
+});
+togTimer.addEventListener('change', (e)=>{
+  pendingSettings.showTimer = e.target.checked;
+  state.showTimer = e.target.checked;
+  syncTimerInterval();
+  applyHudVisibility();
+});
+togScore.addEventListener('change', (e)=>{
+  pendingSettings.showScore = e.target.checked;
+  state.showScore = e.target.checked;
+  applyHudVisibility();
+});
+settingsOverlay.addEventListener('click', (e)=>{
+  if(e.target===settingsOverlay){ revertSettings(); settingsOverlay.classList.remove('show'); }
+});
+
+/* =========================================================
+   RESIZE
+   ========================================================= */
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(fitMatchBoard, 100);
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+buildTilesetPicker();
+applyHudVisibility();
+newGame();
+
+})();
+</script>
+</body>
+</html>
