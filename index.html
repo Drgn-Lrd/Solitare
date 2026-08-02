@@ -2,19 +2,17 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 5.2
+    Version 6.0
 
-   Mahjong's mini preview shape was still wrong: the 4-row taper
-   (7/5/3/1 tiles per row) read as a triangular card pyramid, not an
-   actual mahjong board — real mahjong layouts are diamond-shaped
-   (widest in the middle, narrowing toward both the top AND bottom),
-   not a triangle narrowing to one point. Replaced it with an actual
-   diamond silhouette (row widths 1/3/5/7/5/3/1, vertically overlapped
-   so the taller-than-wide tile art doesn't stretch the icon), plus a
-   small 5-tile raised cap sitting over the center like the real
-   layout's stacked middle. Still the same random-tile-art .mc.mahjong-
-   face pieces from the previous pass, just arranged correctly this
-   time.
+   New tile: Bubble Shooter, linking to BubbleShooter.html. Its mini
+   preview is a small hex-offset grid of round .mc-bubble dots (its
+   own class, not .mc — bubbles are round, not card-shaped) colored
+   and glyphed to match the real game's 6-element palette, plus a
+   single larger "shooter" bubble underneath, the same way Klondike's
+   stock/foundation row hints at that game's real layout. No photo
+   background yet (stays plain felt, like Klondike, until dedicated
+   art exists), so no new preload link was needed. Game count is now
+   6, so this file's own major version follows suit.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -28,19 +26,22 @@
   Card BACKS stay simple CSS stripes, one distinct color per game.
   Mahjong's mini tiles use their own .mc.mahjong-face class (a second,
   separate randomization loop at the bottom pulling from tiles/
-  instead of cards/) so the two asset sets never cross.
+  instead of cards/) so the two asset sets never cross. Bubble
+  Shooter's mini tiles use their own .mc-bubble class for the same
+  reason — round, glyphed, colored per-element, nothing to randomize.
 
   FreeCell + every in-dev tile also gets a real photo background from
   /images (Golf.png, TriPeaks.png, Spider.png, Pyramid.png, FreeCell.png,
   Mahjong.png) instead of hand-drawn shapes — a dark gradient scrim sits
   between the photo and the content so the title/badge/mini-board stay
-  legible regardless of the photo. Klondike stays plain felt on purpose
-  ("keep it as is").
+  legible regardless of the photo. Klondike and Bubble Shooter stay
+  plain felt on purpose (Klondike: "keep it as is"; Bubble Shooter: no
+  dedicated photo asset yet).
 
   Tiles for Klondike/FreeCell/Spider link out to their real files and
-  are approved/live (Play Now). Tut's Tomb and Mahjong are playable
-  but still marked Testing until signed off. TriPeaks and Golf are
-  marked IN DEV and stay inert (no navigation) until built.
+  are approved/live (Play Now). Tut's Tomb, Mahjong, and Bubble Shooter
+  are playable but still marked Testing until signed off. TriPeaks and
+  Golf are marked IN DEV and stay inert (no navigation) until built.
 -->
 <html lang="en">
 <head>
@@ -265,6 +266,25 @@
      restores absolute positioning without touching any coordinates. */
   .mc.face.mc-abs{ position:absolute; }
   .mc.mahjong-face.mc-abs{ position:absolute; }
+
+  /* Bubble Shooter's mini tiles: round, not card-shaped, so their own
+     class rather than reusing .mc — same 6-element color+glyph pairing
+     as the real game (BubbleShooter.html's COLORS array), just static
+     since there's nothing to randomize per reload the way card art is. */
+  .mc-bubble{
+    width:14px; height:14px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:7px; line-height:1;
+    box-shadow: 0 1px 2px rgba(0,0,0,.45), inset 0 -2px 3px rgba(0,0,0,.25), inset 0 1px 2px rgba(255,255,255,.3);
+  }
+  .mc-bubble.mc-abs{ position:absolute; }
+  .mc-bubble.mc-bubble-lg{ width:18px; height:18px; font-size:9px; }
+  .mc-bubble[data-color="fire"] { background: radial-gradient(circle at 32% 26%, #ffb199, #e0483a 55%, #a12a1c 100%); }
+  .mc-bubble[data-color="water"]{ background: radial-gradient(circle at 32% 26%, #bfe9ff, #2f8fe0 55%, #145a96 100%); }
+  .mc-bubble[data-color="leaf"] { background: radial-gradient(circle at 32% 26%, #cdf7c4, #3fae63 55%, #1f7a34 100%); }
+  .mc-bubble[data-color="ice"]  { background: radial-gradient(circle at 32% 26%, #ffffff, #cfeef8 55%, #93c9db 100%); }
+  .mc-bubble[data-color="bolt"] { background: radial-gradient(circle at 32% 26%, #fffac0, #e8c873 55%, #b3860f 100%); }
+  .mc-bubble[data-color="void"] { background: radial-gradient(circle at 32% 26%, #e9d6ff, #8a4fd1 55%, #5b21b6 100%); }
 </style>
 </head>
 <body>
@@ -471,6 +491,46 @@
         </div>
       </div>
       <p class="tile-desc">144 tiles, 4 stacked layers. Clear the board by matching <b>free tile pairs</b> — nothing on top, one open side.</p>
+    </a>
+
+    <!-- BUBBLE SHOOTER — playable -->
+    <a class="tile-link" href="BubbleShooter.html">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-head"><h2>Bubble Shooter</h2><span class="status-pill testing">Testing</span></div>
+          <div class="mini-board">
+            <div class="pyramid-wrap" style="width:126px; height:78px;">
+              <div class="mc-bubble mc-abs" data-color="fire"  style="left:0px;  top:0px;">&#128293;</div>
+              <div class="mc-bubble mc-abs" data-color="water" style="left:14px; top:0px;">&#128167;</div>
+              <div class="mc-bubble mc-abs" data-color="leaf"  style="left:28px; top:0px;">&#127811;</div>
+              <div class="mc-bubble mc-abs" data-color="ice"   style="left:42px; top:0px;">&#10052;&#65039;</div>
+              <div class="mc-bubble mc-abs" data-color="bolt"  style="left:56px; top:0px;">&#9889;</div>
+              <div class="mc-bubble mc-abs" data-color="void"  style="left:70px; top:0px;">&#128302;</div>
+
+              <div class="mc-bubble mc-abs" data-color="water" style="left:7px;  top:12px;">&#128167;</div>
+              <div class="mc-bubble mc-abs" data-color="leaf"  style="left:21px; top:12px;">&#127811;</div>
+              <div class="mc-bubble mc-abs" data-color="leaf"  style="left:35px; top:12px;">&#127811;</div>
+              <div class="mc-bubble mc-abs" data-color="bolt"  style="left:49px; top:12px;">&#9889;</div>
+              <div class="mc-bubble mc-abs" data-color="void"  style="left:63px; top:12px;">&#128302;</div>
+
+              <div class="mc-bubble mc-abs" data-color="fire"  style="left:0px;  top:24px;">&#128293;</div>
+              <div class="mc-bubble mc-abs" data-color="fire"  style="left:14px; top:24px;">&#128293;</div>
+              <div class="mc-bubble mc-abs" data-color="ice"   style="left:28px; top:24px;">&#10052;&#65039;</div>
+              <div class="mc-bubble mc-abs" data-color="ice"   style="left:42px; top:24px;">&#10052;&#65039;</div>
+              <div class="mc-bubble mc-abs" data-color="bolt"  style="left:56px; top:24px;">&#9889;</div>
+
+              <div class="mc-bubble mc-abs" data-color="water" style="left:7px;  top:36px;">&#128167;</div>
+              <div class="mc-bubble mc-abs" data-color="leaf"  style="left:21px; top:36px;">&#127811;</div>
+              <div class="mc-bubble mc-abs" data-color="void"  style="left:35px; top:36px;">&#128302;</div>
+              <div class="mc-bubble mc-abs" data-color="void"  style="left:49px; top:36px;">&#128302;</div>
+            </div>
+            <div class="mc-row" style="justify-content:center; gap:8px; margin-top:8px;">
+              <div class="mc-bubble mc-bubble-lg" data-color="bolt">&#9889;</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">Aim and fire to match <b>3+ of the same element</b> — every color carries its own glyph, so it's colorblind-friendly by design.</p>
     </a>
 
     <!-- TRIPEAKS — in dev -->
