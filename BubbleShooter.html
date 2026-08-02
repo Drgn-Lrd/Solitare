@@ -2,15 +2,18 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.2
+    Version 1.3
 
-   Replaced the header crest's plain bubble emoji with a proper badge:
-   a plus-sign cross divides the existing brass circle into 4
-   quadrants, one representative elemental glyph in each (fire/water/
-   leaf/lightning) — a "four elements" mark instead of a single icon.
-   The circle itself is still the shared .crest gradient from
-   styles.css; only the cross divider + glyph positions are added
-   here, same layering approach as Klondike's own crest override.
+   Added the same color+glyph legend to the Settings screen (Element
+   Guide field, right under the slider) instead of only inside Help —
+   the crystal-ball glyph reading as ambiguous on its own was exactly
+   the kind of thing a name label next to it fixes. Settings' copy is
+   2-up (8 rows is tall as one column) and also grays out + strikes
+   through any element past the current slider value, live as it's
+   dragged, so it doubles as a preview of what a given difficulty
+   actually includes. buildLegend became buildLegendInto(containerId)
+   so both copies come from the same COLORS array — still nothing to
+   keep in sync by hand.
 -->
 <html lang="en">
 <head>
@@ -148,6 +151,15 @@
     box-shadow: 0 1px 2px rgba(0,0,0,.5), inset 0 -3px 5px rgba(0,0,0,.25), inset 0 2px 4px rgba(255,255,255,.3);
   }
   .legend-row span.legend-name{ font-size:13px; color:#e7f2ea; }
+  /* Settings-screen guide is the same rows, just 2-up (8 elements is
+     tall as a single column) and with a "locked" state — grayed +
+     struck through once the slider's current value excludes that
+     element, so it's obvious at a glance which glyphs are actually in
+     play right now, not just what they all look like. */
+  #legend-list-settings{ display:grid; grid-template-columns:1fr 1fr; gap:4px 14px; margin-bottom:4px; }
+  #legend-list-settings .legend-row{ margin-bottom:4px; transition: opacity .15s ease; }
+  #legend-list-settings .legend-row.locked{ opacity:0.35; }
+  #legend-list-settings .legend-row.locked .legend-name{ text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -264,6 +276,12 @@
     </div>
 
     <div class="field">
+      <label>Element Guide</label>
+      <div id="legend-list-settings"></div>
+      <div class="fieldnote">Grayed-out, struck-through elements are outside your current slider setting and won't appear this game.</div>
+    </div>
+
+    <div class="field">
       <div class="toggrow">
         <span>Show Score</span>
         <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
@@ -294,7 +312,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.2';
+const PAGE_VERSION = '1.3';
 
 /* =========================================================
    ELEMENTAL PALETTE
@@ -823,15 +841,18 @@ const helpOverlay = document.getElementById('help-overlay');
 document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
 document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
 helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
-(function buildLegend(){
-  const wrap = document.getElementById('legend-list');
-  COLORS.forEach(c=>{
+function buildLegendInto(containerId){
+  const wrap = document.getElementById(containerId);
+  COLORS.forEach((c,i)=>{
     const row = document.createElement('div');
     row.className = 'legend-row';
+    row.dataset.index = i;
     row.innerHTML = '<div class="legend-swatch" data-color="'+c.id+'"><span>'+c.glyph+'</span></div><span class="legend-name">'+c.name+'</span>';
     wrap.appendChild(row);
   });
-})();
+}
+buildLegendInto('legend-list');
+buildLegendInto('legend-list-settings');
 
 /* =========================================================
    SETTINGS
@@ -839,6 +860,9 @@ helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOver
 function refreshColorsPicker(){
   document.getElementById('rng-colors').value = pendingSettings.numColors;
   document.getElementById('colors-val').textContent = pendingSettings.numColors + (pendingSettings.numColors===8 ? ' (Master)' : '');
+  document.querySelectorAll('#legend-list-settings .legend-row').forEach(row=>{
+    row.classList.toggle('locked', Number(row.dataset.index) >= pendingSettings.numColors);
+  });
 }
 document.getElementById('rng-colors').addEventListener('input', (e)=>{
   pendingSettings.numColors = Number(e.target.value);
