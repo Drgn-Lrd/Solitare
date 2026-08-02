@@ -2,18 +2,19 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.3
+    Version 1.4
 
-   Added the same color+glyph legend to the Settings screen (Element
-   Guide field, right under the slider) instead of only inside Help —
-   the crystal-ball glyph reading as ambiguous on its own was exactly
-   the kind of thing a name label next to it fixes. Settings' copy is
-   2-up (8 rows is tall as one column) and also grays out + strikes
-   through any element past the current slider value, live as it's
-   dragged, so it doubles as a preview of what a given difficulty
-   actually includes. buildLegend became buildLegendInto(containerId)
-   so both copies come from the same COLORS array — still nothing to
-   keep in sync by hand.
+   Void no longer uses an emoji glyph at all — &#128302; was reading as
+   a crystal ball (or a blacked-out mushroom, depending on the font),
+   which undercuts the whole point of glyphs being unambiguous. It's
+   now a hand-drawn .void-glyph: a CSS radial-gradient core that gets
+   darker toward the center plus a slow rotating conic-gradient ring
+   on top, giving a singularity/accretion-disk look that can't be
+   misread as a different object. bubbleContentHTML(id) is the new
+   single spot every bubble-rendering call site (grid, shooter, next,
+   flying, both legends) goes through, so void's swap-out only needed
+   to happen once. Also swapped the crest badge's bottom-left quadrant
+   from Leaf to Magma per request.
 -->
 <html lang="en">
 <head>
@@ -93,6 +94,26 @@
     filter: drop-shadow(0 1px 1px rgba(0,0,0,.45));
     pointer-events:none;
   }
+  /* Void's glyph is drawn, not an emoji — a dense black core fading
+     outward (the "gets denser toward the center" look) with a slowly
+     rotating faint ring on top for a singularity/accretion-disk feel.
+     Percentage-sized against whatever flex container it sits in
+     (bubble/legend-swatch/mini preview all already have definite
+     dimensions), so it scales correctly everywhere without depending
+     on --bubble-w specifically. */
+  .void-glyph{
+    width:62%; height:62%; border-radius:50%; position:relative; overflow:hidden;
+    background: radial-gradient(circle at 50% 50%, #000000 0%, #060409 32%, #1c1030 58%, #3a2a55 82%, rgba(58,42,85,0) 100%);
+    box-shadow: inset 0 0 5px rgba(0,0,0,.9);
+    pointer-events:none;
+  }
+  .void-glyph::before{
+    content:""; position:absolute; inset:0; border-radius:50%;
+    background: conic-gradient(from 0deg, rgba(255,255,255,.2), rgba(255,255,255,0) 26%, rgba(255,255,255,.14) 55%, rgba(255,255,255,0) 100%);
+    animation: voidSwirl 5s linear infinite;
+    mix-blend-mode: overlay;
+  }
+  @keyframes voidSwirl{ to{ transform: rotate(360deg); } }
   .bubble[data-color="fire"] { background: radial-gradient(circle at 32% 26%, #ffb199, #e0483a 55%, #a12a1c 100%); }
   .bubble[data-color="water"]{ background: radial-gradient(circle at 32% 26%, #bfe9ff, #2f8fe0 55%, #145a96 100%); }
   .bubble[data-color="leaf"] { background: radial-gradient(circle at 32% 26%, #cdf7c4, #3fae63 55%, #1f7a34 100%); }
@@ -170,7 +191,7 @@
       <div class="crest-cross"></div>
       <span class="crest-glyph q-tl">&#128293;</span>
       <span class="crest-glyph q-tr">&#128167;</span>
-      <span class="crest-glyph q-bl">&#127811;</span>
+      <span class="crest-glyph q-bl">&#127755;</span>
       <span class="crest-glyph q-br">&#9889;</span>
     </div>
     <div class="brand-text">
@@ -312,7 +333,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.3';
+const PAGE_VERSION = '1.4';
 
 /* =========================================================
    ELEMENTAL PALETTE
@@ -331,6 +352,15 @@ const COLORS = [
   { id:'magma', name:'Magma',     glyph:'&#127755;' }
 ];
 function glyphFor(id){ const c = COLORS.find(x=>x.id===id); return c ? c.glyph : ''; }
+// Every color except void renders as a plain emoji glyph span. Void
+// renders its own hand-drawn swirl instead (see .void-glyph CSS) — no
+// single emoji reliably reads as "void" across platforms, and a
+// crystal ball or mushroom (what &#128302; renders as on several
+// systems) was exactly the confusion this exists to fix.
+function bubbleContentHTML(id){
+  if(id === 'void') return '<span class="void-glyph"></span>';
+  return '<span class="bubble-glyph">'+glyphFor(id)+'</span>';
+}
 function nameFor(id){ const c = COLORS.find(x=>x.id===id); return c ? c.name : id; }
 function activePalette(){ return COLORS.slice(0, state.numColors).map(c=>c.id); }
 
@@ -530,7 +560,7 @@ function renderGrid(){
       el.dataset.color = color;
       el.style.left = (pos.x - bubbleW/2)+'px';
       el.style.top = (pos.y - bubbleW/2)+'px';
-      el.innerHTML = '<span class="bubble-glyph">'+glyphFor(color)+'</span>';
+      el.innerHTML = bubbleContentHTML(color);
       frag.appendChild(el);
     }
   }
@@ -539,10 +569,10 @@ function renderGrid(){
 function renderShooterHUD(){
   const shooterEl = document.getElementById('shooter-bubble');
   shooterEl.dataset.color = state.shooterColor;
-  shooterEl.innerHTML = '<span class="bubble-glyph">'+glyphFor(state.shooterColor)+'</span>';
+  shooterEl.innerHTML = bubbleContentHTML(state.shooterColor);
   const nextEl = document.getElementById('next-bubble');
   nextEl.dataset.color = state.nextColor;
-  nextEl.innerHTML = '<span class="bubble-glyph">'+glyphFor(state.nextColor)+'</span>';
+  nextEl.innerHTML = bubbleContentHTML(state.nextColor);
 }
 function renderHUD(){
   document.getElementById('score-val').textContent = state.score;
@@ -595,7 +625,7 @@ function fireShot(){
 
   const flying = document.getElementById('flying-bubble');
   flying.dataset.color = state.shooterColor;
-  flying.innerHTML = '<span class="bubble-glyph">'+glyphFor(state.shooterColor)+'</span>';
+  flying.innerHTML = bubbleContentHTML(state.shooterColor);
   flying.style.display = 'flex';
 
   let x = shooterPos.x, y = shooterPos.y;
@@ -847,7 +877,7 @@ function buildLegendInto(containerId){
     const row = document.createElement('div');
     row.className = 'legend-row';
     row.dataset.index = i;
-    row.innerHTML = '<div class="legend-swatch" data-color="'+c.id+'"><span>'+c.glyph+'</span></div><span class="legend-name">'+c.name+'</span>';
+    row.innerHTML = '<div class="legend-swatch" data-color="'+c.id+'">'+(c.id==='void' ? '<span class="void-glyph"></span>' : '<span>'+c.glyph+'</span>')+'</div><span class="legend-name">'+c.name+'</span>';
     wrap.appendChild(row);
   });
 }
