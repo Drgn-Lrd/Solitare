@@ -2,20 +2,18 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 6.2
+    Version 6.4
 
-   Bubble Shooter's mini preview now aims at an actual move instead of
-   just sitting there: the dashed target ring at the top is a real
-   empty hex slot adjacent to the two Leaf bubbles below it (its
-   x-center sits exactly between theirs), a dashed line runs from a
-   Leaf shooter bubble straight up to it, and a small dot loops along
-   that line on a 2.6s cycle, landing on the ring right as it flashes
-   — a repeating "here's the shot, here's where it lands" demo, not a
-   generic sweep. Also brought the preview's palette up to date with
-   the real game: added Steel and Magma (.mc-bubble[data-color] rules)
-   and swapped void's emoji for the same hand-drawn .mc-void-glyph
-   swirl BubbleShooter.html now uses, so the crystal-ball look doesn't
-   show up here either.
+   Bubble Shooter's mini board now reshuffles its elements on every
+   reload, same reload-randomization idea as the card art and mahjong
+   tile passes above, just as a third pass at the bottom of the shared
+   script. The two bottom-row bubbles + the shooter carry a new
+   .mc-match class so all three always land on the SAME randomly
+   picked element as each other — the "shoot here for a match" demo
+   stays true no matter which element it lands on; every other bubble
+   in the grid is independent scenery. Also swapped Leaf's glyph to a
+   shamrock (matches BubbleShooter.html's own change) in both the
+   static markup and this new randomizer's element list.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -344,10 +342,10 @@
     animation: mcShotTravel 2.6s ease-in-out infinite;
   }
   @keyframes mcShotTravel{
-    0%{ transform: translate(35px,73px); opacity:0; }
+    0%{ transform: translate(35px,59px); opacity:0; }
     10%{ opacity:1; }
-    82%{ transform: translate(35px,7px); opacity:1; }
-    100%{ transform: translate(35px,7px); opacity:0; }
+    82%{ transform: translate(35px,31px); opacity:1; }
+    100%{ transform: translate(35px,31px); opacity:0; }
   }
 
   /* Match 3 mini preview: a small grid of plain colored squares (its
@@ -573,39 +571,42 @@
           <div class="tile-bg-art art-bubbleshooter"></div>
           <div class="tile-head"><h2>Bubble Shooter</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
-            <div class="pyramid-wrap" style="width:126px; height:88px;">
+            <div class="pyramid-wrap" id="bs-mini-board" style="width:126px; height:74px;">
               <div class="mc-bubble mc-abs" data-color="fire"  style="left:0px;  top:0px;">&#128293;</div>
               <div class="mc-bubble mc-abs" data-color="water" style="left:14px; top:0px;">&#128167;</div>
-              <div class="mc-bubble mc-abs mc-target" style="left:28px; top:0px;" title="A Leaf shot lands here for a match"></div>
-              <div class="mc-bubble mc-abs" data-color="ice"   style="left:42px; top:0px;">&#10052;&#65039;</div>
-              <div class="mc-bubble mc-abs" data-color="bolt"  style="left:56px; top:0px;">&#9889;</div>
-              <div class="mc-bubble mc-abs" data-color="void"  style="left:70px; top:0px;"><span class="mc-void-glyph"></span></div>
+              <div class="mc-bubble mc-abs" data-color="ice"   style="left:28px; top:0px;">&#10052;&#65039;</div>
+              <div class="mc-bubble mc-abs" data-color="bolt"  style="left:42px; top:0px;">&#9889;</div>
+              <div class="mc-bubble mc-abs" data-color="void"  style="left:56px; top:0px;"><span class="mc-void-glyph"></span></div>
+              <div class="mc-bubble mc-abs" data-color="steel" style="left:70px; top:0px;">&#9881;&#65039;</div>
 
               <div class="mc-bubble mc-abs" data-color="water" style="left:7px;  top:12px;">&#128167;</div>
-              <div class="mc-bubble mc-abs" data-color="leaf"  style="left:21px; top:12px;">&#127811;</div>
-              <div class="mc-bubble mc-abs" data-color="leaf"  style="left:35px; top:12px;">&#127811;</div>
-              <div class="mc-bubble mc-abs" data-color="magma" style="left:49px; top:12px;">&#127755;</div>
-              <div class="mc-bubble mc-abs" data-color="steel" style="left:63px; top:12px;">&#9881;&#65039;</div>
+              <div class="mc-bubble mc-abs" data-color="magma" style="left:21px; top:12px;">&#127755;</div>
+              <div class="mc-bubble mc-abs" data-color="void"  style="left:35px; top:12px;"><span class="mc-void-glyph"></span></div>
+              <div class="mc-bubble mc-abs" data-color="ice"   style="left:49px; top:12px;">&#10052;&#65039;</div>
+              <div class="mc-bubble mc-abs" data-color="bolt"  style="left:63px; top:12px;">&#9889;</div>
 
-              <div class="mc-bubble mc-abs" data-color="fire"  style="left:0px;  top:24px;">&#128293;</div>
-              <div class="mc-bubble mc-abs" data-color="fire"  style="left:14px; top:24px;">&#128293;</div>
-              <div class="mc-bubble mc-abs" data-color="ice"   style="left:28px; top:24px;">&#10052;&#65039;</div>
-              <div class="mc-bubble mc-abs" data-color="ice"   style="left:42px; top:24px;">&#10052;&#65039;</div>
-              <div class="mc-bubble mc-abs" data-color="steel" style="left:56px; top:24px;">&#9881;&#65039;</div>
+              <!-- Bottom row: nothing sits below this in the grid, so
+                   the gap at 28px is a genuinely open, straight-line
+                   shot from the shooter below — not a spot buried
+                   behind other bubbles the way the previous version
+                   pointed at (a ball can't skip past whatever's in
+                   its way, same as the real game's collision rules).
+                   These 3 elements (2 bottom bubbles + the shooter)
+                   carry .mc-match — the randomizer script below keeps
+                   all three synced to the SAME random element on every
+                   reload, so the "shoot here for a match" demo stays
+                   mechanically true no matter which element it lands
+                   on. Everything else in the grid is pure scenery and
+                   randomizes independently. -->
+              <div class="mc-bubble mc-abs mc-match" data-color="leaf" style="left:0px;  top:24px;">&#127808;</div>
+              <div class="mc-bubble mc-abs mc-match" data-color="leaf" style="left:14px; top:24px;">&#127808;</div>
+              <div class="mc-bubble mc-abs mc-target" style="left:28px; top:24px;" title="A matching shot lands here for a match"></div>
+              <div class="mc-bubble mc-abs" data-color="fire"  style="left:42px; top:24px;">&#128293;</div>
+              <div class="mc-bubble mc-abs" data-color="fire"  style="left:56px; top:24px;">&#128293;</div>
 
-              <div class="mc-bubble mc-abs" data-color="water" style="left:7px;  top:36px;">&#128167;</div>
-              <div class="mc-bubble mc-abs" data-color="leaf"  style="left:21px; top:36px;">&#127811;</div>
-              <div class="mc-bubble mc-abs" data-color="void"  style="left:35px; top:36px;"><span class="mc-void-glyph"></span></div>
-              <div class="mc-bubble mc-abs" data-color="magma" style="left:49px; top:36px;">&#127755;</div>
-
-              <!-- Aim line + traveling shot: the two Leaf bubbles above
-                   are genuinely adjacent to the dashed target ring in
-                   the hex lattice (its x-center sits exactly between
-                   them), so this shooter is aimed at a real match, not
-                   just pointed at open space. -->
-              <div class="mc-aim-line" style="left:34px; top:7px; height:66px;"></div>
+              <div class="mc-aim-line" style="left:34px; top:31px; height:28px;"></div>
               <div class="mc-shot"></div>
-              <div class="mc-bubble mc-abs mc-bubble-lg" data-color="leaf" style="left:26px; top:64px;">&#127811;</div>
+              <div class="mc-bubble mc-abs mc-bubble-lg mc-match" data-color="leaf" style="left:26px; top:50px;">&#127808;</div>
             </div>
           </div>
         </div>
@@ -786,6 +787,52 @@
     img.draggable = false;
     img.addEventListener('error', ()=> img.remove(), { once:true });
     el.appendChild(img);
+  });
+})();
+
+// Third pass, same reload-randomization idea again, for Bubble
+// Shooter: every reload gets a fresh mixture of elemental orbs in the
+// SAME hex-grid pattern, the way the card/tile passes above reshuffle
+// their own art without touching layout. The 3 elements marked
+// .mc-match (the two bottom-row bubbles + the shooter) always get the
+// SAME randomly-picked element as each other, so the tile's "shoot
+// here for a match" demo stays mechanically true no matter which
+// element it lands on this load — everything else in the grid is
+// pure scenery and randomizes independently. Void has no emoji (see
+// BubbleShooter.html's own .void-glyph) so it gets the matching
+// .mc-void-glyph markup instead of a glyph string.
+(function(){
+  const board = document.getElementById('bs-mini-board');
+  if(!board) return;
+  const ELEMENTS = [
+    { id:'fire',  name:'Fire',      glyph:'&#128293;' },
+    { id:'water', name:'Water',     glyph:'&#128167;' },
+    { id:'leaf',  name:'Leaf',      glyph:'&#127808;' },
+    { id:'ice',   name:'Ice',       glyph:'&#10052;&#65039;' },
+    { id:'bolt',  name:'Lightning', glyph:'&#9889;' },
+    { id:'void',  name:'Void',      glyph:null },
+    { id:'steel', name:'Steel',     glyph:'&#9881;&#65039;' },
+    { id:'magma', name:'Magma',     glyph:'&#127755;' }
+  ];
+  function randomElement(){ return ELEMENTS[Math.floor(Math.random()*ELEMENTS.length)]; }
+  function markupFor(el){ return el.id==='void' ? '<span class="mc-void-glyph"></span>' : el.glyph; }
+  function paint(el, colorEl){
+    el.dataset.color = colorEl.id;
+    el.innerHTML = markupFor(colorEl);
+  }
+
+  // The 3 synced "match" bubbles all become the same random element.
+  const matchEl = randomElement();
+  board.querySelectorAll('.mc-match').forEach(el=> paint(el, matchEl));
+
+  // The dashed target ring's tooltip names whichever element it is now.
+  const target = board.querySelector('.mc-target');
+  if(target) target.title = 'A ' + matchEl.name + ' shot lands here for a match';
+
+  // Every other bubble in the grid is scenery — independently random,
+  // duplicates and all, exactly like a real board's own randomness.
+  board.querySelectorAll('.mc-bubble[data-color]:not(.mc-match)').forEach(el=>{
+    paint(el, randomElement());
   });
 })();
 </script>
