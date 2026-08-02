@@ -2,6 +2,15 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
+    Version 1.1
+
+   Pre-wired a background photo hook, same convention every other
+   non-Klondike game uses (see FreeCell.html): a preload link plus an
+   html,body background-image override pointing at images/Match3.webp.
+   No such file exists yet — this is harmless until one does, and
+   dropping a photo in at that path is the only other step needed;
+   nothing else in this file has to change.
+
     Version 1.0
 
    Initial build. Casino-themed match-3 gravity game (swap adjacent
@@ -31,8 +40,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Match 3</title>
+<link rel="preload" as="image" href="images/Match3.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
+  /* Match3-only background: swaps the shared black/vignette body
+     background (see html,body in styles.css) for this preloaded photo,
+     just for this game — same convention as FreeCell.html/Mahjong.html/
+     etc. The wood frame + green felt (.table-frame/.table-felt) sit on
+     their own elements on top of this and are untouched. No photo
+     exists at images/Match3.webp yet — this is inert until one does. */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Match3.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
   /* Plain glyph crest (no dedicated art asset for this game yet) —
      sits inside the shared .brand .crest brass circle from styles.css
      the same way an emoji-based crest would on any other game. */
@@ -226,7 +249,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.0';
+const PAGE_VERSION = '1.1';
 const E = window.SEngine;
 
 /* =========================================================
