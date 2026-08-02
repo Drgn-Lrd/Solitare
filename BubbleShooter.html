@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<!--
+    BubbleShooter.html
+    Written by: Johnathon Largent
+    Version 1.0
+
+   New game: Bubble Shooter, an elemental match-3. Reuses the shared
+   suite chrome wholesale (header, HUD chips, bottombar, overlay/modal
+   shells, undo stack, toast + hint pulse, HUD visibility helper) from
+   engine.js/styles.css, but the hex-grid aiming/physics/matching/pop/
+   drop logic is entirely self-contained in this file — none of
+   engine.js's card pile/drag machinery applies to a shooter board, so
+   there was nothing shared to pull out. Each of the 6 bubble colors
+   carries a matching elemental glyph (fire/water/leaf/ice/lightning/
+   void) baked directly into the bubble, so color AND shape both
+   identify a match independently of each other — colorblind-friendly
+   by construction, not by a toggle.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Bubble Shooter</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* =========================================================
+     BUBBLE SHOOTER — game-specific look. Everything about the overall
+     suite chrome (header, buttons, chips, modals) comes from the
+     shared styles.css; only the board itself is defined here, the
+     same way Klondike's own <style> block only overrides its crest.
+     ========================================================= */
+  .brand .crest{ font-size:32px; }
+
+  #board-wrap{
+    flex:1; min-height:0; width:100%;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden; position:relative;
+  }
+  #bubble-field{
+    position:relative; touch-action:none; user-select:none;
+  }
+  .danger-line{
+    position:absolute; left:0; right:0; height:0;
+    border-top:2px dashed rgba(224,72,58,0.6);
+    pointer-events:none; z-index:2;
+  }
+  .danger-line::after{
+    content:"DANGER"; position:absolute; right:2px; top:-16px;
+    font-size:9px; letter-spacing:2px; color:rgba(224,72,58,0.75);
+  }
+
+  .aim-line{
+    position:absolute; left:0; top:0; height:3px; width:0;
+    transform-origin:0 50%;
+    background: repeating-linear-gradient(90deg, rgba(232,200,115,0.85) 0 8px, transparent 8px 16px);
+    pointer-events:none; z-index:15; opacity:0; transition:opacity .15s ease;
+    border-radius:2px;
+  }
+
+  .bubble{
+    position:absolute; width:var(--bubble-w,40px); height:var(--bubble-w,40px);
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,.5), 0 3px 7px rgba(0,0,0,.4),
+      inset 0 -4px 6px rgba(0,0,0,.25), inset 0 3px 5px rgba(255,255,255,.35);
+  }
+  .bubble-glyph{
+    font-size:calc(var(--bubble-w,40px)*0.5); line-height:1;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.45));
+    pointer-events:none;
+  }
+  .bubble[data-color="fire"] { background: radial-gradient(circle at 32% 26%, #ffb199, #e0483a 55%, #a12a1c 100%); }
+  .bubble[data-color="water"]{ background: radial-gradient(circle at 32% 26%, #bfe9ff, #2f8fe0 55%, #145a96 100%); }
+  .bubble[data-color="leaf"] { background: radial-gradient(circle at 32% 26%, #cdf7c4, #3fae63 55%, #1f7a34 100%); }
+  .bubble[data-color="ice"]  { background: radial-gradient(circle at 32% 26%, #ffffff, #cfeef8 55%, #93c9db 100%); }
+  .bubble[data-color="bolt"] { background: radial-gradient(circle at 32% 26%, #fffac0, #e8c873 55%, #b3860f 100%); }
+  .bubble[data-color="void"] { background: radial-gradient(circle at 32% 26%, #e9d6ff, #8a4fd1 55%, #5b21b6 100%); }
+
+  .bubble.shooter{ box-shadow: 0 0 0 3px rgba(232,200,115,0.55), 0 3px 10px rgba(0,0,0,.5); z-index:6; }
+  .bubble.mini{ transform: scale(0.6); z-index:6; }
+  .bubble.flying{ z-index:20; }
+
+  @keyframes bubbleLand{ 0%{ transform:scale(0.55); } 60%{ transform:scale(1.14); } 100%{ transform:scale(1); } }
+  .bubble.landing{ animation: bubbleLand .24s ease; }
+
+  @keyframes bubblePop{ 0%{ transform:scale(1); opacity:1; } 55%{ transform:scale(1.3); opacity:.85; } 100%{ transform:scale(0.1); opacity:0; } }
+  .bubble.pop{ animation: bubblePop .26s ease forwards; z-index:8; }
+
+  @keyframes bubbleFall{ 0%{ transform:translate(0,0) rotate(0deg); opacity:1; } 100%{ transform:translate(var(--fall-x,0px), 160px) rotate(var(--fall-r,90deg)); opacity:0; } }
+  .bubble.fall{ animation: bubbleFall .5s ease-in forwards; z-index:7; }
+
+  .next-label{
+    position:absolute; font-size:9px; letter-spacing:1.5px; color:#9fc9b6;
+    text-align:center; width:calc(var(--bubble-w,40px)*1.1); z-index:6;
+  }
+
+  /* Legend rows inside the Help modal — one row per element, built by
+     JS from the same COLORS array the game itself uses, so the legend
+     can never drift out of sync with the actual palette. */
+  .legend-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .legend-swatch{
+    width:28px; height:28px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.5), inset 0 -3px 5px rgba(0,0,0,.25), inset 0 2px 4px rgba(255,255,255,.3);
+  }
+  .legend-row span.legend-name{ font-size:13px; color:#e7f2ea; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true">&#129476;</div>
+    <div class="brand-text">
+      <h1>Bubble Shooter<span class="title-suffix"> - Elemental Match 3</span></h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="./" title="Home" aria-label="Home">&#127968;</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">&#9881;</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div id="board-wrap">
+        <div id="bubble-field">
+          <div id="danger-line" class="danger-line"></div>
+          <div id="grid-layer"></div>
+          <div id="aim-line" class="aim-line"></div>
+          <div id="next-label" class="next-label">NEXT</div>
+          <div id="next-bubble" class="bubble mini" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="shooter-bubble" class="bubble shooter" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="flying-bubble" class="bubble flying" data-color="fire" style="display:none;"><span class="bubble-glyph">&#128293;</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo last shot"><span class="bicon">&#8630;</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">&#10022;</span><span class="blabel">Hint</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="winmask" id="winmask">
+  <div class="winmask-modal">
+    <h2>Cleared!</h2>
+    <p id="win-sub">Board cleared —</p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  </div>
+</div>
+
+<div class="winmask" id="gameovermask">
+  <h2>Board Overflow</h2>
+  <p>The bubbles reached the shooter.</p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="gameover-undo">Undo Last Shot</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="gameover-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Bubble Shooter</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Move your mouse (or drag a finger) over the board to aim.</li>
+      <li>Release to fire the glowing bubble at the pivot toward the aim line.</li>
+      <li>Match <b>3 or more</b> of the same element to pop them.</li>
+      <li>Bubbles left floating with nothing connecting them to the top fall away too, for a bonus.</li>
+      <li>Every few shots a new row pushes down from the ceiling — don't let bubbles reach the dashed danger line.</li>
+      <li><b>Undo</b> reverses your last shot. <b>Hint</b> highlights a cluster your current bubble can complete.</li>
+    </ul>
+    <div class="sub" style="margin-bottom:8px;">Every element has its own glyph, so colors are never the only clue:</div>
+    <div id="legend-list"></div>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Timer/Score apply instantly. Element count applies on your next New Game.</div>
+
+    <div class="field">
+      <label>Elements</label>
+      <div class="segmented" id="seg-colors">
+        <button data-val="4">4</button>
+        <button data-val="5">5</button>
+        <button data-val="6">6</button>
+      </div>
+      <div class="fieldnote">Fewer elements means faster, easier matches. More elements is a tougher board.</div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const E = window.SEngine;
+const PAGE_VERSION = '1.0';
+
+/* =========================================================
+   ELEMENTAL PALETTE
+   Every bubble carries a color AND a glyph — the glyph is the real
+   identity for matching purposes, the color is just paint on top, so
+   nothing about matching ever depends on color alone.
+   ========================================================= */
+const COLORS = [
+  { id:'fire',  name:'Fire',      glyph:'&#128293;' },
+  { id:'water', name:'Water',     glyph:'&#128167;' },
+  { id:'leaf',  name:'Leaf',      glyph:'&#127811;' },
+  { id:'ice',   name:'Ice',       glyph:'&#10052;&#65039;' },
+  { id:'bolt',  name:'Lightning', glyph:'&#9889;' },
+  { id:'void',  name:'Void',      glyph:'&#128302;' }
+];
+function glyphFor(id){ const c = COLORS.find(x=>x.id===id); return c ? c.glyph : ''; }
+function nameFor(id){ const c = COLORS.find(x=>x.id===id); return c ? c.name : id; }
+function activePalette(){ return COLORS.slice(0, state.numColors).map(c=>c.id); }
+
+/* =========================================================
+   BOARD GEOMETRY
+   Hex "odd-r" offset grid: odd rows are shifted right by half a
+   bubble width. Every row has the same column count (COLS); the
+   field is COLS+0.5 bubble-widths wide so an odd row's shifted last
+   column still fits inside it.
+   ========================================================= */
+const COLS = 8;
+const MAX_ROWS = 12;
+const DANGER_ROW = MAX_ROWS - 2;
+const INIT_ROWS = 5;
+const SHOTS_PER_PUSH = 6;
+
+let bubbleW = 40;
+let rowH = bubbleW * 0.8660254;
+let fieldWpx = 0, fieldHpx = 0;
+let shooterPos = { x:0, y:0 };
+
+function cellCenter(row, col){
+  const off = (row % 2 === 1) ? bubbleW * 0.5 : 0;
+  return { x: off + col*bubbleW + bubbleW/2, y: row*rowH + bubbleW/2 };
+}
+function neighborsOf(row, col){
+  const evenD = [[-1,-1],[-1,0],[0,-1],[0,1],[1,-1],[1,0]];
+  const oddD  = [[-1,0],[-1,1],[0,-1],[0,1],[1,0],[1,1]];
+  const deltas = (row % 2 === 0) ? evenD : oddD;
+  const out = [];
+  for(const [dr,dc] of deltas){
+    const nr = row+dr, nc = col+dc;
+    if(nr>=0 && nr<MAX_ROWS && nc>=0 && nc<COLS) out.push({row:nr, col:nc});
+  }
+  return out;
+}
+function distSq(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy; }
+function clamp(n,lo,hi){ return Math.max(lo, Math.min(hi, n)); }
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+const state = {
+  numColors: 5,
+  grid: [],
+  shooterColor: 'fire',
+  nextColor: 'water',
+  score: 0,
+  seconds: 0,
+  shotsFired: 0,
+  showTimer: false,
+  showScore: false,
+  timerHandle: null,
+  backStyle: null
+};
+const pendingSettings = { numColors:5, showTimer:false, showScore:false };
+
+let busy = false;      // true while a shot is flying or resolving
+let flyReq = null;      // requestAnimationFrame handle for the current shot
+let aimDir = { x:0, y:-1 };
+
+/* =========================================================
+   GRID BUILDING
+   ========================================================= */
+function emptyGrid(){
+  const g = [];
+  for(let r=0;r<MAX_ROWS;r++) g.push(new Array(COLS).fill(null));
+  return g;
+}
+function randomFrom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function makeRandomRow(){
+  const pal = activePalette();
+  const row = new Array(COLS);
+  for(let c=0;c<COLS;c++) row[c] = randomFrom(pal);
+  return row;
+}
+function buildInitialGrid(){
+  const g = emptyGrid();
+  for(let r=0;r<INIT_ROWS;r++) g[r] = makeRandomRow();
+  return g;
+}
+function colorsPresent(){
+  const set = new Set();
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++){ if(state.grid[r][c]) set.add(state.grid[r][c]); }
+  return Array.from(set);
+}
+function pickNextColor(){
+  const present = colorsPresent();
+  return present.length ? randomFrom(present) : randomFrom(activePalette());
+}
+
+/* =========================================================
+   MATCHING / FLOATING
+   ========================================================= */
+function floodMatch(row, col){
+  const color = state.grid[row][col];
+  if(!color) return [];
+  const seen = new Set([row+'_'+col]);
+  const stack = [{row,col}];
+  const out = [];
+  while(stack.length){
+    const cur = stack.pop();
+    out.push(cur);
+    for(const n of neighborsOf(cur.row, cur.col)){
+      const key = n.row+'_'+n.col;
+      if(seen.has(key)) continue;
+      if(state.grid[n.row][n.col] === color){ seen.add(key); stack.push(n); }
+    }
+  }
+  return out;
+}
+function findFloating(){
+  const reachable = new Set();
+  const stack = [];
+  for(let c=0;c<COLS;c++){
+    if(state.grid[0][c]){ reachable.add('0_'+c); stack.push({row:0,col:c}); }
+  }
+  while(stack.length){
+    const cur = stack.pop();
+    for(const n of neighborsOf(cur.row, cur.col)){
+      const key = n.row+'_'+n.col;
+      if(reachable.has(key)) continue;
+      if(state.grid[n.row][n.col]){ reachable.add(key); stack.push(n); }
+    }
+  }
+  const floating = [];
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++){
+    if(state.grid[r][c] && !reachable.has(r+'_'+c)) floating.push({row:r,col:c});
+  }
+  return floating;
+}
+function findNearestEmptyCell(x,y){
+  let best=null, bestD=Infinity;
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++){
+    if(state.grid[r][c]) continue;
+    const d = distSq(cellCenter(r,c), {x,y});
+    if(d<bestD){ bestD=d; best={row:r,col:c}; }
+  }
+  return best;
+}
+
+/* =========================================================
+   SIZING
+   ========================================================= */
+function computeSize(){
+  const wrap = document.getElementById('board-wrap');
+  const availW = wrap.clientWidth || 300;
+  const availH = wrap.clientHeight || 400;
+  const fieldWidthUnits = COLS + 0.5;
+  const fieldHeightUnits = MAX_ROWS * 0.8660254 + 2.1;
+  const wByWidth = availW / fieldWidthUnits;
+  const wByHeight = availH / fieldHeightUnits;
+  bubbleW = Math.floor(clamp(Math.min(wByWidth, wByHeight), 18, 64));
+  rowH = bubbleW * 0.8660254;
+  fieldWpx = fieldWidthUnits * bubbleW;
+  fieldHpx = fieldHeightUnits * bubbleW;
+  document.documentElement.style.setProperty('--bubble-w', bubbleW+'px');
+  const field = document.getElementById('bubble-field');
+  field.style.width = fieldWpx+'px';
+  field.style.height = fieldHpx+'px';
+  shooterPos = { x: fieldWpx/2, y: MAX_ROWS*rowH + bubbleW*0.9 };
+
+  const danger = document.getElementById('danger-line');
+  danger.style.top = (DANGER_ROW*rowH + bubbleW*0.5)+'px';
+
+  const shooterEl = document.getElementById('shooter-bubble');
+  shooterEl.style.left = (shooterPos.x - bubbleW/2)+'px';
+  shooterEl.style.top = (shooterPos.y - bubbleW/2)+'px';
+
+  const nextEl = document.getElementById('next-bubble');
+  const nextX = shooterPos.x + bubbleW*1.7;
+  nextEl.style.left = (nextX - bubbleW*0.6/2)+'px';
+  nextEl.style.top = (shooterPos.y - bubbleW*0.6/2)+'px';
+  const nextLabel = document.getElementById('next-label');
+  nextLabel.style.left = (nextX - bubbleW*0.55)+'px';
+  nextLabel.style.top = (shooterPos.y - bubbleW*0.95)+'px';
+
+  document.getElementById('aim-line').style.left = shooterPos.x+'px';
+  document.getElementById('aim-line').style.top = shooterPos.y+'px';
+}
+
+/* =========================================================
+   RENDERING
+   ========================================================= */
+function renderGrid(){
+  const layer = document.getElementById('grid-layer');
+  layer.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for(let r=0;r<MAX_ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const color = state.grid[r][c];
+      if(!color) continue;
+      const pos = cellCenter(r,c);
+      const el = document.createElement('div');
+      el.className = 'bubble';
+      el.id = 'b_'+r+'_'+c;
+      el.dataset.color = color;
+      el.style.left = (pos.x - bubbleW/2)+'px';
+      el.style.top = (pos.y - bubbleW/2)+'px';
+      el.innerHTML = '<span class="bubble-glyph">'+glyphFor(color)+'</span>';
+      frag.appendChild(el);
+    }
+  }
+  layer.appendChild(frag);
+}
+function renderShooterHUD(){
+  const shooterEl = document.getElementById('shooter-bubble');
+  shooterEl.dataset.color = state.shooterColor;
+  shooterEl.innerHTML = '<span class="bubble-glyph">'+glyphFor(state.shooterColor)+'</span>';
+  const nextEl = document.getElementById('next-bubble');
+  nextEl.dataset.color = state.nextColor;
+  nextEl.innerHTML = '<span class="bubble-glyph">'+glyphFor(state.nextColor)+'</span>';
+}
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+function renderAll(){
+  renderGrid();
+  renderShooterHUD();
+  renderHUD();
+}
+
+/* =========================================================
+   AIMING
+   ========================================================= */
+const MAX_AIM_ANGLE = 75 * Math.PI/180;
+function updateAim(clientX, clientY){
+  if(busy) return;
+  const field = document.getElementById('bubble-field');
+  const rect = field.getBoundingClientRect();
+  const localX = clientX - rect.left, localY = clientY - rect.top;
+  let vx = localX - shooterPos.x;
+  let vy = localY - shooterPos.y;
+  if(vy > -bubbleW*0.3) vy = -bubbleW*0.3; // never allow aiming downward/sideways-flat
+  let ang = Math.atan2(vx, -vy); // angle from straight up, + = right
+  ang = clamp(ang, -MAX_AIM_ANGLE, MAX_AIM_ANGLE);
+  aimDir = { x: Math.sin(ang), y: -Math.cos(ang) };
+  const aimEl = document.getElementById('aim-line');
+  const len = Math.min(fieldHpx*0.85, 320);
+  const angleDeg = Math.atan2(aimDir.y, aimDir.x) * 180/Math.PI;
+  aimEl.style.width = len+'px';
+  aimEl.style.transform = 'rotate('+angleDeg+'deg)';
+  aimEl.style.opacity = '1';
+}
+function hideAim(){ document.getElementById('aim-line').style.opacity = '0'; }
+
+/* =========================================================
+   FIRING / PHYSICS
+   ========================================================= */
+function cancelFlight(){
+  if(flyReq){ cancelAnimationFrame(flyReq); flyReq = null; }
+  const flying = document.getElementById('flying-bubble');
+  flying.style.display = 'none';
+}
+function fireShot(){
+  if(busy || state.gameOver) return;
+  busy = true;
+  hideAim();
+  undo.push();
+
+  const flying = document.getElementById('flying-bubble');
+  flying.dataset.color = state.shooterColor;
+  flying.innerHTML = '<span class="bubble-glyph">'+glyphFor(state.shooterColor)+'</span>';
+  flying.style.display = 'flex';
+
+  let x = shooterPos.x, y = shooterPos.y;
+  const speed = bubbleW * 15;
+  let vx = aimDir.x*speed, vy = aimDir.y*speed;
+  let lastT = null;
+
+  function frame(t){
+    if(lastT===null) lastT = t;
+    const dt = Math.min((t-lastT)/1000, 0.032);
+    lastT = t;
+    x += vx*dt; y += vy*dt;
+    const r = bubbleW/2;
+    if(x-r < 0){ x = r; vx = -vx; }
+    else if(x+r > fieldWpx){ x = fieldWpx-r; vx = -vx; }
+
+    let hit = null;
+    outer:
+    for(let rr=0; rr<MAX_ROWS; rr++){
+      for(let cc=0; cc<COLS; cc++){
+        if(!state.grid[rr][cc]) continue;
+        const cp = cellCenter(rr,cc);
+        if(distSq({x,y}, cp) < (bubbleW*0.92)*(bubbleW*0.92)){ hit = {row:rr, col:cc}; break outer; }
+      }
+    }
+
+    if(y - r <= 0 || hit){
+      resolveLanding(x, y, hit);
+      return;
+    }
+    flying.style.left = (x-r)+'px';
+    flying.style.top = (y-r)+'px';
+    flyReq = requestAnimationFrame(frame);
+  }
+  flyReq = requestAnimationFrame(frame);
+}
+function resolveLanding(x, y, hit){
+  cancelFlight();
+  let target = null;
+  if(hit){
+    const empties = neighborsOf(hit.row, hit.col).filter(n => !state.grid[n.row][n.col]);
+    if(empties.length){
+      empties.sort((a,b)=> distSq(cellCenter(a.row,a.col),{x,y}) - distSq(cellCenter(b.row,b.col),{x,y}));
+      target = empties[0];
+    } else {
+      target = findNearestEmptyCell(x,y);
+    }
+  } else {
+    const colGuess = clamp(Math.round((x - bubbleW/2)/bubbleW), 0, COLS-1);
+    target = !state.grid[0][colGuess] ? {row:0, col:colGuess} : findNearestEmptyCell(x,y);
+  }
+  if(!target){ triggerGameOver(); return; }
+
+  state.grid[target.row][target.col] = state.shooterColor;
+  renderGrid();
+  const landedEl = document.getElementById('b_'+target.row+'_'+target.col);
+  if(landedEl){
+    landedEl.classList.add('landing');
+    setTimeout(()=>{ if(landedEl) landedEl.classList.remove('landing'); }, 240);
+  }
+
+  const group = floodMatch(target.row, target.col);
+  if(group.length >= 3) handlePop(group);
+  else finishShot();
+}
+function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
+function handlePop(group){
+  addScore(group.length*10 + Math.max(0, group.length-3)*5);
+  group.forEach(({row,col})=>{
+    const el = document.getElementById('b_'+row+'_'+col);
+    if(el) el.classList.add('pop');
+  });
+  setTimeout(()=>{
+    group.forEach(({row,col})=>{ state.grid[row][col] = null; });
+    const floating = findFloating();
+    if(floating.length){
+      addScore(floating.length*20);
+      floating.forEach(({row,col})=>{
+        const el = document.getElementById('b_'+row+'_'+col);
+        if(el){
+          el.style.setProperty('--fall-x', (Math.random()*50-25)+'px');
+          el.style.setProperty('--fall-r', (Math.random()*140-70)+'deg');
+          el.classList.add('fall');
+        }
+      });
+      setTimeout(()=>{
+        floating.forEach(({row,col})=>{ state.grid[row][col] = null; });
+        renderGrid();
+        finishShot();
+      }, 480);
+    } else {
+      renderGrid();
+      finishShot();
+    }
+  }, 260);
+}
+function pushNewRow(){
+  for(let r=MAX_ROWS-1; r>0; r--) state.grid[r] = state.grid[r-1];
+  state.grid[0] = makeRandomRow();
+}
+function isGridEmpty(){
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++) if(state.grid[r][c]) return false;
+  return true;
+}
+function isDanger(){
+  for(let r=DANGER_ROW; r<MAX_ROWS; r++) for(let c=0;c<COLS;c++) if(state.grid[r][c]) return true;
+  return false;
+}
+function finishShot(){
+  state.shotsFired++;
+  state.shooterColor = state.nextColor;
+  state.nextColor = pickNextColor();
+  renderShooterHUD();
+
+  if(state.shotsFired % SHOTS_PER_PUSH === 0) pushNewRow();
+  renderGrid();
+
+  if(isGridEmpty()){ triggerWin(); return; }
+  if(isDanger()){ triggerGameOver(); return; }
+  busy = false;
+}
+function triggerWin(){
+  clearInterval(state.timerHandle);
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('win-sub').textContent = state.showTimer
+    ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+    : (state.showScore ? ('Score '+state.score) : 'Board cleared.');
+  document.getElementById('winmask').classList.add('show');
+}
+function triggerGameOver(){
+  clearInterval(state.timerHandle);
+  document.getElementById('gameovermask').classList.add('show');
+}
+function hideMasks(){
+  document.getElementById('winmask').classList.remove('show');
+  document.getElementById('gameovermask').classList.remove('show');
+}
+
+/* =========================================================
+   UNDO / TIMER / HUD
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({
+    grid: state.grid.map(r=>r.slice()),
+    score: state.score,
+    shooterColor: state.shooterColor,
+    nextColor: state.nextColor,
+    shotsFired: state.shotsFired
+  }),
+  (snap)=>{
+    cancelFlight();
+    state.grid = snap.grid.map(r=>r.slice());
+    state.score = snap.score;
+    state.shooterColor = snap.shooterColor;
+    state.nextColor = snap.nextColor;
+    state.shotsFired = snap.shotsFired;
+    busy = false;
+    hideMasks();
+    if(!state.timerHandle && state.showTimer) syncTimerInterval();
+    renderAll();
+  },
+  document.getElementById('btn-undo')
+);
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+
+/* =========================================================
+   HINT
+   ========================================================= */
+function showHint(){
+  if(busy) return;
+  const color = state.shooterColor;
+  const visited = new Set();
+  let bestGroup = null;
+  for(let r=0;r<MAX_ROWS && !bestGroup;r++){
+    for(let c=0;c<COLS && !bestGroup;c++){
+      if(state.grid[r][c] !== color) continue;
+      const key = r+'_'+c;
+      if(visited.has(key)) continue;
+      const grp = floodMatch(r,c);
+      grp.forEach(g=>visited.add(g.row+'_'+g.col));
+      if(grp.length >= 2) bestGroup = grp;
+    }
+  }
+  if(bestGroup){
+    const els = bestGroup.map(g=>document.getElementById('b_'+g.row+'_'+g.col)).filter(Boolean);
+    E.pulseAll(els, 1300);
+    E.showToast(document.getElementById('hint-toast'), 'Aim for that '+nameFor(color)+' cluster!', 1800);
+  } else {
+    E.showToast(document.getElementById('hint-toast'), 'No easy match for your current bubble — try opening up space near the top.', 2200);
+  }
+}
+
+/* =========================================================
+   NEW GAME
+   ========================================================= */
+function newGame(){
+  cancelFlight();
+  busy = false;
+  clearInterval(state.timerHandle);
+  state.numColors = pendingSettings.numColors;
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.grid = buildInitialGrid();
+  state.score = 0;
+  state.seconds = 0;
+  state.shotsFired = 0;
+  state.shooterColor = pickNextColor();
+  state.nextColor = pickNextColor();
+  undo.reset();
+  hideMasks();
+  applyHudVisibility();
+  syncTimerInterval();
+  computeSize();
+  renderAll();
+}
+
+/* =========================================================
+   INPUT WIRING
+   ========================================================= */
+const field = document.getElementById('bubble-field');
+window.addEventListener('pointermove', (e)=> updateAim(e.clientX, e.clientY));
+field.addEventListener('pointerdown', (e)=> updateAim(e.clientX, e.clientY));
+field.addEventListener('pointerup', (e)=>{ updateAim(e.clientX, e.clientY); fireShot(); });
+
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-hint').addEventListener('click', showHint);
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('win-newgame').addEventListener('click', ()=>{ document.getElementById('winmask').classList.remove('show'); newGame(); });
+document.getElementById('gameover-newgame').addEventListener('click', ()=>{ document.getElementById('gameovermask').classList.remove('show'); newGame(); });
+document.getElementById('gameover-undo').addEventListener('click', ()=>{ document.getElementById('gameovermask').classList.remove('show'); undo.undo(); });
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+(function buildLegend(){
+  const wrap = document.getElementById('legend-list');
+  COLORS.forEach(c=>{
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.innerHTML = '<div class="legend-swatch" data-color="'+c.id+'"><span>'+c.glyph+'</span></div><span class="legend-name">'+c.name+'</span>';
+    wrap.appendChild(row);
+  });
+})();
+
+/* =========================================================
+   SETTINGS
+   ========================================================= */
+function refreshColorsPicker(){
+  document.querySelectorAll('#seg-colors button').forEach(b=>{
+    b.classList.toggle('active', Number(b.dataset.val)===pendingSettings.numColors);
+  });
+}
+document.querySelectorAll('#seg-colors button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    pendingSettings.numColors = Number(b.dataset.val);
+    refreshColorsPicker();
+  });
+});
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'BubbleShooter.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility, syncTimerInterval,
+  onRenderNeeded: renderAll,
+  extraSnapshot: ()=>({ numColors: pendingSettings.numColors }),
+  extraRestore: (snap)=>{ pendingSettings.numColors = snap.numColors; refreshColorsPicker(); },
+  extraOnOpen: ()=>{ pendingSettings.numColors = state.numColors; refreshColorsPicker(); refreshVersionInfo(); }
+});
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
+});
+
+/* =========================================================
+   RESIZE
+   ========================================================= */
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{
+    if(busy) return; // avoid remapping coordinates mid-flight
+    computeSize();
+    renderAll();
+  }, 100);
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+newGame();
+
+})();
+</script>
+</body>
+</html>
