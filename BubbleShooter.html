@@ -2,22 +2,13 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.6
+    Version 1.8
 
-   Added two Settings helpers: Show Bounce Path draws the aim guide's
-   real reflected route off the side walls instead of a single
-   straight segment, and its sub-setting Show Landing Spot (disabled
-   until Bounce Path is on) rings the exact cell the shot would land
-   in — including the case it exists for, aiming for an opening but
-   the shot actually catching on it instead. Both are powered by a
-   new simulateShot(dir): it steps through the identical wall-bounce/
-   ceiling/first-bubble-collision rules fireShot()'s animation loop
-   uses, just synchronously instead of over frames, so the preview can
-   never promise a shot the real physics wouldn't deliver. Even with
-   Bounce Path off, the simple straight guide now stops at the first
-   real collision too, rather than a fixed-length line pointing past
-   whatever's actually in the way — the same class of bug flagged in
-   the index.html mini preview, fixed here at the source.
+   Badge's top-right quadrant swapped from the water droplet to the
+   shamrock — Water itself still uses &#128167; everywhere in actual
+   play (bubbles, legends); this only changes which glyph decorates
+   the header crest, per clarification that the shamrock request was
+   about the badge, not the Water element's own glyph.
 -->
 <html lang="en">
 <head>
@@ -230,7 +221,7 @@
     <div class="crest" aria-hidden="true">
       <div class="crest-cross"></div>
       <span class="crest-glyph q-tl">&#128293;</span>
-      <span class="crest-glyph q-tr">&#128167;</span>
+      <span class="crest-glyph q-tr">&#127808;</span>
       <span class="crest-glyph q-bl">&#127755;</span>
       <span class="crest-glyph q-br">&#9889;</span>
     </div>
@@ -389,7 +380,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.6';
+const PAGE_VERSION = '1.8';
 
 /* =========================================================
    ELEMENTAL PALETTE
@@ -400,7 +391,7 @@ const PAGE_VERSION = '1.6';
 const COLORS = [
   { id:'fire',  name:'Fire',      glyph:'&#128293;' },
   { id:'water', name:'Water',     glyph:'&#128167;' },
-  { id:'leaf',  name:'Leaf',      glyph:'&#127811;' },
+  { id:'leaf',  name:'Leaf',      glyph:'&#127808;' },
   { id:'ice',   name:'Ice',       glyph:'&#10052;&#65039;' },
   { id:'bolt',  name:'Lightning', glyph:'&#9889;' },
   { id:'void',  name:'Void',      glyph:'&#128302;' },
