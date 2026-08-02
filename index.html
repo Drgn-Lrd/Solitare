@@ -2,17 +2,22 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 6.0
+    Version 6.1
 
-   New tile: Bubble Shooter, linking to BubbleShooter.html. Its mini
-   preview is a small hex-offset grid of round .mc-bubble dots (its
-   own class, not .mc — bubbles are round, not card-shaped) colored
-   and glyphed to match the real game's 6-element palette, plus a
-   single larger "shooter" bubble underneath, the same way Klondike's
-   stock/foundation row hints at that game's real layout. No photo
-   background yet (stays plain felt, like Klondike, until dedicated
-   art exists), so no new preload link was needed. Game count is now
-   6, so this file's own major version follows suit.
+   Added a tile for Match 3 (Match3.html), inserted after Bubble
+   Shooter and marked Testing like the other newly-built-but-not-yet-
+   signed-off games — its mini preview is a small grid of plain
+   colored squares (.mc-m3-*), matching its own tile-grid look rather
+   than reusing card or bubble minis.
+
+   Also pre-wired background-photo support for BOTH Match 3 and Bubble
+   Shooter, same convention as every other non-Klondike game: a
+   preload link + .tile-bg-art art-<game> div + .art-<game>{
+   background-image: url('images/<GameName>.webp'); } rule, pointing
+   at images/Match3.webp and images/BubbleShooter.webp respectively.
+   Neither file exists yet — same as TriPeaks/Golf before their art
+   landed, this is harmless until it does, and the tile just needs the
+   image dropped in at that path once it's ready, no other change.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -29,19 +34,23 @@
   instead of cards/) so the two asset sets never cross. Bubble
   Shooter's mini tiles use their own .mc-bubble class for the same
   reason — round, glyphed, colored per-element, nothing to randomize.
+  Match 3's mini preview uses its own .mc-m3-* class — plain colored
+  squares, nothing to randomize either.
 
-  FreeCell + every in-dev tile also gets a real photo background from
-  /images (Golf.png, TriPeaks.png, Spider.png, Pyramid.png, FreeCell.png,
-  Mahjong.png) instead of hand-drawn shapes — a dark gradient scrim sits
-  between the photo and the content so the title/badge/mini-board stay
-  legible regardless of the photo. Klondike and Bubble Shooter stay
-  plain felt on purpose (Klondike: "keep it as is"; Bubble Shooter: no
-  dedicated photo asset yet).
+  Every tile except Klondike gets a real photo background from /images
+  (GameName.webp) — a dark gradient scrim sits between the photo and
+  the content so the title/badge/mini-board stay legible regardless of
+  the photo. Klondike stays plain felt on purpose ("keep it as is").
+  Match 3 and Bubble Shooter are wired the same way as every other
+  game but have no photo asset yet, so they render as plain felt until
+  one is dropped in at the matching images/ path — see this file's own
+  changelog above.
 
   Tiles for Klondike/FreeCell/Spider link out to their real files and
-  are approved/live (Play Now). Tut's Tomb, Mahjong, and Bubble Shooter
-  are playable but still marked Testing until signed off. TriPeaks and
-  Golf are marked IN DEV and stay inert (no navigation) until built.
+  are approved/live (Play Now). Tut's Tomb, Mahjong, Bubble Shooter,
+  and Match 3 are playable but still marked Testing until signed off.
+  TriPeaks and Golf are marked IN DEV and stay inert (no navigation)
+  until built.
 -->
 <html lang="en">
 <head>
@@ -56,6 +65,8 @@
 <link rel="preload" as="image" href="images/Spider.webp">
 <link rel="preload" as="image" href="images/Tut'sTomb.webp">
 <link rel="preload" as="image" href="images/Mahjong.webp">
+<link rel="preload" as="image" href="images/BubbleShooter.webp">
+<link rel="preload" as="image" href="images/Match3.webp">
 <style>
   :root{
     --felt-1:#0e4432;
@@ -163,6 +174,8 @@
   .art-tut{ background-image: url('images/Tut\'sTomb.webp'); }
   .art-freecell{ background-image: url('images/FreeCell.webp'); }
   .art-mahjong{ background-image: url('images/Mahjong.webp'); }
+  .art-bubbleshooter{ background-image: url('images/BubbleShooter.webp'); }
+  .art-match3{ background-image: url('images/Match3.webp'); }
 
   .tile-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; position:relative; z-index:1; }
   .tile-bg-art + .tile-head{
@@ -285,6 +298,15 @@
   .mc-bubble[data-color="ice"]  { background: radial-gradient(circle at 32% 26%, #ffffff, #cfeef8 55%, #93c9db 100%); }
   .mc-bubble[data-color="bolt"] { background: radial-gradient(circle at 32% 26%, #fffac0, #e8c873 55%, #b3860f 100%); }
   .mc-bubble[data-color="void"] { background: radial-gradient(circle at 32% 26%, #e9d6ff, #8a4fd1 55%, #5b21b6 100%); }
+
+  /* Match 3 mini preview: a small grid of plain colored squares (its
+     default Candies theme colors) — there's no card/bubble art to
+     reuse here, so this is its own tiny building block. */
+  .mc-m3-grid{
+    display:grid; grid-template-columns: repeat(6, 15px); grid-template-rows: repeat(4, 15px);
+    gap:3px; justify-content:center; margin:0 auto;
+  }
+  .mc-m3-tile{ width:15px; height:15px; border-radius:4px; box-shadow: 0 1px 2px rgba(0,0,0,.45); }
 </style>
 </head>
 <body>
@@ -497,6 +519,7 @@
     <a class="tile-link" href="BubbleShooter.html">
       <div class="tile-frame">
         <div class="tile-felt">
+          <div class="tile-bg-art art-bubbleshooter"></div>
           <div class="tile-head"><h2>Bubble Shooter</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
             <div class="pyramid-wrap" style="width:126px; height:78px;">
@@ -531,6 +554,48 @@
         </div>
       </div>
       <p class="tile-desc">Aim and fire to match <b>3+ of the same element</b> — every color carries its own glyph, so it's colorblind-friendly by design.</p>
+    </a>
+
+    <!-- MATCH 3 — playable -->
+    <a class="tile-link" href="Match3.html">
+      <div class="tile-frame">
+        <div class="tile-felt">
+          <div class="tile-bg-art art-match3"></div>
+          <div class="tile-head"><h2>Match 3</h2><span class="status-pill testing">Testing</span></div>
+          <div class="mini-board">
+            <div class="mc-m3-grid">
+              <div class="mc-m3-tile" style="background:#d1447e;"></div>
+              <div class="mc-m3-tile" style="background:#c62828;"></div>
+              <div class="mc-m3-tile" style="background:#6b4226;"></div>
+              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
+              <div class="mc-m3-tile" style="background:#a565c9;"></div>
+              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
+
+              <div class="mc-m3-tile" style="background:#c62828;"></div>
+              <div class="mc-m3-tile" style="background:#6b4226;"></div>
+              <div class="mc-m3-tile" style="background:#6b4226;"></div>
+              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
+              <div class="mc-m3-tile" style="background:#d1447e;"></div>
+              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
+
+              <div class="mc-m3-tile" style="background:#a565c9;"></div>
+              <div class="mc-m3-tile" style="background:#6b4226;"></div>
+              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
+              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
+              <div class="mc-m3-tile" style="background:#3f9e5c;"></div>
+              <div class="mc-m3-tile" style="background:#c62828;"></div>
+
+              <div class="mc-m3-tile" style="background:#d98a3d;"></div>
+              <div class="mc-m3-tile" style="background:#d1447e;"></div>
+              <div class="mc-m3-tile" style="background:#a565c9;"></div>
+              <div class="mc-m3-tile" style="background:#c62828;"></div>
+              <div class="mc-m3-tile" style="background:#6b4226;"></div>
+              <div class="mc-m3-tile" style="background:#a565c9;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tile-desc">Swap adjacent tiles to line up <b>3 or more</b>. Chain cascades, build stripes and bombs, and keep the board clear — endless score attack.</p>
     </a>
 
     <!-- TRIPEAKS — in dev -->
