@@ -2,14 +2,15 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
-    Version 1.5
+    Version 1.6
 
-   Replaced the placeholder 🎰 emoji crest with a real one: three
-   faceted gems in a diagonal cluster (ruby, sapphire, emerald — the
-   exact same hexes as TILESETS.gems below, so the crest is actually
-   drawn from this game's own palette rather than a generic emoji).
-   Inline SVG, not an image file, so nothing needed for images/ here —
-   it just renders on its own.
+   Crest redesigned again: three candies in a straight horizontal
+   line instead of the previous diagonal gem cluster — a horizontal
+   (or vertical) line is the actual shape a match takes in this game,
+   a diagonal isn't, and Candies is the default theme new players
+   actually see first (Gems was neither). Plain colored/glyphed divs,
+   same as the in-game tiles themselves, not SVG — pulled straight
+   from TILESETS.candy's own hexes/emoji below.
 -->
 <html lang="en">
 <head>
@@ -32,13 +33,17 @@
     background-attachment: fixed;
   }
 
-  /* Crest: three faceted gems in a diagonal "match of 3" — same ruby/
-     emerald/sapphire hexes as the in-game Gems tileset (TILESETS.gems
-     below), so the crest reads as this game's own art rather than a
-     generic emoji, and stays honest about what's actually inside.
-     Inline SVG, not an image file, so there's nothing to drop into
-     images/ for this piece — it just renders. */
-  .crest-svg{ width:74%; height:74%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
+  /* Crest: three candies in a straight horizontal line — the actual
+     shape a match takes in this game (a diagonal cluster doesn't
+     match anything here), using the default Candies theme's own
+     glyphs/hexes (TILESETS.candy below) rather than a theme that
+     isn't even the one new players see first. */
+  .crest-candy-row{ display:flex; gap:3px; align-items:center; justify-content:center; }
+  .crest-candy{
+    width:18px; height:18px; border-radius:5px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:12px; line-height:1;
+    box-shadow:0 1px 2px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.15);
+  }
 
   /* =========================================================
      BOARD
@@ -156,15 +161,11 @@
 <header>
   <div class="brand">
     <div class="crest" aria-hidden="true">
-      <svg class="crest-svg" viewBox="0 0 100 100">
-        <polygon points="32,14 41.6,21.04 48,33.84 32,46 16,33.84 22.4,21.04" fill="#c62828" stroke="#7a1414" stroke-width="1.5"/>
-        <polygon points="34,56 42.4,62.16 48,73.36 34,84 20,73.36 25.6,62.16" fill="#2a7fb8" stroke="#154a6e" stroke-width="1.5"/>
-        <polygon points="58,30 70,38.8 78,54.8 58,70 38,54.8 46,38.8" fill="#2f8f4e" stroke="#1a5c33" stroke-width="1.8"/>
-        <polygon points="32,14 41.6,21.04 32,21" fill="#ffffff" opacity="0.35"/>
-        <polygon points="34,56 42.4,62.16 34,62" fill="#ffffff" opacity="0.35"/>
-        <polygon points="58,30 70,38.8 58,39" fill="#ffffff" opacity="0.4"/>
-        <path d="M78 14 L80 20 L86 22 L80 24 L78 30 L76 24 L70 22 L76 20 Z" fill="#f0d78c"/>
-      </svg>
+      <div class="crest-candy-row">
+        <div class="crest-candy" style="background:#d1447e;">🍬</div>
+        <div class="crest-candy" style="background:#d98a3d;">🍩</div>
+        <div class="crest-candy" style="background:#3f9e5c;">🍡</div>
+      </div>
     </div>
     <div class="brand-text">
       <h1>Match 3<span class="title-suffix"> - Gravity Match</span></h1>
@@ -306,7 +307,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.5';
+const PAGE_VERSION = '1.6';
 const E = window.SEngine;
 
 /* =========================================================
