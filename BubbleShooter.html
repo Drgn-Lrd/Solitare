@@ -2,20 +2,30 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.15
+    Version 1.16
 
-   Favicon switched from WebP to PNG (images/favicon-bubbleshooter.png)
-   — Brave's dev tools showing no network request at all for the old
-   .webp favicon (not even a failed one) pointed at the browser not
-   recognizing it as fetchable in the first place, and Microsoft's own
-   Edge support docs confirm the same gap for WebP favicons
-   specifically, recommending .ico/.png instead. This is the one place
-   in the suite where WebP doesn't apply: normal <img> tags and CSS
-   background-image (everywhere else in this project) go through the
-   regular image pipeline where WebP is fully supported, but favicons
-   go through a separate, older browser subsystem that several
-   Chromium-family browsers don't extend WebP support to. Same source
-   artwork, same crest design, just re-exported as PNG.
+   Found and fixed the row-push sequencing bug: finishShot() was
+   calling pushNewRow() + renderGrid() synchronously, in the very same
+   tick as the shot's own landing — renderGrid() tears down and
+   rebuilds every bubble element from scratch with zero transition, so
+   the whole board could visibly reposition in the same instant as (or
+   even ahead of) the just-fired bubble's own landing animation
+   finishing. Made worse by the hex grid itself: any bubble that
+   changes row parity during a push (even row to odd or back) shifts
+   sideways by half a bubble-width as a normal consequence of the
+   offset formula — with no transition at all, that read as bubbles
+   "adjusting", especially near the edges where the zigzag is most
+   visible.
+
+   Two fixes: finishShot() now pauses 260ms after a push-triggering
+   shot before the push starts, so the landing is actually visible
+   first; and pushNewRow() split into a pure data-mutation function
+   plus a new pushNewRowAnimated() that captures every bubble's
+   on-screen position before mutating the grid, re-renders at the new
+   positions, then plays each survivor back from its old position to
+   its new one (a FLIP animation) — the sideways jog included, now
+   smoothed into an actual .28s slide instead of an instant jump. New
+   row-0 bubbles drop in from above instead of popping into existence.
 -->
 <html lang="en">
 <head>
@@ -425,7 +435,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.15';
+const PAGE_VERSION = '1.16';
 
 /* =========================================================
    ELEMENTAL PALETTE
@@ -957,6 +967,59 @@ function pushNewRow(){
   for(let r=MAX_ROWS-1; r>0; r--) state.grid[r] = state.grid[r-1];
   state.grid[0] = makeRandomRow();
 }
+// Animates the push instead of instantly rebuilding every bubble in
+// place: captures each existing bubble's on-screen position first,
+// mutates the grid data, re-renders at the new (shifted) positions,
+// then plays each survivor back from where it visually WAS to where
+// it now is (a FLIP animation) — including the sideways jog that a
+// row's parity offset naturally produces when a bubble moves from an
+// even row to an odd one or vice versa, which used to just teleport
+// instantly with no transition at all. New row-0 bubbles drop in from
+// above instead of popping into existence.
+function pushNewRowAnimated(callback){
+  const oldPos = {};
+  document.querySelectorAll('#grid-layer .bubble').forEach(el=>{
+    const m = el.id.match(/^b_(\d+)_(\d+)$/);
+    if(m) oldPos[m[1]+'_'+m[2]] = { left: parseFloat(el.style.left), top: parseFloat(el.style.top) };
+  });
+  pushNewRow();
+  renderGrid();
+  const dropDist = bubbleW*0.8;
+  document.querySelectorAll('#grid-layer .bubble').forEach(el=>{
+    const m = el.id.match(/^b_(\d+)_(\d+)$/);
+    if(!m) return;
+    const r = Number(m[1]), c = Number(m[2]);
+    if(r===0){
+      el.style.transition = 'none';
+      el.style.transform = 'translateY(-'+dropDist+'px)';
+      el.style.opacity = '0';
+    } else {
+      const old = oldPos[(r-1)+'_'+c];
+      if(old){
+        const dx = old.left - parseFloat(el.style.left);
+        const dy = old.top - parseFloat(el.style.top);
+        el.style.transition = 'none';
+        el.style.transform = 'translate('+dx+'px,'+dy+'px)';
+      }
+    }
+  });
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      document.querySelectorAll('#grid-layer .bubble').forEach(el=>{
+        el.style.transition = 'transform .28s ease, opacity .28s ease';
+        el.style.transform = 'translate(0,0)';
+        el.style.opacity = '1';
+      });
+    });
+  });
+  setTimeout(()=>{
+    document.querySelectorAll('#grid-layer .bubble').forEach(el=>{
+      el.style.transition = '';
+      el.style.transform = '';
+    });
+    if(callback) callback();
+  }, 300);
+}
 function isGridEmpty(){
   for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++) if(state.grid[r][c]) return false;
   return true;
@@ -971,12 +1034,24 @@ function finishShot(){
   state.nextQueue.push(pickNextColor());
   renderShooterHUD();
 
-  if(state.shotsFired % SHOTS_PER_PUSH === 0) pushNewRow();
-  renderGrid();
-
-  if(isGridEmpty()){ triggerWin(); return; }
-  if(isDanger()){ triggerGameOver(); return; }
-  busy = false;
+  if(state.shotsFired % SHOTS_PER_PUSH === 0){
+    // A beat of pause before the push starts — otherwise the push's
+    // instant grid rebuild could land in the very same tick as the
+    // shot's own landing animation, and the board would appear to
+    // shift out from under the bubble before it visibly finished
+    // arriving.
+    setTimeout(()=>{
+      pushNewRowAnimated(()=>{
+        if(isGridEmpty()){ triggerWin(); return; }
+        if(isDanger()){ triggerGameOver(); return; }
+        busy = false;
+      });
+    }, 260);
+  } else {
+    if(isGridEmpty()){ triggerWin(); return; }
+    if(isDanger()){ triggerGameOver(); return; }
+    busy = false;
+  }
 }
 function triggerWin(){
   clearInterval(state.timerHandle);
