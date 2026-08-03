@@ -2,35 +2,20 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.13
+    Version 1.14
 
-   Found the actual root cause of both "desktop is empty" and "shooter
-   isn't low enough": the shared .table-felt (styles.css) is only a
-   flex ITEM inside .table-frame — it never declares display:flex on
-   ITSELF, so #board-wrap's flex:1 had no real flex container to size
-   against and was silently defaulting to auto height (shrink to its
-   own content) the entire time. computeSize() was reading a small,
-   wrong wrap.clientHeight on every call, not a genuinely small table
-   — the max-bubbleW-cap and ResizeObserver changes from the last pass
-   couldn't have fixed that, since the number they were feeding off
-   was wrong at the source. Added `.table-felt{ display:flex;
-   flex-direction:column; }` scoped to this page only (not touching
-   the shared file) so board-wrap finally stretches to the felt's real
-   height.
-
-   With that fixed, reworked the shooter zone: reserve raised to
-   MAX_ROWS*0.866+5.0 units now that there's real room to spend it in,
-   shooter sits with headroom below it instead of glued to the very
-   bottom edge, and the 5-bubble queue moved from beside the shooter
-   to a single uniform-size row directly BELOW it (queue-0 marked with
-   a light ring instead of being elevated/larger, now that they're all
-   the same size).
-
-   Also fixed clicks only registering inside the small #bubble-field
-   rectangle: the fire/aim pointerdown/pointerup listeners now live on
-   #board-wrap (the whole felt), not #bubble-field, so tapping/
-   clicking anywhere on the table aims and fires — not just within the
-   board's own tight bounding box.
+   Show Bounce Path now defaults to ON (state + pendingSettings +
+   the checkbox's own `checked` attribute, so Settings shows the true
+   state even before it's ever been opened) — Show Landing Spot stays
+   off by default, still opt-in. Also added a `<link rel="shortcut
+   icon">` alongside the existing `rel="icon"`, a legacy alias some
+   Chromium-based browsers (Brave included) still check, in case that
+   was the gap. If it's still not showing after this, the far more
+   likely explanation is that images/favicon-bubbleshooter.webp simply
+   isn't uploaded to the live site yet, or the browser cached "no
+   favicon" from before it was added — favicons are cached
+   unusually aggressively, so a hard refresh (or a private/incognito
+   window) is worth trying before assuming the code is still wrong.
 -->
 <html lang="en">
 <head>
@@ -38,6 +23,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Bubble Shooter</title>
 <link rel="icon" type="image/webp" href="images/favicon-bubbleshooter.webp">
+<link rel="shortcut icon" type="image/webp" href="images/favicon-bubbleshooter.webp">
 <link rel="preload" as="image" href="images/BubbleShooter.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -409,7 +395,7 @@
     <div class="field">
       <div class="toggrow">
         <span>Show Bounce Path</span>
-        <label class="switch"><input type="checkbox" id="tog-bounce"><span class="slider"></span></label>
+        <label class="switch"><input type="checkbox" id="tog-bounce" checked><span class="slider"></span></label>
       </div>
       <div class="fieldnote">Draws the aim line's real path — including wall bounces — instead of a single straight guide.</div>
     </div>
@@ -519,13 +505,13 @@ const state = {
   shotsFired: 0,
   showTimer: false,
   showScore: false,
-  showBounce: false,
+  showBounce: true,
   showLanding: false,
   timerHandle: null,
   backStyle: null
 };
 const QUEUE_SIZE = 5;
-const pendingSettings = { numColors:5, showTimer:false, showScore:false, showBounce:false, showLanding:false };
+const pendingSettings = { numColors:5, showTimer:false, showScore:false, showBounce:true, showLanding:false };
 
 let busy = false;      // true while a shot is flying or resolving
 let flyReq = null;      // requestAnimationFrame handle for the current shot
