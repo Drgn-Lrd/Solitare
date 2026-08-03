@@ -2,28 +2,28 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.14
+    Version 1.15
 
-   Show Bounce Path now defaults to ON (state + pendingSettings +
-   the checkbox's own `checked` attribute, so Settings shows the true
-   state even before it's ever been opened) — Show Landing Spot stays
-   off by default, still opt-in. Also added a `<link rel="shortcut
-   icon">` alongside the existing `rel="icon"`, a legacy alias some
-   Chromium-based browsers (Brave included) still check, in case that
-   was the gap. If it's still not showing after this, the far more
-   likely explanation is that images/favicon-bubbleshooter.webp simply
-   isn't uploaded to the live site yet, or the browser cached "no
-   favicon" from before it was added — favicons are cached
-   unusually aggressively, so a hard refresh (or a private/incognito
-   window) is worth trying before assuming the code is still wrong.
+   Favicon switched from WebP to PNG (images/favicon-bubbleshooter.png)
+   — Brave's dev tools showing no network request at all for the old
+   .webp favicon (not even a failed one) pointed at the browser not
+   recognizing it as fetchable in the first place, and Microsoft's own
+   Edge support docs confirm the same gap for WebP favicons
+   specifically, recommending .ico/.png instead. This is the one place
+   in the suite where WebP doesn't apply: normal <img> tags and CSS
+   background-image (everywhere else in this project) go through the
+   regular image pipeline where WebP is fully supported, but favicons
+   go through a separate, older browser subsystem that several
+   Chromium-family browsers don't extend WebP support to. Same source
+   artwork, same crest design, just re-exported as PNG.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Bubble Shooter</title>
-<link rel="icon" type="image/webp" href="images/favicon-bubbleshooter.webp">
-<link rel="shortcut icon" type="image/webp" href="images/favicon-bubbleshooter.webp">
+<link rel="icon" type="image/png" href="images/favicon-bubbleshooter.png">
+<link rel="shortcut icon" type="image/png" href="images/favicon-bubbleshooter.png">
 <link rel="preload" as="image" href="images/BubbleShooter.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -425,7 +425,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.13';
+const PAGE_VERSION = '1.15';
 
 /* =========================================================
    ELEMENTAL PALETTE
