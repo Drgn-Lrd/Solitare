@@ -2,30 +2,31 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.16
+    Version 1.17
 
-   Found and fixed the row-push sequencing bug: finishShot() was
-   calling pushNewRow() + renderGrid() synchronously, in the very same
-   tick as the shot's own landing — renderGrid() tears down and
-   rebuilds every bubble element from scratch with zero transition, so
-   the whole board could visibly reposition in the same instant as (or
-   even ahead of) the just-fired bubble's own landing animation
-   finishing. Made worse by the hex grid itself: any bubble that
-   changes row parity during a push (even row to odd or back) shifts
-   sideways by half a bubble-width as a normal consequence of the
-   offset formula — with no transition at all, that read as bubbles
-   "adjusting", especially near the edges where the zigzag is most
-   visible.
+   The real bug, per correction: row parity (which side a row offsets
+   toward) was being derived from the row's ARRAY INDEX (row % 2), not
+   from anything attached to the row's actual contents. pushNewRow()
+   shifts every row's contents down one array slot without changing
+   which side they should visually sit on — but since parity was
+   computed from the index, every single push flipped every row's
+   effective offset, which is what was actually moving bubbles
+   sideways, not just an animation/timing gap. The previous pass's
+   delay + FLIP-animation fix made the wrong movement smoother, not
+   correct.
 
-   Two fixes: finishShot() now pauses 260ms after a push-triggering
-   shot before the push starts, so the landing is actually visible
-   first; and pushNewRow() split into a pure data-mutation function
-   plus a new pushNewRowAnimated() that captures every bubble's
-   on-screen position before mutating the grid, re-renders at the new
-   positions, then plays each survivor back from its old position to
-   its new one (a FLIP animation) — the sideways jog included, now
-   smoothed into an actual .28s slide instead of an instant jump. New
-   row-0 bubbles drop in from above instead of popping into existence.
+   Fixed by decoupling offset from array index: a new rowParityPhase
+   toggles once per push, and a shared rowIsOffset(row) helper (row +
+   rowParityPhase) replaces every direct row % 2 check — in
+   cellCenter(), neighborsOf(), and the two ceiling-hit column-guess
+   formulas in simulateShot()/resolveLanding() (which assumed row 0
+   was never offset and needed the same fix). A row's contents now
+   keep the same visual offset before and after a push; only its own
+   vertical position changes. rowParityPhase resets on New Game and is
+   included in the undo snapshot, so undoing a push-triggering shot
+   reverts it correctly too. The delay + FLIP animation from the
+   previous version stays — it's still correct, just was smoothing
+   the wrong underlying movement until now.
 -->
 <html lang="en">
 <head>
@@ -435,7 +436,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.16';
+const PAGE_VERSION = '1.17';
 
 /* =========================================================
    ELEMENTAL PALETTE
@@ -483,15 +484,24 @@ let bubbleW = 40;
 let rowH = bubbleW * 0.8660254;
 let fieldWpx = 0, fieldHpx = 0;
 let shooterPos = { x:0, y:0 };
+// A row's visual offset (left vs shifted-right) must stay attached to
+// its CONTENTS, not to its array index — pushNewRow() shifts every
+// row's contents down one slot, and array-index parity flips every
+// time that happens even though nothing about the row itself should
+// visually change sides. rowParityPhase toggles once per push and
+// gets folded into every parity check below, so a row's effective
+// offset stays constant across a push instead of flipping.
+let rowParityPhase = 0;
+function rowIsOffset(row){ return ((row + rowParityPhase) % 2) === 1; }
 
 function cellCenter(row, col){
-  const off = (row % 2 === 1) ? bubbleW * 0.5 : 0;
+  const off = rowIsOffset(row) ? bubbleW * 0.5 : 0;
   return { x: off + col*bubbleW + bubbleW/2, y: row*rowH + bubbleW/2 };
 }
 function neighborsOf(row, col){
   const evenD = [[-1,-1],[-1,0],[0,-1],[0,1],[1,-1],[1,0]];
   const oddD  = [[-1,0],[-1,1],[0,-1],[0,1],[1,0],[1,1]];
-  const deltas = (row % 2 === 0) ? evenD : oddD;
+  const deltas = rowIsOffset(row) ? oddD : evenD;
   const out = [];
   for(const [dr,dc] of deltas){
     const nr = row+dr, nc = col+dc;
@@ -780,7 +790,8 @@ function simulateShot(dir){
           landing = findNearestEmptyCell(x,y);
         }
       } else {
-        const colGuess = clamp(Math.round((x - bubbleW/2)/bubbleW), 0, COLS-1);
+        const off0 = rowIsOffset(0) ? bubbleW*0.5 : 0;
+        const colGuess = clamp(Math.round((x - off0 - bubbleW/2)/bubbleW), 0, COLS-1);
         landing = !state.grid[0][colGuess] ? {row:0, col:colGuess} : findNearestEmptyCell(x,y);
       }
       return { points, landing };
@@ -915,7 +926,8 @@ function resolveLanding(x, y, hit){
       target = findNearestEmptyCell(x,y);
     }
   } else {
-    const colGuess = clamp(Math.round((x - bubbleW/2)/bubbleW), 0, COLS-1);
+    const off0 = rowIsOffset(0) ? bubbleW*0.5 : 0;
+    const colGuess = clamp(Math.round((x - off0 - bubbleW/2)/bubbleW), 0, COLS-1);
     target = !state.grid[0][colGuess] ? {row:0, col:colGuess} : findNearestEmptyCell(x,y);
   }
   if(!target){ triggerGameOver(); return; }
@@ -966,6 +978,7 @@ function handlePop(group){
 function pushNewRow(){
   for(let r=MAX_ROWS-1; r>0; r--) state.grid[r] = state.grid[r-1];
   state.grid[0] = makeRandomRow();
+  rowParityPhase ^= 1;
 }
 // Animates the push instead of instantly rebuilding every bubble in
 // place: captures each existing bubble's on-screen position first,
@@ -1079,7 +1092,8 @@ const undo = E.createUndoStack(
     score: state.score,
     shooterColor: state.shooterColor,
     nextQueue: state.nextQueue.slice(),
-    shotsFired: state.shotsFired
+    shotsFired: state.shotsFired,
+    rowParityPhase: rowParityPhase
   }),
   (snap)=>{
     cancelFlight();
@@ -1088,6 +1102,7 @@ const undo = E.createUndoStack(
     state.shooterColor = snap.shooterColor;
     state.nextQueue = snap.nextQueue.slice();
     state.shotsFired = snap.shotsFired;
+    rowParityPhase = snap.rowParityPhase;
     busy = false;
     hideMasks();
     if(!state.timerHandle && state.showTimer) syncTimerInterval();
@@ -1142,6 +1157,7 @@ function newGame(){
   state.score = 0;
   state.seconds = 0;
   state.shotsFired = 0;
+  rowParityPhase = 0;
   state.shooterColor = pickNextColor();
   state.nextQueue = [];
   for(let i=0;i<QUEUE_SIZE;i++) state.nextQueue.push(pickNextColor());
