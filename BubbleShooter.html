@@ -2,31 +2,17 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.17
+    Version 2.0
 
-   The real bug, per correction: row parity (which side a row offsets
-   toward) was being derived from the row's ARRAY INDEX (row % 2), not
-   from anything attached to the row's actual contents. pushNewRow()
-   shifts every row's contents down one array slot without changing
-   which side they should visually sit on — but since parity was
-   computed from the index, every single push flipped every row's
-   effective offset, which is what was actually moving bubbles
-   sideways, not just an animation/timing gap. The previous pass's
-   delay + FLIP-animation fix made the wrong movement smoother, not
-   correct.
+   Crest badge (and the matching favicon) was too tight against the
+   circle's edge, per John's screenshot: pulled the 4 glyph positions
+   inward (24%/76% -> 30%/70% from center) and shrank them slightly
+   (20px/15px -> 18px/13px in the header crest; 80px/60px -> 68px/50px
+   in the favicon's own render source) so there's real padding between
+   each glyph and the ring now. Same relative change applied to both
+   so they still read as the same badge at two sizes.
 
-   Fixed by decoupling offset from array index: a new rowParityPhase
-   toggles once per push, and a shared rowIsOffset(row) helper (row +
-   rowParityPhase) replaces every direct row % 2 check — in
-   cellCenter(), neighborsOf(), and the two ceiling-hit column-guess
-   formulas in simulateShot()/resolveLanding() (which assumed row 0
-   was never offset and needed the same fix). A row's contents now
-   keep the same visual offset before and after a push; only its own
-   vertical position changes. rowParityPhase resets on New Game and is
-   included in the undo snapshot, so undoing a push-triggering shot
-   reverts it correctly too. The delay + FLIP animation from the
-   previous version stays — it's still correct, just was smoothing
-   the wrong underlying movement until now.
+   Version bumped to 2.0 on explicit instruction.
 -->
 <html lang="en">
 <head>
@@ -77,15 +63,15 @@
   .crest-cross::before{ left:50%; top:9%; bottom:9%; width:2.5px; transform:translateX(-50%); }
   .crest-cross::after{ top:50%; left:9%; right:9%; height:2.5px; transform:translateY(-50%); }
   .crest-glyph{
-    position:absolute; width:20px; height:20px;
+    position:absolute; width:18px; height:18px;
     display:flex; align-items:center; justify-content:center;
-    font-size:15px; line-height:1; transform:translate(-50%,-50%);
+    font-size:13px; line-height:1; transform:translate(-50%,-50%);
     filter: drop-shadow(0 1px 1px rgba(0,0,0,.4));
   }
-  .crest-glyph.q-tl{ left:24%; top:24%; }
-  .crest-glyph.q-tr{ left:76%; top:24%; }
-  .crest-glyph.q-bl{ left:24%; top:76%; }
-  .crest-glyph.q-br{ left:76%; top:76%; }
+  .crest-glyph.q-tl{ left:30%; top:30%; }
+  .crest-glyph.q-tr{ left:70%; top:30%; }
+  .crest-glyph.q-bl{ left:30%; top:70%; }
+  .crest-glyph.q-br{ left:70%; top:70%; }
 
   /* The shared .table-felt (styles.css) is only a flex ITEM inside
      .table-frame — it never declares display:flex on itself, so it
@@ -436,7 +422,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.17';
+const PAGE_VERSION = '2.0';
 
 /* =========================================================
    ELEMENTAL PALETTE
