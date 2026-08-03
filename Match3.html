@@ -2,28 +2,21 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
-    Version 1.9
+    Version 1.11
 
-   Blocker generation reworked — no longer spawned from long cascade
-   chains at all (that mechanic's removed, maybeSpawnBlocker is gone).
-   Now difficulty-driven instead: Easy/Medium have a small per-new-tile
-   chance of a movable blocker falling in from the top during play,
-   same as any other tile, drifting with gravity afterward; Hard plants
-   a handful directly on the field once at game start and they never
-   move (applyGravityAndRefill now treats a `fixed` blocker as a wall
-   its column's gravity splits around, rather than assuming every
-   column falls as one uninterrupted segment). Difficulty is no longer
-   hidden in Endless mode in Settings, since it now matters there too.
-
-   Default mode changed from Endless to Classic.
-
-   Hint no longer just returns the first legal swap it finds — it now
-   ranks every candidate and prefers, in order: swapping an existing
-   powerup, a swap that creates a new one, a swap that clears a
-   blocker, a swap that at least sets up a powerup once the pieces
-   above it settle (checked against the deterministic falling tiles
-   only, not the random ones that'd refill from the top), and only
-   falls back to any plain legal match if none of those exist.
+   Corrected a misunderstanding from the last update: Hard's "solid"
+   starting blockers were never supposed to take multiple hits to
+   clear — that was my own misread. What was actually meant (and is
+   now what's built) is that they're placed as bigger, multi-cell
+   rectangular chunks (SOLID_BLOCKER_SHAPES/placeSolidBlockers) instead
+   of scattered single tiles — several fixed cells together forming one
+   wall-like obstacle, same as the big blockers other match-3 games use
+   to actually block off part of the board, not a tougher single tile.
+   Each cell of a chunk still clears in one adjacent hit like any other
+   blocker; there's just more of them grouped together. Pulled the
+   HP/"cracking" mechanic back out entirely (newBlockerObj, resolveBoard's
+   blocker-clear pass, and the cracked-tile visual) since it wasn't the
+   actual feature.
 -->
 <html lang="en">
 <head>
@@ -126,11 +119,17 @@
   }
   /* Blocker: an obstacle, same plain look regardless of which candy
      theme is active (it isn't a themed tile, it's a hazard). Never
-     joins a normal match; clears when any match/special lands next to
-     it (any side) or as Fish's preferred target. Movable on Easy/
-     Medium (falls in from the top, drifts with gravity like any other
-     tile); immovable on Hard (`fixed`, planted once at game start —
-     see initGrid/applyGravityAndRefill in the script below). */
+     joins a normal match; clears in a single adjacent hit — a match
+     or special landing next to it (any side), or a Fish seeking it
+     out. Regular blockers (every difficulty's ongoing top-fall spawns,
+     plus Easy/Medium's starting batch) are single cells and movable,
+     falling with gravity like any other tile. Hard's starting batch is
+     the "solid" variant instead — placed as bigger, multi-cell
+     rectangular chunks (see SOLID_BLOCKER_SHAPES/placeSolidBlockers),
+     fixed in place, gravity routes around them entirely rather than
+     through them (applyGravityAndRefill splits each affected column
+     into segments at every fixed cell). Each cell of a solid chunk
+     still only takes one hit to clear individually. */
   .m3-tile.m3-blocker{
     cursor: default;
     box-shadow: inset 0 0 10px rgba(0,0,0,.7), 0 2px 4px rgba(0,0,0,.5);
@@ -193,6 +192,9 @@
     </div>
   </div>
   <div class="hud">
+    <button class="iconbtn" id="btn-wallet" title="Powerup Wallet" style="position:relative;">
+      🎒<span id="wallet-badge" style="position:absolute; top:-4px; right:-4px; background:#c62828; color:#fff; font-size:10px; font-weight:bold; min-width:15px; height:15px; border-radius:8px; display:none; align-items:center; justify-content:center; padding:0 3px; line-height:1;">0</span>
+    </button>
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
     <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
   </div>
@@ -239,13 +241,13 @@
   </div>
 </div>
 
-<div class="overlay" id="lose-overlay">
-  <div class="modal" style="text-align:center;">
-    <h3>Out of Moves</h3>
-    <div class="sub" id="lose-score-line" style="margin-bottom:6px;"></div>
+<div class="overlay" id="wallet-overlay">
+  <div class="modal">
+    <h3>Powerup Wallet</h3>
+    <div class="sub">Banked from powerups left un-activated at the end of past games. Tap Use, then tap any tile on the board to drop it there — free, no move spent. Whatever's still here when you win a Classic round cashes out as bonus points instead.</div>
+    <div id="wallet-list" style="display:flex; flex-direction:column; gap:8px; margin:14px 0;"></div>
     <div class="modal-actions">
-      <button class="textbtn" id="lose-close">Close</button>
-      <button class="textbtn primary" id="lose-newgame">Try Again</button>
+      <button class="textbtn primary" id="wallet-close" style="flex:1;">Close</button>
     </div>
   </div>
 </div>
@@ -262,10 +264,12 @@
       <li>A <b>T or L</b> shaped match creates a <b>Bomb</b> — explodes the 3x3 area around it on its next swap or match, not the instant it's created.</li>
       <li>A <b>2x2 block</b> match creates a <b>Fish</b> — seeks out and clears a blocker tile if one exists, otherwise clears up to 5 tiles of whichever color it was swapped with.</li>
       <li>Swap two specials directly into each other for a combo: two Bombs together set off <b>two</b> full 5x5 explosions back to back; a Bomb + Color Bomb clears every tile of the Bomb's color; a Bomb + Striped clears a 3-row-by-3-column plus sign; two Stripes of the same direction clear 3 rows/columns instead of 1, opposite directions clear a plus shape; a Color Bomb + Striped turns every tile of the Striped candy's color into a Striped candy and detonates them all at once; two Fish sweep up to 5 blockers (backfilled with random tiles if fewer exist); two Color Bombs clear the entire board.</li>
-      <li><b>Blockers</b> never join a normal match — they're cleared when any match or special effect lands directly next to them (any side), or by a Fish seeking one out; clearing one never triggers a special effect of its own. On Easy/Medium they fall in from the top occasionally and drift down like any other tile; on Hard a few are planted directly on the field at the start and never move. Set difficulty in Settings — it applies in both Endless and Classic.</li>
+      <li><b>Blockers</b> never join a normal match — they're cleared when any match or special effect lands directly next to them (any side), or by a Fish seeking one out; clearing one never triggers a special effect of its own, and every blocker clears in a single hit. Every difficulty starts with some already on the field, more on harder tiers, and more keep falling in from the top over time as the game goes on (see Chain below). Easy/Medium's blockers are single cells that fall and drift with gravity like any other tile; Hard's starting batch is <b>solid</b> instead — several bigger, fixed, multi-cell wall chunks that never move, the kind you'd see blocking off part of the board in other match-3 games. Set difficulty in Settings — it applies in both Endless and Classic.</li>
+      <li>The longer a single game runs, the more often blockers fall in — a hidden <b>chain counter</b> nudges the odds up move by move, creeping toward (but never quite reaching) the next difficulty's rate. Starting a new game resets it.</li>
       <li>Tap a special tile by itself to activate it in place, or swap/drag it into any neighbor — both work, matched or not.</li>
-      <li><b>Hint</b> picks the best move it can find: a swap involving an existing powerup first, then one that creates a new powerup, then one that clears a blocker, then one that at least sets up a powerup once things settle — a plain match only if none of those exist. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left) — neither costs a move.</li>
-      <li>In <b>Classic mode</b> (Settings &gt; Mode), reach the target score before you run out of moves. <b>Endless</b> mode has no target or move limit.</li>
+      <li>Any powerup still sitting un-activated on the board when a game ends gets banked into your <b>Powerup Wallet</b> (🎒, top left) instead of wasted. Spend a banked one on any tile in a later game for free — no move spent — or let it ride: whatever's still banked when you win a Classic round cashes out as bonus score in an end-of-round cascade.</li>
+      <li><b>Hint</b> picks the best move it can find, in order: one that clears a blocker, one that creates a new powerup, swapping an existing powerup directly, one that at least sets up a powerup once things settle — a plain match only if none of those exist. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left) — neither costs a move.</li>
+      <li>In <b>Classic mode</b> (Settings &gt; Mode), reach the target score to win — there's no move limit, so take your time. <b>Endless</b> mode has no target at all, just keep playing.</li>
     </ul>
     <div class="modal-actions">
       <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
@@ -325,7 +329,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.9';
+const PAGE_VERSION = '1.11';
 const E = window.SEngine;
 
 /* =========================================================
@@ -390,25 +394,65 @@ const TILESETS = {
 const TYPE_COUNT = 6;
 const COLS = 8, ROWS = 8;
 const DIFFICULTIES = {
-  easy:   { moves:25, target:2000 },
-  medium: { moves:20, target:4000 },
-  hard:   { moves:16, target:7000 }
+  easy:   { target:2000 },
+  medium: { target:4000 },
+  hard:   { target:7000 }
 };
-// Blocker behavior is difficulty-driven, not chain-length-driven —
-// see initGrid/spawnNewTileFor/applyGravityAndRefill. Hard plants a
-// fixed number on the field once, at the start; Easy/Medium instead
-// have a small per-new-tile chance of a movable blocker falling in
-// from the top during play, same as any other newly spawned tile.
-const HARD_BLOCKER_COUNT = 3;
-const BLOCKER_SPAWN_CHANCE = 0.04;
+// Blocker behavior is difficulty-driven. Every difficulty plants a
+// starting batch directly on the field at initGrid, sized by tier
+// (harder = more, BLOCKER_START_COUNT — total cells, not clusters),
+// and every difficulty ALSO has an ongoing chance of a regular
+// (single-cell, movable — see newBlockerObj) blocker falling in from
+// the top during play, harder tiers spawning them faster. Hard's
+// STARTING batch specifically is the "solid" variant — placed as
+// bigger, multi-cell rectangular chunks instead of scattered singles
+// (SOLID_BLOCKER_SHAPES/placeSolidBlockers), fixed in place, static
+// until cleared — the actual obstacle-wall pieces you'd see blocking
+// off part of the board in other match-3 games, not just a tougher
+// single tile. Everything that spawns in later on any difficulty
+// (including Hard) is always the regular single-cell kind.
+// `state.chainCounter` (see newGame/consumeMove) nudges the ongoing
+// spawn chance up the longer a single game runs, asymptotically
+// approaching but never quite reaching the next tier's base rate (see
+// effectiveBlockerSpawnChance) — Hard approaches a synthetic rate
+// beyond its own baseline, since there's no official tier above it.
+const TIER_ORDER = ['easy','medium','hard'];
+const BLOCKER_START_COUNT = { easy:2, medium:5, hard:10 };
+const BLOCKER_SPAWN_CHANCE = { easy:0.03, medium:0.06, hard:0.10 };
+// Rectangular footprints a solid blocker chunk can take (width x
+// height, in cells) — weighted toward the smaller end so a handful of
+// distinct chunks are more typical than one giant slab eating the
+// board, but 2x2/2x3-ish walls do show up.
+const SOLID_BLOCKER_SHAPES = [
+  {w:1,h:1}, {w:2,h:1}, {w:1,h:2}, {w:2,h:1}, {w:1,h:2},
+  {w:2,h:2}, {w:3,h:1}, {w:1,h:3}, {w:2,h:3}, {w:3,h:2}
+];
+const CHAIN_RAMP_K = 40;
+
+// Powerup Wallet: any powerup still sitting un-activated on the board
+// when a game ends (New Game pressed — see harvestWalletFromBoard,
+// called from newGame) gets banked here by broad category (both
+// striped orientations count as one 'striped' bucket) instead of just
+// being thrown away. Banked items are spendable on the board in any
+// later game via the wallet panel (armWalletPlacement) — dropped onto
+// any tile, replacing it in place, no move cost. Whatever's still
+// banked when a Classic round is actually WON cashes out instead, as
+// flat bonus points in a sequential "end cascade" (see
+// triggerEndCascade) rather than carrying over unused forever.
+const WALLET_TYPES = ['striped','bomb','colorbomb','fish'];
+const WALLET_LABELS = { striped:'Striped', bomb:'Bomb', colorbomb:'Color Bomb', fish:'Fish' };
+const WALLET_GLYPHS = { striped:'▮', bomb:'🎀', colorbomb:'💥', fish:'🐟' };
+const WALLET_BONUS_VALUES = { striped:80, bomb:150, colorbomb:250, fish:100 };
+const WALLET_STORAGE_KEY = 'match3_powerup_wallet_v1';
 
 /* =========================================================
    STATE
    ========================================================= */
 const state = {
   score:0, tileset:'candy', showTimer:false, showScore:true, seconds:0,
-  mode:'classic', difficulty:'medium', movesLeft:0, targetScore:0,
-  gameOver:false, hasWon:false
+  mode:'classic', difficulty:'medium', movesMade:0, targetScore:0,
+  gameOver:false, hasWon:false, chainCounter:0,
+  wallet: { striped:0, bomb:0, colorbomb:0, fish:0 }
 };
 const pendingSettings = {
   tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore,
@@ -430,10 +474,11 @@ function sleep(ms){ return new Promise(res=> setTimeout(res, ms)); }
 function newTileObj(r,c,type){ return { id:'t'+(nextId++), r, c, type, special:null }; }
 // A blocker's own "type" is the string 'blocker' (never equal to a
 // real 0..TYPE_COUNT-1 candy type, so it never matches anything).
-// `fixed` is the difficulty-dependent part: Hard blockers are planted
-// once and never move (excluded from gravity entirely, see
-// applyGravityAndRefill); Easy/Medium blockers fall in from the top
-// like a normal tile and behave like any other tile under gravity.
+// `fixed` = excluded from gravity entirely (see applyGravityAndRefill)
+// — every cell clears in a single adjacent hit regardless; a "solid"
+// multi-cell chunk (Hard's starting batch — see placeSolidBlockers)
+// is just several fixed cells placed together, each one still only
+// takes one hit, there's simply more of them to individually clear.
 function newBlockerObj(r,c,fixed){ return { id:'t'+(nextId++), r, c, type:'blocker', special:null, fixed: !!fixed }; }
 function getEl(id){ return domMap[id]; }
 function cellKey(cell){ return cell.r+','+cell.c; }
@@ -578,25 +623,57 @@ function initGrid(){
       grid[r][c] = newTileObj(r,c,type);
     }
   }
-  // Hard: a few fixed blockers planted directly on the field at the
-  // start of the game, staying exactly where placed until an adjacent
-  // match clears one (see applyGravityAndRefill/resolveBoard) — no
-  // more spawn onto the field afterward on Hard. Easy/Medium don't
-  // plant any at start; theirs fall in from the top over time instead
-  // (see spawnNewTileFor), so nothing to do here for those.
-  if(state.difficulty==='hard') placeFixedBlockers(HARD_BLOCKER_COUNT);
+  // Every difficulty starts with a batch of blockers already on the
+  // field, sized by tier (BLOCKER_START_COUNT, total cells). Hard's is
+  // the "solid" variant — placed as a handful of bigger multi-cell
+  // rectangular chunks (see placeSolidBlockers), fixed in place.
+  // Easy/Medium's starting batch is scattered single cells, movable,
+  // same as whatever spawns in later during play on any difficulty.
+  const startCount = BLOCKER_START_COUNT[state.difficulty] || 0;
+  if(state.difficulty==='hard') placeSolidBlockers(startCount);
+  else placeStartingBlockers(startCount, false);
   if(!hasAnyMove()) initGrid();
 }
-function placeFixedBlockers(count){
+function placeStartingBlockers(count, fixed){
   let placed = 0, attempts = 0;
   while(placed<count && attempts<200){
     attempts++;
     const r = Math.floor(Math.random()*ROWS), c = Math.floor(Math.random()*COLS);
     const cell = grid[r][c];
     if(cell && cell.type!=='blocker'){
-      grid[r][c] = newBlockerObj(r, c, true);
+      grid[r][c] = newBlockerObj(r, c, fixed);
       placed++;
     }
+  }
+}
+// Hard's starting blockers: instead of scattered single cells, a
+// handful of contiguous rectangular chunks (SOLID_BLOCKER_SHAPES)
+// totaling roughly `totalCells`, each placed as one solid, fixed
+// obstacle — the kind that actually walls off part of the board, like
+// other match-3 games use, not just a tougher individual tile.
+function placeSolidBlockers(totalCells){
+  let remaining = totalCells, attempts = 0;
+  while(remaining>0 && attempts<300){
+    attempts++;
+    const fitting = SOLID_BLOCKER_SHAPES.filter(s=> s.w*s.h<=remaining);
+    const shape = fitting.length ? fitting[Math.floor(Math.random()*fitting.length)] : {w:1,h:1};
+    if(shape.w>COLS || shape.h>ROWS) continue;
+    const r0 = Math.floor(Math.random()*(ROWS-shape.h+1));
+    const c0 = Math.floor(Math.random()*(COLS-shape.w+1));
+    let ok = true;
+    for(let dr=0; dr<shape.h && ok; dr++){
+      for(let dc=0; dc<shape.w && ok; dc++){
+        const cell = grid[r0+dr][c0+dc];
+        if(!cell || cell.type==='blocker') ok = false;
+      }
+    }
+    if(!ok) continue;
+    for(let dr=0; dr<shape.h; dr++){
+      for(let dc=0; dc<shape.w; dc++){
+        grid[r0+dr][c0+dc] = newBlockerObj(r0+dr, c0+dc, true);
+      }
+    }
+    remaining -= shape.w*shape.h;
   }
 }
 function renderBoardFresh(){
@@ -791,22 +868,22 @@ function typesGridHasPowerupPotential(t){
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if(hMatched[r][c] && vMatched[r][c]) return true;
   return false;
 }
-// Ranks a candidate swap: 0 = swapping an existing special (always
-// great), 1 = the match itself creates a new powerup, 2 = the match
-// clears a blocker, 3 = doesn't do either but the existing tiles left
+// Ranks a candidate swap: 0 = the match clears a blocker, 1 = the
+// match creates a new powerup, 2 = swapping an existing powerup
+// directly, 3 = doesn't do any of those but the existing tiles left
 // behind would cascade into a powerup once they settle, 4 = a plain
 // match with none of the above. Returns null if the swap isn't a
 // legal move at all.
 function evaluateMoveTier(cellA, cellB){
-  if(cellA.special || cellB.special) return 0;
+  if(cellA.special || cellB.special) return 2;
   const t1=cellA.type, t2=cellB.type;
   cellA.type=t2; cellB.type=t1;
   let tier = null;
   const groups = findMatchGroups();
   if(groups.length>0){
     const {clearKeys, specialMap} = computeGroupsAndSpecials(groups, [cellKey(cellA), cellKey(cellB)]);
-    if(Object.keys(specialMap).length>0) tier = 1;
-    else if(clearSetTouchesBlocker(clearKeys)) tier = 2;
+    if(clearSetTouchesBlocker(clearKeys)) tier = 0;
+    else if(Object.keys(specialMap).length>0) tier = 1;
     else tier = typesGridHasPowerupPotential(simulateExistingTilesAfterClear(clearKeys)) ? 3 : 4;
   }
   cellA.type=t1; cellB.type=t2;
@@ -915,15 +992,41 @@ function updateScoreDisplay(){
   el.textContent = state.mode==='classic' ? (state.score+' / '+state.targetScore) : state.score;
 }
 function updateMovesDisplay(){
-  document.getElementById('time-val').textContent = state.movesLeft;
+  if(state.mode!=='classic') return; // the timer owns #time-val in Endless, see updateTimeDisplay
+  document.getElementById('time-val').textContent = state.movesMade;
 }
-function showWinModal(){
-  document.getElementById('win-score-line').textContent = 'Score: '+state.score+' (target was '+state.targetScore+')';
+function showWinModal(bonus){
+  const bonusLine = bonus ? (' (includes +'+bonus+' end-cascade bonus)') : '';
+  document.getElementById('win-score-line').textContent = 'Score: '+state.score+bonusLine+' (target was '+state.targetScore+')';
   document.getElementById('win-overlay').classList.add('show');
 }
-function showLoseModal(){
-  document.getElementById('lose-score-line').textContent = 'Final score: '+state.score+' / '+state.targetScore;
-  document.getElementById('lose-overlay').classList.add('show');
+// Reaching the target ends the round — whatever's still sitting in
+// the Powerup Wallet (banked from previous rounds' leftover on-field
+// powerups, see harvestWalletFromBoard) cashes out here as a bonus
+// score cascade rather than carrying over forever unused. Anything
+// spent earlier via the wallet panel is already gone from here by the
+// time this runs, same as it always was.
+async function triggerEndCascade(){
+  const types = Object.keys(state.wallet).filter(t=> state.wallet[t]>0);
+  if(types.length===0){ showWinModal(0); return; }
+  E.showToast(toastEl, 'End cascade!', 1200);
+  const cx = (COLS*(TILE_SIZE+TILE_GAP))/2, cy = (ROWS*(TILE_SIZE+TILE_GAP))/2;
+  let bonusTotal = 0;
+  for(const type of types){
+    const count = state.wallet[type];
+    for(let i=0;i<count;i++){
+      const points = WALLET_BONUS_VALUES[type];
+      bonusTotal += points;
+      state.score += points;
+      updateScoreDisplay();
+      spawnScorePop('+'+points, cx, cy);
+      await sleep(180);
+    }
+    state.wallet[type] = 0;
+  }
+  saveWallet();
+  updateWalletDisplay();
+  showWinModal(bonusTotal);
 }
 document.getElementById('win-keep-playing').addEventListener('click', ()=>{
   document.getElementById('win-overlay').classList.remove('show');
@@ -931,13 +1034,6 @@ document.getElementById('win-keep-playing').addEventListener('click', ()=>{
 });
 document.getElementById('win-newgame').addEventListener('click', ()=>{
   document.getElementById('win-overlay').classList.remove('show');
-  newGame();
-});
-document.getElementById('lose-close').addEventListener('click', ()=>{
-  document.getElementById('lose-overlay').classList.remove('show');
-});
-document.getElementById('lose-newgame').addEventListener('click', ()=>{
-  document.getElementById('lose-overlay').classList.remove('show');
   newGame();
 });
 
@@ -976,9 +1072,12 @@ async function resolveBoard(clearKeys, comboLevel, specialMap){
   }
 
   // Blockers: cleared by any match/activation directly adjacent to
-  // them on any side — but a blocker clearing never triggers a
-  // special effect of its own (it has none) and doesn't chain into
-  // clearing any further blockers beyond that single adjacency check.
+  // them on any side, one hit each — but a blocker clearing never
+  // triggers a special effect of its own (it has none) and doesn't
+  // chain into clearing any further blockers beyond that single
+  // adjacency check. A "solid" multi-cell chunk is just several fixed
+  // blocker cells placed together (see placeSolidBlockers) — each one
+  // still clears individually in one hit, there's simply more of them.
   const blockerAdds = new Set();
   expanded.forEach(k=>{
     if(specialMap[k]) return; // anchor cell, not actually clearing
@@ -1161,8 +1260,28 @@ function compactColumnSegment(c, top, bottom){
 // gravity like any other tile from here on (not fixed), it just can
 // never be part of a match. Hard doesn't spawn any here at all; its
 // blockers are only ever the fixed ones planted once at initGrid.
+// Chain-ramped spawn chance: creeps from this difficulty's own base
+// rate toward (but, per the asymptotic formula, never quite reaching)
+// the next tier's base rate as state.chainCounter grows over the
+// course of a single game (see consumeMove/newGame). Hard has no
+// official tier above it, so it approaches a synthetic 1.5x ceiling
+// instead — there's always a little more room to get harder without
+// it ever becoming an actual new named tier.
+function effectiveBlockerSpawnChance(){
+  const base = BLOCKER_SPAWN_CHANCE[state.difficulty];
+  const idx = TIER_ORDER.indexOf(state.difficulty);
+  const ceiling = idx < TIER_ORDER.length-1
+    ? BLOCKER_SPAWN_CHANCE[TIER_ORDER[idx+1]]
+    : base * 1.5;
+  const progress = 1 - 1/(1 + state.chainCounter/CHAIN_RAMP_K);
+  return base + (ceiling-base)*progress;
+}
+// Regular blocker (hp 1, movable) has a chain-ramped chance of falling
+// in from the top instead of a candy, on every difficulty — Hard's
+// tougher fixed variant only ever comes from its starting batch (see
+// initGrid), never from here.
 function spawnNewTileFor(r, c){
-  if(state.difficulty!=='hard' && Math.random() < BLOCKER_SPAWN_CHANCE){
+  if(Math.random() < effectiveBlockerSpawnChance()){
     return newBlockerObj(r, c, false);
   }
   return newTileObj(r, c, Math.floor(Math.random()*TYPE_COUNT));
@@ -1394,8 +1513,9 @@ async function activateSpecialInPlace(cell){
   }
 }
 function consumeMove(){
-  if(state.mode!=='classic' || state.gameOver || state.hasWon) return;
-  state.movesLeft = Math.max(0, state.movesLeft-1);
+  if(state.gameOver) return;
+  state.movesMade++;
+  state.chainCounter++; // drives effectiveBlockerSpawnChance's ramp — see there
   updateMovesDisplay();
 }
 function checkGameEnd(){
@@ -1403,10 +1523,7 @@ function checkGameEnd(){
   if(!state.hasWon && state.score>=state.targetScore){
     state.hasWon = true;
     state.gameOver = true;
-    showWinModal();
-  } else if(!state.hasWon && state.movesLeft<=0){
-    state.gameOver = true;
-    showLoseModal();
+    triggerEndCascade();
   }
 }
 function checkNoMoves(){
@@ -1426,6 +1543,112 @@ async function reshuffleBoard(){
   animating = false;
 }
 
+/* =========================================================
+   POWERUP WALLET
+   ========================================================= */
+function loadWallet(){
+  try{
+    const raw = localStorage.getItem(WALLET_STORAGE_KEY);
+    if(!raw) return;
+    const saved = JSON.parse(raw);
+    WALLET_TYPES.forEach(t=>{ if(typeof saved[t]==='number' && saved[t]>=0) state.wallet[t] = saved[t]; });
+  } catch(err){ /* corrupt or unavailable storage — just start empty */ }
+}
+function saveWallet(){
+  try{ localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(state.wallet)); }
+  catch(err){ /* storage unavailable (private browsing, etc.) — wallet just won't persist */ }
+}
+function walletBucketFor(special){
+  if(special==='striped-row' || special==='striped-col') return 'striped';
+  return WALLET_TYPES.indexOf(special)!==-1 ? special : null;
+}
+// Called from newGame, BEFORE the outgoing board is torn down — any
+// powerup still sitting un-activated on it gets banked rather than
+// just discarded.
+function harvestWalletFromBoard(){
+  if(!grid || !grid.length) return; // nothing dealt yet (the very first newGame call)
+  let harvested = 0;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cell = grid[r][c];
+    if(cell && cell.special){
+      const bucket = walletBucketFor(cell.special);
+      if(bucket){ state.wallet[bucket]++; harvested++; }
+    }
+  }
+  if(harvested>0){
+    saveWallet();
+    E.showToast(toastEl, (harvested===1 ? '1 powerup' : harvested+' powerups')+' banked to your wallet', 1800);
+  }
+}
+function updateWalletDisplay(){
+  const total = WALLET_TYPES.reduce((sum,t)=> sum+state.wallet[t], 0);
+  const badge = document.getElementById('wallet-badge');
+  if(badge){
+    badge.textContent = total;
+    badge.style.display = total>0 ? 'flex' : 'none';
+  }
+  WALLET_TYPES.forEach(t=>{
+    const countEl = document.getElementById('wallet-count-'+t);
+    const btn = document.getElementById('wallet-use-'+t);
+    if(countEl) countEl.textContent = state.wallet[t];
+    if(btn) btn.disabled = state.wallet[t]<=0;
+  });
+}
+function buildWalletPanel(){
+  const list = document.getElementById('wallet-list');
+  list.innerHTML = '';
+  WALLET_TYPES.forEach(t=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--panel-line); border-radius:8px; padding:8px 10px;';
+    const glyph = document.createElement('span');
+    glyph.textContent = WALLET_GLYPHS[t];
+    glyph.style.fontSize = '20px';
+    const label = document.createElement('span');
+    label.textContent = WALLET_LABELS[t];
+    label.style.cssText = 'flex:1; color:var(--ivory);';
+    const count = document.createElement('span');
+    count.id = 'wallet-count-'+t;
+    count.textContent = '0';
+    count.style.cssText = 'min-width:20px; text-align:right; color:#9fc9b6; font-weight:bold;';
+    const btn = document.createElement('button');
+    btn.className = 'textbtn';
+    btn.id = 'wallet-use-'+t;
+    btn.textContent = 'Use';
+    btn.disabled = true;
+    btn.addEventListener('click', ()=> armWalletPlacement(t));
+    row.appendChild(glyph); row.appendChild(label); row.appendChild(count); row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+let pendingWalletPlacement = null; // e.g. 'striped' while armed to place, else null
+function armWalletPlacement(type){
+  if(state.wallet[type]<=0) return;
+  pendingWalletPlacement = type;
+  document.getElementById('wallet-overlay').classList.remove('show');
+  E.showToast(toastEl, 'Tap any tile to place a '+WALLET_LABELS[type]+' powerup', 2400);
+}
+async function placeWalletPowerup(type, targetCell){
+  if(animating || state.gameOver || state.wallet[type]<=0 || targetCell.type==='blocker') return;
+  animating = true;
+  try{
+    state.wallet[type]--;
+    saveWallet();
+    updateWalletDisplay();
+    targetCell.special = type==='striped' ? (Math.random()<0.5 ? 'striped-row' : 'striped-col') : type;
+    renderTileContent(getEl(targetCell.id), targetCell);
+    E.pulseAll([getEl(targetCell.id)], 700);
+  } finally {
+    animating = false;
+  }
+}
+document.getElementById('btn-wallet').addEventListener('click', ()=>{
+  updateWalletDisplay();
+  document.getElementById('wallet-overlay').classList.add('show');
+});
+document.getElementById('wallet-close').addEventListener('click', ()=>{
+  document.getElementById('wallet-overlay').classList.remove('show');
+});
+
 function attachTileEvents(el, id){
   el.addEventListener('pointerdown', (e)=>{
     if(animating || state.gameOver) return;
@@ -1441,6 +1664,13 @@ function attachTileEvents(el, id){
     const startCell = findCellById(startId);
     if(!startCell) return;
     if(startCell.type==='blocker') return;
+
+    if(pendingWalletPlacement){
+      const type = pendingWalletPlacement;
+      pendingWalletPlacement = null;
+      placeWalletPowerup(type, startCell);
+      return;
+    }
 
     if(dist > TILE_SIZE*0.28){
       let dir;
@@ -1480,25 +1710,28 @@ function attachTileEvents(el, id){
    NEW GAME / HINT / SHUFFLE
    ========================================================= */
 function newGame(){
+  harvestWalletFromBoard(); // bank whatever's left un-activated before it's gone
   clearSelectionVisual();
   state.score = 0;
   state.seconds = 0;
+  state.movesMade = 0;
+  state.chainCounter = 0;
   state.gameOver = false;
   state.hasWon = false;
   if(state.mode==='classic'){
-    const diff = DIFFICULTIES[state.difficulty];
-    state.movesLeft = diff.moves;
-    state.targetScore = diff.target;
+    state.targetScore = DIFFICULTIES[state.difficulty].target;
   }
   updateScoreDisplay();
   updateMovesDisplay();
   updateTimeDisplay();
+  updateWalletDisplay();
   initGrid();
   fitMatchBoard();
   renderBoardFresh();
   applyHudVisibility();
 }
 function updateTimeDisplay(){
+  if(state.mode==='classic') return; // the moves count owns #time-val in Classic, see updateMovesDisplay
   const m = Math.floor(state.seconds/60), s = state.seconds%60;
   document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
 }
@@ -1709,6 +1942,8 @@ window.addEventListener('resize', ()=>{
 /* =========================================================
    INIT
    ========================================================= */
+loadWallet();
+buildWalletPanel();
 buildTilesetPicker();
 buildModePicker();
 applyHudVisibility();
