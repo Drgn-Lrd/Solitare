@@ -2,19 +2,14 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
-    Version 1.4
+    Version 1.5
 
-   Two more explicit combo rules, filling in gaps left as "falls back
-   to solo effects" last pass:
-   - Fish + Fish: targets up to 5 blockers. Any slot with no blocker
-     left to fill it converts to 4 random non-blocker tiles instead —
-     0 blockers on the field means 20 random tiles, 1 blocker means
-     that 1 real hit plus 16 random tiles from the other 4 slots.
-   - Color Bomb + Color Bomb: clears every tile on the board at once.
-     Not a win condition by itself — Classic mode's target/move check
-     runs the same as any other clear — just the single biggest score
-     payout available, since it's scored the same size*10*combo way
-     everything else is.
+   Replaced the placeholder 🎰 emoji crest with a real one: three
+   faceted gems in a diagonal cluster (ruby, sapphire, emerald — the
+   exact same hexes as TILESETS.gems below, so the crest is actually
+   drawn from this game's own palette rather than a generic emoji).
+   Inline SVG, not an image file, so nothing needed for images/ here —
+   it just renders on its own.
 -->
 <html lang="en">
 <head>
@@ -37,10 +32,13 @@
     background-attachment: fixed;
   }
 
-  /* Plain glyph crest (no dedicated art asset for this game yet) —
-     sits inside the shared .brand .crest brass circle from styles.css
-     the same way an emoji-based crest would on any other game. */
-  .brand .crest{ font-size:32px; }
+  /* Crest: three faceted gems in a diagonal "match of 3" — same ruby/
+     emerald/sapphire hexes as the in-game Gems tileset (TILESETS.gems
+     below), so the crest reads as this game's own art rather than a
+     generic emoji, and stays honest about what's actually inside.
+     Inline SVG, not an image file, so there's nothing to drop into
+     images/ for this piece — it just renders. */
+  .crest-svg{ width:74%; height:74%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
 
   /* =========================================================
      BOARD
@@ -157,7 +155,17 @@
 
 <header>
   <div class="brand">
-    <div class="crest" aria-hidden="true">🎰</div>
+    <div class="crest" aria-hidden="true">
+      <svg class="crest-svg" viewBox="0 0 100 100">
+        <polygon points="32,14 41.6,21.04 48,33.84 32,46 16,33.84 22.4,21.04" fill="#c62828" stroke="#7a1414" stroke-width="1.5"/>
+        <polygon points="34,56 42.4,62.16 48,73.36 34,84 20,73.36 25.6,62.16" fill="#2a7fb8" stroke="#154a6e" stroke-width="1.5"/>
+        <polygon points="58,30 70,38.8 78,54.8 58,70 38,54.8 46,38.8" fill="#2f8f4e" stroke="#1a5c33" stroke-width="1.8"/>
+        <polygon points="32,14 41.6,21.04 32,21" fill="#ffffff" opacity="0.35"/>
+        <polygon points="34,56 42.4,62.16 34,62" fill="#ffffff" opacity="0.35"/>
+        <polygon points="58,30 70,38.8 58,39" fill="#ffffff" opacity="0.4"/>
+        <path d="M78 14 L80 20 L86 22 L80 24 L78 30 L76 24 L70 22 L76 20 Z" fill="#f0d78c"/>
+      </svg>
+    </div>
     <div class="brand-text">
       <h1>Match 3<span class="title-suffix"> - Gravity Match</span></h1>
       <div class="brand-actions">
@@ -298,7 +306,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.4';
+const PAGE_VERSION = '1.5';
 const E = window.SEngine;
 
 /* =========================================================
