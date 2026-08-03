@@ -2,21 +2,21 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
-    Version 1.6
+    Version 1.7
 
-   Crest redesigned again: three candies in a straight horizontal
-   line instead of the previous diagonal gem cluster — a horizontal
-   (or vertical) line is the actual shape a match takes in this game,
-   a diagonal isn't, and Candies is the default theme new players
-   actually see first (Gems was neither). Plain colored/glyphed divs,
-   same as the in-game tiles themselves, not SVG — pulled straight
-   from TILESETS.candy's own hexes/emoji below.
+   Added a favicon — there wasn't one at all before now, no <link
+   rel="icon"> existed in this file. Same 3-candy design as the crest,
+   as an inline SVG data URI (no separate image file needed, same
+   self-contained approach the crest itself uses). It's a separate
+   hardcoded copy, not derived from the crest markup, so if the
+   crest's candies/colors ever change this needs updating to match.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Match 3</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20x%3D%222%22%20y%3D%2223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%225%22%20fill%3D%22%23d1447e%22/%3E%3Ctext%20x%3D%2211%22%20y%3D%2236%22%20font-size%3D%2215%22%20text-anchor%3D%22middle%22%3E%F0%9F%8D%AC%3C/text%3E%3Crect%20x%3D%2223%22%20y%3D%2223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%225%22%20fill%3D%22%23d98a3d%22/%3E%3Ctext%20x%3D%2232%22%20y%3D%2236%22%20font-size%3D%2215%22%20text-anchor%3D%22middle%22%3E%F0%9F%8D%A9%3C/text%3E%3Crect%20x%3D%2244%22%20y%3D%2223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%225%22%20fill%3D%22%233f9e5c%22/%3E%3Ctext%20x%3D%2253%22%20y%3D%2236%22%20font-size%3D%2215%22%20text-anchor%3D%22middle%22%3E%F0%9F%8D%A1%3C/text%3E%3C/svg%3E">
 <link rel="preload" as="image" href="images/Match3.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -307,7 +307,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.6';
+const PAGE_VERSION = '1.7';
 const E = window.SEngine;
 
 /* =========================================================
