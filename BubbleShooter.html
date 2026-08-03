@@ -2,35 +2,35 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.12
+    Version 1.13
 
-   Three related fixes/reworks:
+   Found the actual root cause of both "desktop is empty" and "shooter
+   isn't low enough": the shared .table-felt (styles.css) is only a
+   flex ITEM inside .table-frame — it never declares display:flex on
+   ITSELF, so #board-wrap's flex:1 had no real flex container to size
+   against and was silently defaulting to auto height (shrink to its
+   own content) the entire time. computeSize() was reading a small,
+   wrong wrap.clientHeight on every call, not a genuinely small table
+   — the max-bubbleW-cap and ResizeObserver changes from the last pass
+   couldn't have fixed that, since the number they were feeding off
+   was wrong at the source. Added `.table-felt{ display:flex;
+   flex-direction:column; }` scoped to this page only (not touching
+   the shared file) so board-wrap finally stretches to the felt's real
+   height.
 
-   1) Desktop was leaving huge empty space below the board: bubbleW's
-   max clamp was capped at 64px regardless of how much room existed,
-   and the very first computeSize() call (synchronous, at page load)
-   could undershoot if the browser hadn't finished laying the page out
-   yet, with nothing to correct it afterward. Cap raised to 110, and a
-   ResizeObserver on #board-wrap now recomputes any time its box
-   actually settles, not just on window resize events.
+   With that fixed, reworked the shooter zone: reserve raised to
+   MAX_ROWS*0.866+5.0 units now that there's real room to spend it in,
+   shooter sits with headroom below it instead of glued to the very
+   bottom edge, and the 5-bubble queue moved from beside the shooter
+   to a single uniform-size row directly BELOW it (queue-0 marked with
+   a light ring instead of being elevated/larger, now that they're all
+   the same size).
 
-   2) Shooter zone was stranded above a large gap on mobile too:
-   #board-wrap now anchors the field to the BOTTOM of its available
-   space (align-items:flex-end) instead of centering it, so leftover
-   room collects above the grid and the shooter sits low, near the
-   actual bottom of the table.
-
-   3) Replaced the flat shooter-bubble-plus-line with a ballista: a
-   single clip-path arrow div (#ballista) rotates to the current aim
-   angle, and the shooter bubble now slides along an arc at a fixed
-   distance from the pivot (shooterBubblePos()) so it always sits just
-   below the arrowhead instead of floating in one fixed spot. The
-   single small "next" preview became a 5-bubble queue
-   (state.nextQueue, replacing the old single nextColor) in an L: the
-   immediate next bubble is full size and elevated above a row of 4
-   smaller ones behind it. simulateShot()/fireShot() now launch from
-   the bubble's actual rotated position rather than the fixed pivot,
-   so the aim preview and the real shot agree with what's on screen.
+   Also fixed clicks only registering inside the small #bubble-field
+   rectangle: the fire/aim pointerdown/pointerup listeners now live on
+   #board-wrap (the whole felt), not #bubble-field, so tapping/
+   clicking anywhere on the table aims and fires — not just within the
+   board's own tight bounding box.
 -->
 <html lang="en">
 <head>
@@ -90,10 +90,20 @@
   .crest-glyph.q-bl{ left:24%; top:76%; }
   .crest-glyph.q-br{ left:76%; top:76%; }
 
+  /* The shared .table-felt (styles.css) is only a flex ITEM inside
+     .table-frame — it never declares display:flex on itself, so it
+     never gave #board-wrap's flex:1 a real flex container to size
+     against. #board-wrap was defaulting to auto height (shrink to its
+     own content) instead of stretching to the felt's actual available
+     space, which was the real cause of both "desktop is empty" and
+     "shooter isn't low enough": computeSize() was reading a small,
+     wrong wrap.clientHeight the whole time, not a genuinely small
+     table. This override is scoped to this page only. */
+  .table-felt{ display:flex; flex-direction:column; }
   #board-wrap{
     flex:1; min-height:0; width:100%;
     display:flex; align-items:flex-end; justify-content:center;
-    overflow:hidden; position:relative;
+    overflow:hidden; position:relative; touch-action:none;
   }
   #bubble-field{
     position:relative; touch-action:none; user-select:none;
@@ -233,7 +243,7 @@
      behind it (queue-1..4, slightly smaller so the whole row fits
      comfortably beside the shooter without crowding it). */
   .queue-bubble{ z-index:6; }
-  .queue-bubble.queue-0{ z-index:7; }
+  .queue-bubble.queue-0{ z-index:7; box-shadow: 0 0 0 2px rgba(232,200,115,0.6), 0 1px 2px rgba(0,0,0,.5), inset 0 -4px 6px rgba(0,0,0,.25), inset 0 3px 5px rgba(255,255,255,.35); }
 
   /* Legend rows inside the Help modal — one row per element, built by
      JS from the same COLORS array the game itself uses, so the legend
@@ -429,7 +439,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.12';
+const PAGE_VERSION = '1.13';
 
 /* =========================================================
    ELEMENTAL PALETTE
@@ -612,14 +622,15 @@ function computeSize(){
   const availW = wrap.clientWidth || 300;
   const availH = wrap.clientHeight || 400;
   const fieldWidthUnits = COLS + 0.5;
-  // Extra reserve below the grid for the ballista + 5-bubble queue,
-  // taller than the old single-next-bubble version needed.
-  const fieldHeightUnits = MAX_ROWS * 0.8660254 + 2.9;
+  // Reserve below the grid for: the ballista's upward reach, the
+  // shooter itself, a gap, and now the queue row UNDER the shooter
+  // (previously beside it) — with #board-wrap actually stretching to
+  // the felt's real height now (see the .table-felt fix above), this
+  // number means what it says instead of being computed against a
+  // wrong, too-small clientHeight.
+  const fieldHeightUnits = MAX_ROWS * 0.8660254 + 5.0;
   const wByWidth = availW / fieldWidthUnits;
   const wByHeight = availH / fieldHeightUnits;
-  // 110 (was 64) — the old cap left large desktop windows mostly
-  // empty since bubbleW never grew past a small fixed ceiling no
-  // matter how much room was actually available.
   bubbleW = Math.floor(clamp(Math.min(wByWidth, wByHeight), 18, 110));
   rowH = bubbleW * 0.8660254;
   fieldWpx = fieldWidthUnits * bubbleW;
@@ -628,12 +639,9 @@ function computeSize(){
   const field = document.getElementById('bubble-field');
   field.style.width = fieldWpx+'px';
   field.style.height = fieldHpx+'px';
-  // Anchored near the true bottom of the field (which is itself now
-  // anchored to the bottom of board-wrap — see #board-wrap's
-  // align-items:flex-end) instead of hugging just under the grid,
-  // so the shooter actually sits low on screen instead of stranded
-  // above a large empty gap.
-  shooterPos = { x: fieldWpx/2, y: fieldHpx - bubbleW*0.9 };
+  // Shooter sits low, but not glued to the very bottom edge — leaves
+  // room below it for the queue row + a margin to the field's bottom.
+  shooterPos = { x: fieldWpx/2, y: fieldHpx - bubbleW*2.0 };
 
   const danger = document.getElementById('danger-line');
   danger.style.top = (DANGER_ROW*rowH + bubbleW*0.5)+'px';
@@ -647,27 +655,23 @@ function computeSize(){
   arrowEl.style.left = (shooterPos.x - arrowW/2)+'px';
   arrowEl.style.top = (shooterPos.y - arrowH)+'px';
 
-  // Queue: index 0 is the immediate next bubble, full size, elevated
-  // above the row of 4 smaller ones behind it — an "L" anchored to
-  // the shooter's right.
-  const qSmall = bubbleW*0.8;
-  const qSpacing = bubbleW*0.62;
-  const queueOriginX = shooterPos.x + bubbleW*1.6;
-  const rowY = shooterPos.y - bubbleW*0.05;
-  const q0 = document.getElementById('queue-0');
-  q0.style.width = bubbleW+'px'; q0.style.height = bubbleW+'px';
-  q0.style.left = (queueOriginX - bubbleW/2)+'px';
-  q0.style.top = (rowY - bubbleW*0.85 - bubbleW/2)+'px';
-  for(let i=1;i<QUEUE_SIZE;i++){
+  // Queue: a single row of 5 uniform, full-size bubbles directly
+  // below the shooter (queue-0 leftmost/soonest, queue-4 rightmost),
+  // with a light ring on queue-0 to mark it as "up next" without
+  // needing a size or elevation difference to do it.
+  const qSpacing = bubbleW*1.05;
+  const queueRowY = shooterPos.y + bubbleW*1.3;
+  const queueOriginX = shooterPos.x - qSpacing*2;
+  for(let i=0;i<QUEUE_SIZE;i++){
     const el = document.getElementById('queue-'+i);
-    el.style.width = qSmall+'px'; el.style.height = qSmall+'px';
-    el.style.left = (queueOriginX + (i-1)*qSpacing - qSmall/2)+'px';
-    el.style.top = (rowY - qSmall/2)+'px';
+    el.style.width = bubbleW+'px'; el.style.height = bubbleW+'px';
+    el.style.left = (queueOriginX + i*qSpacing - bubbleW/2)+'px';
+    el.style.top = (queueRowY - bubbleW/2)+'px';
   }
   const nextLabel = document.getElementById('next-label');
-  nextLabel.style.width = (bubbleW*1.4)+'px';
-  nextLabel.style.left = (queueOriginX - bubbleW*0.7)+'px';
-  nextLabel.style.top = (rowY - bubbleW*1.85)+'px';
+  nextLabel.style.width = (bubbleW*2)+'px';
+  nextLabel.style.left = (shooterPos.x - bubbleW)+'px';
+  nextLabel.style.top = (queueRowY - bubbleW*0.85)+'px';
 
   positionBallista(aimAngleDeg, aimDir);
 }
@@ -1093,10 +1097,10 @@ function newGame(){
 /* =========================================================
    INPUT WIRING
    ========================================================= */
-const field = document.getElementById('bubble-field');
+const boardWrap = document.getElementById('board-wrap');
 window.addEventListener('pointermove', (e)=> updateAim(e.clientX, e.clientY));
-field.addEventListener('pointerdown', (e)=> updateAim(e.clientX, e.clientY));
-field.addEventListener('pointerup', (e)=>{ updateAim(e.clientX, e.clientY); fireShot(); });
+boardWrap.addEventListener('pointerdown', (e)=> updateAim(e.clientX, e.clientY));
+boardWrap.addEventListener('pointerup', (e)=>{ updateAim(e.clientX, e.clientY); fireShot(); });
 
 document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
 document.getElementById('btn-hint').addEventListener('click', showHint);
