@@ -1,159 +1,271 @@
 <!DOCTYPE html>
 <!--
-    Match3.html
+    BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.7
+    Version 1.13
 
-   Added a favicon — there wasn't one at all before now, no <link
-   rel="icon"> existed in this file. Same 3-candy design as the crest,
-   as an inline SVG data URI (no separate image file needed, same
-   self-contained approach the crest itself uses). It's a separate
-   hardcoded copy, not derived from the crest markup, so if the
-   crest's candies/colors ever change this needs updating to match.
+   Found the actual root cause of both "desktop is empty" and "shooter
+   isn't low enough": the shared .table-felt (styles.css) is only a
+   flex ITEM inside .table-frame — it never declares display:flex on
+   ITSELF, so #board-wrap's flex:1 had no real flex container to size
+   against and was silently defaulting to auto height (shrink to its
+   own content) the entire time. computeSize() was reading a small,
+   wrong wrap.clientHeight on every call, not a genuinely small table
+   — the max-bubbleW-cap and ResizeObserver changes from the last pass
+   couldn't have fixed that, since the number they were feeding off
+   was wrong at the source. Added `.table-felt{ display:flex;
+   flex-direction:column; }` scoped to this page only (not touching
+   the shared file) so board-wrap finally stretches to the felt's real
+   height.
+
+   With that fixed, reworked the shooter zone: reserve raised to
+   MAX_ROWS*0.866+5.0 units now that there's real room to spend it in,
+   shooter sits with headroom below it instead of glued to the very
+   bottom edge, and the 5-bubble queue moved from beside the shooter
+   to a single uniform-size row directly BELOW it (queue-0 marked with
+   a light ring instead of being elevated/larger, now that they're all
+   the same size).
+
+   Also fixed clicks only registering inside the small #bubble-field
+   rectangle: the fire/aim pointerdown/pointerup listeners now live on
+   #board-wrap (the whole felt), not #bubble-field, so tapping/
+   clicking anywhere on the table aims and fires — not just within the
+   board's own tight bounding box.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-<title>Match 3</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20x%3D%222%22%20y%3D%2223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%225%22%20fill%3D%22%23d1447e%22/%3E%3Ctext%20x%3D%2211%22%20y%3D%2236%22%20font-size%3D%2215%22%20text-anchor%3D%22middle%22%3E%F0%9F%8D%AC%3C/text%3E%3Crect%20x%3D%2223%22%20y%3D%2223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%225%22%20fill%3D%22%23d98a3d%22/%3E%3Ctext%20x%3D%2232%22%20y%3D%2236%22%20font-size%3D%2215%22%20text-anchor%3D%22middle%22%3E%F0%9F%8D%A9%3C/text%3E%3Crect%20x%3D%2244%22%20y%3D%2223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%225%22%20fill%3D%22%233f9e5c%22/%3E%3Ctext%20x%3D%2253%22%20y%3D%2236%22%20font-size%3D%2215%22%20text-anchor%3D%22middle%22%3E%F0%9F%8D%A1%3C/text%3E%3C/svg%3E">
-<link rel="preload" as="image" href="images/Match3.webp">
+<title>Bubble Shooter</title>
+<link rel="icon" type="image/webp" href="images/favicon-bubbleshooter.webp">
+<link rel="preload" as="image" href="images/BubbleShooter.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
-  /* Match3-only background: swaps the shared black/vignette body
-     background (see html,body in styles.css) for this preloaded photo,
-     just for this game — same convention as FreeCell.html/Mahjong.html/
-     etc. The wood frame + green felt (.table-frame/.table-felt) sit on
-     their own elements on top of this and are untouched. No photo
-     exists at images/Match3.webp yet — this is inert until one does. */
+  /* Bubble Shooter-only background: swaps the shared black/vignette
+     body background (see html,body in styles.css) for this preloaded
+     photo, exactly the way FreeCell.html does it for its own — a CSS
+     background-image reference, so it's a pure no-op (falls back to
+     styles.css's default dark vignette) until images/BubbleShooter.webp
+     actually exists, nothing to break in the meantime. The wood frame
+     + green felt (.table-frame/.table-felt) sit on their own elements
+     on top of this, already semi-transparent via styles.css's shared
+     --table-opacity, so the photo shows through them once it's there —
+     no separate opacity override needed here, same as FreeCell. */
   html,body{
-    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Match3.webp');
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/BubbleShooter.webp');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
   }
 
-  /* Crest: three candies in a straight horizontal line — the actual
-     shape a match takes in this game (a diagonal cluster doesn't
-     match anything here), using the default Candies theme's own
-     glyphs/hexes (TILESETS.candy below) rather than a theme that
-     isn't even the one new players see first. */
-  .crest-candy-row{ display:flex; gap:3px; align-items:center; justify-content:center; }
-  .crest-candy{
-    width:18px; height:18px; border-radius:5px; flex-shrink:0;
-    display:flex; align-items:center; justify-content:center; font-size:12px; line-height:1;
-    box-shadow:0 1px 2px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.15);
-  }
-
   /* =========================================================
-     BOARD
-     .m3-arena is sized in JS (fitMatchBoard) to exactly fit whatever
-     the felt has room for, same spirit as SEngine.fitBoard for cards —
-     tile size is solved from available space, never hardcoded, and
-     every tile's left/top is plain px math off that solved size so
-     swap/fall animations are just a left/top transition.
+     BUBBLE SHOOTER — game-specific look. Everything about the overall
+     suite chrome (header, buttons, chips, modals) comes from the
+     shared styles.css; only the board itself is defined here, the
+     same way Klondike's own <style> block only overrides its crest.
      ========================================================= */
-  .m3-arena{ position:relative; margin:auto; }
-  .m3-tile{
-    position:absolute; width:var(--tile-w); height:var(--tile-h);
-    border-radius: calc(var(--tile-w)*0.24);
+  /* Crest: an orb split by a plus-sign cross into 4 quadrants, one
+     representative elemental glyph per quadrant, instead of a single
+     centered emoji — a small "four elements" badge rather than just
+     a bubble icon. The brass gradient circle itself still comes from
+     the shared .crest rule in styles.css; this only adds the cross
+     divider + positions the four glyphs inside it, the same way
+     Klondike's own override layers art on top of that same circle. */
+  .brand .crest{ position:relative; overflow:hidden; }
+  .crest-cross::before, .crest-cross::after{
+    content:""; position:absolute; background: rgba(58,42,8,0.55);
+    box-shadow: 0 0 2px rgba(255,255,255,0.45);
+    border-radius: 2px;
+  }
+  .crest-cross::before{ left:50%; top:9%; bottom:9%; width:2.5px; transform:translateX(-50%); }
+  .crest-cross::after{ top:50%; left:9%; right:9%; height:2.5px; transform:translateY(-50%); }
+  .crest-glyph{
+    position:absolute; width:20px; height:20px;
     display:flex; align-items:center; justify-content:center;
-    box-shadow:0 2px 4px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.10);
-    cursor:grab; touch-action:none; user-select:none;
-    transition: left .18s ease, top .18s ease, opacity .2s ease, transform .15s ease, background .15s ease;
-    color: var(--ivory);
+    font-size:15px; line-height:1; transform:translate(-50%,-50%);
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.4));
   }
-  .m3-tile:active{ cursor:grabbing; }
-  .m3-tile.m3-dark-text{ color:#241708; }
-  .m3-tile .m3-glyph{
-    font-size: calc(var(--tile-w)*0.54); line-height:1;
-    filter: drop-shadow(0 1px 1px rgba(0,0,0,.35));
-  }
-  .m3-tile.m3-chip{ border:3px dashed rgba(255,255,255,.4); }
-  .m3-tile .m3-chiptext{ font-size: calc(var(--tile-w)*0.22); font-weight:bold; letter-spacing:.5px; }
-  .m3-tile .m3-gem{ width:60%; height:60%; box-shadow: inset 0 0 6px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.4); }
-  .m3-gem-hex{ clip-path: polygon(25% 5%,75% 5%,100% 50%,75% 95%,25% 95%,0% 50%); }
-  .m3-gem-emerald{ clip-path: polygon(20% 0%,80% 0%,100% 20%,100% 80%,80% 100%,20% 100%,0% 80%,0% 20%); }
-  .m3-gem-oval{ border-radius:50%; }
-  .m3-gem-kite{ clip-path: polygon(50% 0%,100% 50%,50% 100%,0% 50%); }
-  .m3-gem-pentagon{ clip-path: polygon(50% 0%,100% 38%,82% 100%,18% 100%,0% 38%); }
-  .m3-gem-brilliant{ clip-path: polygon(50% 0%,80% 22%,100% 62%,50% 100%,0% 62%,20% 22%); }
+  .crest-glyph.q-tl{ left:24%; top:24%; }
+  .crest-glyph.q-tr{ left:76%; top:24%; }
+  .crest-glyph.q-bl{ left:24%; top:76%; }
+  .crest-glyph.q-br{ left:76%; top:76%; }
 
-  .m3-tile.selected{ box-shadow:0 0 0 3px #7ee6a8, 0 0 10px rgba(0,0,0,.5); transform:scale(1.06); z-index:5; }
-  .m3-tile.m3-pop{ animation: m3PopOut .26s ease forwards; }
-  @keyframes m3PopOut{ to{ transform:scale(0); opacity:0; } }
-  .m3-tile.m3-spawn{ transition:none !important; opacity:0; transform:scale(.3); }
-
-  /* Special-tile overlays — layered on top of whatever the tile's
-     normal glyph/gem/chip content already is, so a special still
-     reads as "the same color, but special" rather than replacing its
-     identity outright. */
-  .m3-special-striped-h::after{
-    content:""; position:absolute; left:8%; right:8%; top:44%; height:12%;
-    background:rgba(255,255,255,.85); border-radius:4px; pointer-events:none;
+  /* The shared .table-felt (styles.css) is only a flex ITEM inside
+     .table-frame — it never declares display:flex on itself, so it
+     never gave #board-wrap's flex:1 a real flex container to size
+     against. #board-wrap was defaulting to auto height (shrink to its
+     own content) instead of stretching to the felt's actual available
+     space, which was the real cause of both "desktop is empty" and
+     "shooter isn't low enough": computeSize() was reading a small,
+     wrong wrap.clientHeight the whole time, not a genuinely small
+     table. This override is scoped to this page only. */
+  .table-felt{ display:flex; flex-direction:column; }
+  #board-wrap{
+    flex:1; min-height:0; width:100%;
+    display:flex; align-items:flex-end; justify-content:center;
+    overflow:hidden; position:relative; touch-action:none;
   }
-  .m3-special-striped-v::after{
-    content:""; position:absolute; top:8%; bottom:8%; left:44%; width:12%;
-    background:rgba(255,255,255,.85); border-radius:4px; pointer-events:none;
+  #bubble-field{
+    position:relative; touch-action:none; user-select:none;
   }
-  .m3-special-colorbomb{
-    box-shadow:0 0 0 3px rgba(255,255,255,.65), 0 0 16px rgba(255,255,255,.75), 0 2px 4px rgba(0,0,0,.45);
+  .danger-line{
+    position:absolute; left:0; right:0; height:0;
+    border-top:2px dashed rgba(224,72,58,0.6);
+    pointer-events:none; z-index:2;
   }
-  .m3-special-bomb{
-    box-shadow: inset 0 0 0 3px rgba(255,255,255,.65), 0 2px 4px rgba(0,0,0,.45);
-  }
-  .m3-special-bomb::before{
-    content:"\1F4A3"; position:absolute; top:-15%; right:-15%;
-    font-size: calc(var(--tile-w)*0.32); filter: drop-shadow(0 1px 1px rgba(0,0,0,.5));
-  }
-  .m3-special-fish::before{
-    content:"\1F41F"; position:absolute; bottom:-15%; right:-15%;
-    font-size: calc(var(--tile-w)*0.32); filter: drop-shadow(0 1px 1px rgba(0,0,0,.5));
-  }
-  /* Blocker: an immovable obstacle, same plain look regardless of
-     which candy theme is active (it isn't a themed tile, it's a
-     hazard). Never joins a normal match; only clears as collateral
-     from a special's effect area, or as Fish's preferred target. */
-  .m3-tile.m3-blocker{
-    cursor: default;
-    box-shadow: inset 0 0 10px rgba(0,0,0,.7), 0 2px 4px rgba(0,0,0,.5);
+  .danger-line::after{
+    content:"DANGER"; position:absolute; right:2px; top:-16px;
+    font-size:9px; letter-spacing:2px; color:rgba(224,72,58,0.75);
   }
 
-  .m3-scorepop{
-    position:absolute; left:0; top:0; pointer-events:none; z-index:20;
-    font-size:15px; font-weight:bold; color: var(--brass-light);
-    text-shadow:0 1px 3px #000; animation: m3FloatUp .8s ease forwards;
-    transform: translate(-50%,-50%);
+  /* One .aim-line div per straight segment of the aim preview — a
+     bent (bounced) preview is just several of these end to end, built
+     fresh each time the aim updates (see renderAimSegment/updateAim).
+     No more single #aim-line id/fade — segments are created and
+     cleared outright, since there's no longer a fixed count of them. */
+  .aim-line{
+    position:absolute; left:0; top:0; height:3px; width:0;
+    transform-origin:0 50%;
+    background: repeating-linear-gradient(90deg, rgba(232,200,115,0.85) 0 8px, transparent 8px 16px);
+    pointer-events:none; z-index:15;
+    border-radius:2px;
   }
-  @keyframes m3FloatUp{
-    from{ opacity:1; transform:translate(-50%,-50%); }
-    to{ opacity:0; transform:translate(-50%,-130%); }
+  /* "Show Landing Spot": a dashed ghost ring at the exact cell the
+     current aim would actually land in — including the case the
+     setting exists for, where you're aiming for open space past a
+     gap but the shot gets caught on the opening instead. */
+  .bubble.landing-marker{
+    border: 2px dashed rgba(232,200,115,0.9);
+    background: rgba(232,200,115,0.1);
+    box-shadow: 0 0 8px rgba(232,200,115,0.4);
+    pointer-events:none; z-index:14;
+    animation: landingPulse 1s ease-in-out infinite;
+  }
+  @keyframes landingPulse{ 0%,100%{ transform:scale(1); opacity:.7; } 50%{ transform:scale(1.08); opacity:1; } }
+
+  .bubble{
+    position:absolute; width:var(--bubble-w,40px); height:var(--bubble-w,40px);
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,.5), 0 3px 7px rgba(0,0,0,.4),
+      inset 0 -4px 6px rgba(0,0,0,.25), inset 0 3px 5px rgba(255,255,255,.35);
+  }
+  .bubble-glyph{
+    font-size:calc(var(--bubble-w,40px)*0.5); line-height:1;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.45));
+    pointer-events:none;
+  }
+  /* Void's glyph is drawn, not an emoji — a dense black core fading
+     outward (the "gets denser toward the center" look) with a slowly
+     rotating faint ring on top for a singularity/accretion-disk feel.
+     Percentage-sized against whatever flex container it sits in
+     (bubble/legend-swatch/mini preview all already have definite
+     dimensions), so it scales correctly everywhere without depending
+     on --bubble-w specifically. */
+  .void-glyph{
+    width:62%; height:62%; border-radius:50%; position:relative; overflow:hidden;
+    background: radial-gradient(circle at 50% 50%, #000000 0%, #060409 32%, #1c1030 58%, #3a2a55 82%, rgba(58,42,85,0) 100%);
+    box-shadow: inset 0 0 5px rgba(0,0,0,.9);
+    pointer-events:none;
+  }
+  .void-glyph::before{
+    content:""; position:absolute; inset:0; border-radius:50%;
+    background: conic-gradient(from 0deg, rgba(255,255,255,.2), rgba(255,255,255,0) 26%, rgba(255,255,255,.14) 55%, rgba(255,255,255,0) 100%);
+    animation: voidSwirl 5s linear infinite;
+    mix-blend-mode: overlay;
+  }
+  @keyframes voidSwirl{ to{ transform: rotate(360deg); } }
+  .bubble[data-color="fire"] { background: radial-gradient(circle at 32% 26%, #ffb199, #e0483a 55%, #a12a1c 100%); }
+  .bubble[data-color="water"]{ background: radial-gradient(circle at 32% 26%, #bfe9ff, #2f8fe0 55%, #145a96 100%); }
+  .bubble[data-color="leaf"] { background: radial-gradient(circle at 32% 26%, #cdf7c4, #3fae63 55%, #1f7a34 100%); }
+  .bubble[data-color="ice"]  { background: radial-gradient(circle at 32% 26%, #ffffff, #cfeef8 55%, #93c9db 100%); }
+  .bubble[data-color="bolt"] { background: radial-gradient(circle at 32% 26%, #fffac0, #e8c873 55%, #b3860f 100%); }
+  .bubble[data-color="void"] { background: radial-gradient(circle at 32% 26%, #e9d6ff, #8a4fd1 55%, #5b21b6 100%); }
+  .bubble[data-color="steel"]{ background: radial-gradient(circle at 32% 26%, #eef2f4, #9aa7ad 55%, #5c6469 100%); }
+  .bubble[data-color="magma"]{ background: radial-gradient(circle at 32% 26%, #ffcf94, #e0722f 55%, #9c3d10 100%); }
+
+  /* Elements slider (3-8) — styled to match the brass/panel theme
+     since a plain <input type=range> doesn't inherit the site's look
+     for free the way buttons/switches already do via styles.css. */
+  .bshooter-range{
+    -webkit-appearance:none; appearance:none; width:100%; height:6px;
+    border-radius:4px; background:var(--panel); border:1px solid var(--panel-line);
+    outline:none; cursor:pointer;
+  }
+  .bshooter-range::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%;
+    background: linear-gradient(180deg, var(--brass-light), var(--brass));
+    border:1px solid rgba(0,0,0,0.25); cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.5);
+  }
+  .bshooter-range::-moz-range-thumb{
+    width:20px; height:20px; border-radius:50%; border:none;
+    background: linear-gradient(180deg, var(--brass-light), var(--brass));
+    cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.5);
+  }
+  .bshooter-range::-moz-range-track{ height:6px; border-radius:4px; background:var(--panel); border:1px solid var(--panel-line); }
+  .field > label .rangeval{ color:var(--brass-light); font-weight:bold; }
+
+  .bubble.shooter{ box-shadow: 0 0 0 3px rgba(232,200,115,0.55), 0 3px 10px rgba(0,0,0,.5); z-index:6; }
+  .bubble.flying{ z-index:20; }
+
+  @keyframes bubbleLand{ 0%{ transform:scale(0.55); } 60%{ transform:scale(1.14); } 100%{ transform:scale(1); } }
+  .bubble.landing{ animation: bubbleLand .24s ease; }
+
+  @keyframes bubblePop{ 0%{ transform:scale(1); opacity:1; } 55%{ transform:scale(1.3); opacity:.85; } 100%{ transform:scale(0.1); opacity:0; } }
+  .bubble.pop{ animation: bubblePop .26s ease forwards; z-index:8; }
+
+  @keyframes bubbleFall{ 0%{ transform:translate(0,0) rotate(0deg); opacity:1; } 100%{ transform:translate(var(--fall-x,0px), 160px) rotate(var(--fall-r,90deg)); opacity:0; } }
+  .bubble.fall{ animation: bubbleFall .5s ease-in forwards; z-index:7; }
+
+  /* Ballista: a single clip-path div shaped like an arrow (broad
+     triangular head, narrow shaft), anchored by its tail (nock) end
+     to the shooter pivot and rotated to face the current aim — the
+     shooter bubble itself also slides along an arc at a fixed
+     distance from that same pivot (see updateAim/computeSize) so it
+     always sits a little below the head, "nocked" on the shaft,
+     instead of just floating in a fixed spot while a separate line
+     rotates around it. */
+  #ballista{
+    position:absolute; transform-origin:50% 100%;
+    background: linear-gradient(180deg, var(--brass-light), var(--brass) 70%, #8a6a26 100%);
+    box-shadow: 0 1px 3px rgba(0,0,0,.6);
+    clip-path: polygon(50% 0%, 15% 32%, 38% 32%, 38% 100%, 62% 100%, 62% 32%, 85% 32%);
+    z-index:5; pointer-events:none;
   }
 
-  /* =========================================================
-     SETTINGS — tile theme picker, styled like the card-back picker
-     (.backpicker/.backswatch in styles.css) but showing a 2x2 sample
-     of each theme's own tiles instead of a card thumbnail.
-     ========================================================= */
-  .tilesetpicker{ display:flex; gap:10px; flex-wrap:wrap; }
-  .tilesetswatch{
-    width:56px; height:56px; border-radius:12px; cursor:pointer;
-    border:2px solid transparent; overflow:hidden; box-shadow:0 2px 5px rgba(0,0,0,.4);
-    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr;
+  .next-label{
+    position:absolute; font-size:9px; letter-spacing:1.5px; color:#9fc9b6;
+    text-align:center; z-index:6; pointer-events:none;
   }
-  .tilesetswatch.active{ border-color:#7ee6a8; }
-  .tilesetswatch .mini{ display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--ivory); overflow:hidden; }
-  .tilesetswatch .mini.dark{ color:#241708; }
-  .tilesetswatch .mini .gem-mini{ width:65%; height:65%; }
-  .tilesetlabel{ font-size:11px; letter-spacing:.5px; color:#9fc9b6; margin-top:4px; text-align:center; }
-  .tilesetgrid{ display:flex; gap:14px; flex-wrap:wrap; }
-  .tilesetcell{ display:flex; flex-direction:column; align-items:center; }
+  /* 5-bubble queue in an L: the very next bubble (queue-0) sits
+     elevated and full-size, directly above the row of the 4 bubbles
+     behind it (queue-1..4, slightly smaller so the whole row fits
+     comfortably beside the shooter without crowding it). */
+  .queue-bubble{ z-index:6; }
+  .queue-bubble.queue-0{ z-index:7; box-shadow: 0 0 0 2px rgba(232,200,115,0.6), 0 1px 2px rgba(0,0,0,.5), inset 0 -4px 6px rgba(0,0,0,.25), inset 0 3px 5px rgba(255,255,255,.35); }
 
-  .modepicker{ display:flex; gap:8px; flex-wrap:wrap; }
-  .modepicker button{ cursor:pointer; }
-  .modepicker button.mode-active{
-    outline: 2px solid #7ee6a8; outline-offset:-2px;
+  /* Legend rows inside the Help modal — one row per element, built by
+     JS from the same COLORS array the game itself uses, so the legend
+     can never drift out of sync with the actual palette. */
+  .legend-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .legend-swatch{
+    width:28px; height:28px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.5), inset 0 -3px 5px rgba(0,0,0,.25), inset 0 2px 4px rgba(255,255,255,.3);
   }
+  .legend-row span.legend-name{ font-size:13px; color:#e7f2ea; }
+  /* Settings-screen guide is the same rows, just 2-up (8 elements is
+     tall as a single column) and with a "locked" state — grayed +
+     struck through once the slider's current value excludes that
+     element, so it's obvious at a glance which glyphs are actually in
+     play right now, not just what they all look like. */
+  #legend-list-settings{ display:grid; grid-template-columns:1fr 1fr; gap:4px 14px; margin-bottom:4px; }
+  #legend-list-settings .legend-row{ margin-bottom:4px; transition: opacity .15s ease; }
+  #legend-list-settings .legend-row.locked{ opacity:0.35; }
+  #legend-list-settings .legend-row.locked .legend-name{ text-decoration: line-through; }
+  #field-landing{ transition: opacity .15s ease; }
+  #field-landing.sub-disabled{ opacity: 0.4; }
 </style>
 </head>
 <body>
@@ -161,30 +273,46 @@
 <header>
   <div class="brand">
     <div class="crest" aria-hidden="true">
-      <div class="crest-candy-row">
-        <div class="crest-candy" style="background:#d1447e;">🍬</div>
-        <div class="crest-candy" style="background:#d98a3d;">🍩</div>
-        <div class="crest-candy" style="background:#3f9e5c;">🍡</div>
-      </div>
+      <div class="crest-cross"></div>
+      <span class="crest-glyph q-tl">&#128293;</span>
+      <span class="crest-glyph q-tr">&#127808;</span>
+      <span class="crest-glyph q-bl">&#127755;</span>
+      <span class="crest-glyph q-br">&#9889;</span>
     </div>
     <div class="brand-text">
-      <h1>Match 3<span class="title-suffix"> - Gravity Match</span></h1>
+      <h1>Bubble Shooter<span class="title-suffix"> - Elemental Match 3</span></h1>
       <div class="brand-actions">
-        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
+        <a class="home-btn" href="./" title="Home" aria-label="Home">&#127968;</a>
         <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
       </div>
     </div>
   </div>
   <div class="hud">
     <button class="iconbtn" id="btn-help" title="How to play">?</button>
-    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">&#9881;</button>
   </div>
 </header>
 
 <div class="stage">
   <div class="table-frame">
-    <div class="table-felt" style="display:flex; align-items:center; justify-content:center;">
-      <div class="m3-arena" id="m3-arena"></div>
+    <div class="table-felt">
+      <div id="board-wrap">
+        <div id="bubble-field">
+          <div id="danger-line" class="danger-line"></div>
+          <div id="grid-layer"></div>
+          <div id="aim-path-layer"></div>
+          <div id="landing-marker" class="bubble landing-marker" style="display:none;"></div>
+          <div id="ballista"></div>
+          <div id="next-label" class="next-label">NEXT</div>
+          <div id="queue-0" class="bubble queue-bubble queue-0" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="queue-1" class="bubble queue-bubble" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="queue-2" class="bubble queue-bubble" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="queue-3" class="bubble queue-bubble" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="queue-4" class="bubble queue-bubble" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="shooter-bubble" class="bubble shooter" data-color="fire"><span class="bubble-glyph">&#128293;</span></div>
+          <div id="flying-bubble" class="bubble flying" data-color="fire" style="display:none;"><span class="bubble-glyph">&#128293;</span></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -194,16 +322,33 @@
 <div class="bottombar">
   <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
   <div class="bottombar-actions">
-    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
-    <button class="bottombtn" id="btn-shuffle" title="Shuffle the board"><span class="bicon">🔀</span><span class="blabel">Shuffle</span></button>
+    <button class="bottombtn" id="btn-undo" title="Undo last shot"><span class="bicon">&#8630;</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">&#10022;</span><span class="blabel">Hint</span></button>
   </div>
-  <div class="chip" id="chip-time" style="display:none"><span id="chip-time-label">TIME</span> <b id="time-val">0:00</b></div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="winmask" id="winmask">
+  <div class="winmask-modal">
+    <h2>Cleared!</h2>
+    <p id="win-sub">Board cleared —</p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  </div>
+</div>
+
+<div class="winmask" id="gameovermask">
+  <h2>Board Overflow</h2>
+  <p>The bubbles reached the shooter.</p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="gameover-undo">Undo Last Shot</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="gameover-newgame">New Game</button>
+  </div>
 </div>
 
 <div class="overlay" id="confirm-overlay">
   <div class="modal" style="text-align:center;">
     <h3>Start New Game?</h3>
-    <div class="sub" style="margin-bottom:6px;">Your current board and score will be lost.</div>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
     <div class="modal-actions">
       <button class="textbtn" id="confirm-cancel">Cancel</button>
       <button class="textbtn primary" id="confirm-yes">Start New Game</button>
@@ -211,45 +356,20 @@
   </div>
 </div>
 
-<div class="overlay" id="win-overlay">
-  <div class="modal" style="text-align:center;">
-    <h3>Target Reached!</h3>
-    <div class="sub" id="win-score-line" style="margin-bottom:6px;"></div>
-    <div class="modal-actions">
-      <button class="textbtn" id="win-keep-playing">Keep Playing</button>
-      <button class="textbtn primary" id="win-newgame">New Game</button>
-    </div>
-  </div>
-</div>
-
-<div class="overlay" id="lose-overlay">
-  <div class="modal" style="text-align:center;">
-    <h3>Out of Moves</h3>
-    <div class="sub" id="lose-score-line" style="margin-bottom:6px;"></div>
-    <div class="modal-actions">
-      <button class="textbtn" id="lose-close">Close</button>
-      <button class="textbtn primary" id="lose-newgame">Try Again</button>
-    </div>
-  </div>
-</div>
-
 <div class="overlay" id="help-overlay">
   <div class="modal">
     <h3>How to Play</h3>
-    <div class="sub">Match 3 - Gravity Match</div>
+    <div class="sub">Bubble Shooter</div>
     <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
-      <li>Swap two adjacent tiles to line up 3 or more of the same kind in a row or column.</li>
-      <li>Matched tiles clear, everything above falls to fill the gap, and new tiles drop in from the top.</li>
-      <li>A run of exactly <b>4</b> creates a <b>striped</b> tile — clears its whole row or column.</li>
-      <li>A run of <b>5+</b> in a straight line creates a <b>Color Bomb</b> — swap it with any tile to clear every tile of that tile's color.</li>
-      <li>A <b>T or L</b> shaped match creates a <b>Bomb</b> — explodes the 3x3 area around it on its next swap or match, not the instant it's created.</li>
-      <li>A <b>2x2 block</b> match creates a <b>Fish</b> — seeks out and clears a blocker tile if one exists, otherwise clears up to 5 tiles of whichever color it was swapped with.</li>
-      <li>Swap two specials directly into each other for a combo: two Bombs together explode a bigger 5x5 area; a Bomb + Color Bomb clears every tile of the Bomb's color; two Stripes of the same direction clear 3 rows/columns instead of 1, and opposite directions clear a 3-wide plus shape; two Fish sweep up to 5 blockers (backfilled with random tiles if fewer exist); two Color Bombs clear the entire board.</li>
-      <li><b>Blockers</b> are immovable — they never join a normal match and only clear via a special's effect. Longer cascade chains have a chance to drop one onto the board.</li>
-      <li>Tap a special tile by itself to activate it in place, or swap/drag it into any neighbor — both work, matched or not.</li>
-      <li><b>Hint</b> highlights one swap you can currently make. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left) — neither costs a move.</li>
-      <li>In <b>Classic mode</b> (Settings &gt; Mode), reach the target score before you run out of moves. <b>Endless</b> mode has no target or move limit.</li>
+      <li>Move your mouse (or drag a finger) over the board to aim.</li>
+      <li>Release to fire the glowing bubble at the pivot toward the aim line.</li>
+      <li>Match <b>3 or more</b> of the same element to pop them.</li>
+      <li>Bubbles left floating with nothing connecting them to the top fall away too, for a bonus.</li>
+      <li>Every few shots a new row pushes down from the ceiling — don't let bubbles reach the dashed danger line.</li>
+      <li><b>Undo</b> reverses your last shot. <b>Hint</b> highlights a cluster your current bubble can complete.</li>
     </ul>
+    <div class="sub" style="margin-bottom:8px;">Every element has its own glyph, so colors are never the only clue:</div>
+    <div id="legend-list"></div>
     <div class="modal-actions">
       <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
     </div>
@@ -259,47 +379,58 @@
 <div class="overlay" id="settings-overlay">
   <div class="modal">
     <h3>Settings</h3>
-    <div class="sub">Tile theme/timer/score apply instantly. Mode/difficulty apply on your next New Game.</div>
+    <div class="sub">Timer/Score apply instantly. Element count applies on your next New Game.</div>
 
     <div class="field">
-      <label>Mode</label>
-      <div class="modepicker" id="mode-picker">
-        <button type="button" class="textbtn" data-mode="endless">Endless</button>
-        <button type="button" class="textbtn" data-mode="classic">Classic (Target Score)</button>
-      </div>
-    </div>
-    <div class="field" id="difficulty-field">
-      <label>Difficulty</label>
-      <div class="modepicker" id="difficulty-picker">
-        <button type="button" class="textbtn" data-diff="easy">Easy</button>
-        <button type="button" class="textbtn" data-diff="medium">Medium</button>
-        <button type="button" class="textbtn" data-diff="hard">Hard</button>
-      </div>
+      <label>Elements &mdash; <span class="rangeval" id="colors-val">5</span></label>
+      <input type="range" id="rng-colors" class="bshooter-range" min="3" max="8" step="1" value="5">
+      <div class="fieldnote">3 is fastest and easiest. 8 (Master) throws every element — Steel and Magma join in — at a much tougher board. Applies on your next New Game.</div>
     </div>
 
     <div class="field">
-      <label>Tile Theme</label>
-      <div class="tilesetgrid" id="tileset-picker"></div>
+      <label>Element Guide</label>
+      <div id="legend-list-settings"></div>
+      <div class="fieldnote">Grayed-out, struck-through elements are outside your current slider setting and won't appear this game.</div>
     </div>
 
-    <div class="field">
-      <div class="toggrow">
-        <span>Show Timer</span>
-        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
-      </div>
-    </div>
     <div class="field">
       <div class="toggrow">
         <span>Show Score</span>
         <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
       </div>
     </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Bounce Path</span>
+        <label class="switch"><input type="checkbox" id="tog-bounce"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Draws the aim line's real path — including wall bounces — instead of a single straight guide.</div>
+    </div>
+    <div class="field" id="field-landing">
+      <div class="toggrow">
+        <span>Show Landing Spot</span>
+        <label class="switch"><input type="checkbox" id="tog-landing"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Requires Show Bounce Path. Rings the exact cell your shot would land in — useful when you're aiming for an opening but the shot would actually get caught on it instead.</div>
+    </div>
+
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
 
     <div class="modal-actions">
       <button class="textbtn" id="settings-cancel">Cancel</button>
-      <button class="textbtn primary" id="settings-apply">Apply</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
     </div>
-    <div style="text-align:center; font-size:10px; color:#7a9686; margin-top:14px; letter-spacing:.5px;" id="version-info"></div>
   </div>
 </div>
 
@@ -307,1153 +438,773 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.7';
 const E = window.SEngine;
+const PAGE_VERSION = '1.13';
 
 /* =========================================================
-   TILE THEMES
-   Every theme has exactly 6 types, so difficulty is identical no
-   matter which one is picked. `dark:true` means the tile's text/glyph
-   should render in dark ink instead of ivory (light background).
-   `text` (poker chips) and `shape` (gems) render differently from a
-   plain emoji `glyph` — see renderTileContent below — specifically so
-   more than one theme is colorblind-safe by shape/label, not just hue.
+   ELEMENTAL PALETTE
+   Every bubble carries a color AND a glyph — the glyph is the real
+   identity for matching purposes, the color is just paint on top, so
+   nothing about matching ever depends on color alone.
    ========================================================= */
-const TILESETS = {
-  candy: { label:'Candies', types:[
-    {glyph:'🍬', color:'#d1447e'},
-    {glyph:'🍭', color:'#c62828'},
-    {glyph:'🍫', color:'#6b4226'},
-    {glyph:'🍩', color:'#d98a3d'},
-    {glyph:'🧁', color:'#a565c9'},
-    {glyph:'🍡', color:'#3f9e5c'}
-  ]},
-  slots: { label:'Slot Symbols', types:[
-    {glyph:'🍒', color:'#c62828'},
-    {glyph:'🔔', color:'#c99a1f'},
-    {glyph:'7️⃣', color:'#8c1f3b'},
-    {glyph:'🍋', color:'#b8a91f'},
-    {glyph:'💎', color:'#2a7fb8'},
-    {glyph:'🍀', color:'#2f8f4e'}
-  ]},
-  suits: { label:'Card Suits', types:[
-    {glyph:'♠', color:'#16233f'},
-    {glyph:'♥', color:'#8c1f3b'},
-    {glyph:'♦', color:'#b5432f'},
-    {glyph:'♣', color:'#1c5340'},
-    {glyph:'★', color:'#8a6a26', dark:true},
-    {glyph:'🃏', color:'#5b2a86'}
-  ]},
-  chips: { label:'Poker Chips', types:[
-    {text:'$1',  color:'#e8e2d0', dark:true},
-    {text:'$5',  color:'#b5432f'},
-    {text:'$25', color:'#1c5340'},
-    {text:'$100',color:'#16233f'},
-    {text:'$500',color:'#5b2a86'},
-    {text:'$1K', color:'#c9a24b', dark:true}
-  ]},
-  gems: { label:'Gems', types:[
-    {shape:'hex',       color:'#c62828'}, // ruby
-    {shape:'emerald',   color:'#2f8f4e'}, // emerald
-    {shape:'oval',      color:'#2a7fb8'}, // sapphire
-    {shape:'kite',      color:'#d4a017'}, // topaz
-    {shape:'pentagon',  color:'#7a4bb0'}, // amethyst
-    {shape:'brilliant', color:'#dfe7ea'}  // diamond
-  ]},
-  dice: { label:'Dice', types:[
-    {glyph:'⚀', color:'#f5f0e6', dark:true},
-    {glyph:'⚁', color:'#f5f0e6', dark:true},
-    {glyph:'⚂', color:'#f5f0e6', dark:true},
-    {glyph:'⚃', color:'#f5f0e6', dark:true},
-    {glyph:'⚄', color:'#f5f0e6', dark:true},
-    {glyph:'⚅', color:'#f5f0e6', dark:true}
-  ]}
-};
-const TYPE_COUNT = 6;
-const COLS = 8, ROWS = 8;
-const DIFFICULTIES = {
-  easy:   { moves:25, target:2000 },
-  medium: { moves:20, target:4000 },
-  hard:   { moves:16, target:7000 }
-};
+const COLORS = [
+  { id:'fire',  name:'Fire',      glyph:'&#128293;' },
+  { id:'water', name:'Water',     glyph:'&#128167;' },
+  { id:'leaf',  name:'Leaf',      glyph:'&#127808;' },
+  { id:'ice',   name:'Ice',       glyph:'&#10052;&#65039;' },
+  { id:'bolt',  name:'Lightning', glyph:'&#9889;' },
+  { id:'void',  name:'Void',      glyph:'&#128302;' },
+  { id:'steel', name:'Steel',     glyph:'&#9881;&#65039;' },
+  { id:'magma', name:'Magma',     glyph:'&#127755;' }
+];
+function glyphFor(id){ const c = COLORS.find(x=>x.id===id); return c ? c.glyph : ''; }
+// Every color except void renders as a plain emoji glyph span. Void
+// renders its own hand-drawn swirl instead (see .void-glyph CSS) — no
+// single emoji reliably reads as "void" across platforms, and a
+// crystal ball or mushroom (what &#128302; renders as on several
+// systems) was exactly the confusion this exists to fix.
+function bubbleContentHTML(id){
+  if(id === 'void') return '<span class="void-glyph"></span>';
+  return '<span class="bubble-glyph">'+glyphFor(id)+'</span>';
+}
+function nameFor(id){ const c = COLORS.find(x=>x.id===id); return c ? c.name : id; }
+function activePalette(){ return COLORS.slice(0, state.numColors).map(c=>c.id); }
 
 /* =========================================================
-   STATE
+   BOARD GEOMETRY
+   Hex "odd-r" offset grid: odd rows are shifted right by half a
+   bubble width. Every row has the same column count (COLS); the
+   field is COLS+0.5 bubble-widths wide so an odd row's shifted last
+   column still fits inside it.
+   ========================================================= */
+const COLS = 8;
+const MAX_ROWS = 12;
+const DANGER_ROW = MAX_ROWS - 2;
+const INIT_ROWS = 5;
+const SHOTS_PER_PUSH = 6;
+
+let bubbleW = 40;
+let rowH = bubbleW * 0.8660254;
+let fieldWpx = 0, fieldHpx = 0;
+let shooterPos = { x:0, y:0 };
+
+function cellCenter(row, col){
+  const off = (row % 2 === 1) ? bubbleW * 0.5 : 0;
+  return { x: off + col*bubbleW + bubbleW/2, y: row*rowH + bubbleW/2 };
+}
+function neighborsOf(row, col){
+  const evenD = [[-1,-1],[-1,0],[0,-1],[0,1],[1,-1],[1,0]];
+  const oddD  = [[-1,0],[-1,1],[0,-1],[0,1],[1,0],[1,1]];
+  const deltas = (row % 2 === 0) ? evenD : oddD;
+  const out = [];
+  for(const [dr,dc] of deltas){
+    const nr = row+dr, nc = col+dc;
+    if(nr>=0 && nr<MAX_ROWS && nc>=0 && nc<COLS) out.push({row:nr, col:nc});
+  }
+  return out;
+}
+function distSq(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy; }
+function clamp(n,lo,hi){ return Math.max(lo, Math.min(hi, n)); }
+
+/* =========================================================
+   GAME STATE
    ========================================================= */
 const state = {
-  score:0, tileset:'candy', showTimer:false, showScore:true, seconds:0,
-  mode:'endless', difficulty:'medium', movesLeft:0, targetScore:0,
-  gameOver:false, hasWon:false
+  numColors: 5,
+  grid: [],
+  shooterColor: 'fire',
+  nextQueue: ['water','water','water','water','water'],
+  score: 0,
+  seconds: 0,
+  shotsFired: 0,
+  showTimer: false,
+  showScore: false,
+  showBounce: false,
+  showLanding: false,
+  timerHandle: null,
+  backStyle: null
 };
-const pendingSettings = {
-  tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore,
-  mode: state.mode, difficulty: state.difficulty
-};
+const QUEUE_SIZE = 5;
+const pendingSettings = { numColors:5, showTimer:false, showScore:false, showBounce:false, showLanding:false };
 
-let grid = [];          // grid[r][c] = {id,r,c,type,special} | null
-let domMap = {};        // id -> element
-let nextId = 1;
-let selectedId = null;
-let pointerDownInfo = null;
-let animating = false;
-let TILE_SIZE = 56, TILE_GAP = 8;
-
-const arena = document.getElementById('m3-arena');
-const toastEl = document.getElementById('hint-toast');
-
-function sleep(ms){ return new Promise(res=> setTimeout(res, ms)); }
-function newTileObj(r,c,type){ return { id:'t'+(nextId++), r, c, type, special:null }; }
-function getEl(id){ return domMap[id]; }
-function cellKey(cell){ return cell.r+','+cell.c; }
-function keyToRC(key){ const p=key.split(','); return { r:+p[0], c:+p[1] }; }
-function colToPx(c){ return c*(TILE_SIZE+TILE_GAP); }
-function rowToPx(r){ return r*(TILE_SIZE+TILE_GAP); }
+let busy = false;      // true while a shot is flying or resolving
+let flyReq = null;      // requestAnimationFrame handle for the current shot
+let aimDir = { x:0, y:-1 };
+let aimAngleDeg = 0;    // current aim angle in degrees, clockwise from straight up — drives the ballista's rotation
 
 /* =========================================================
-   BOARD FIT (screen-size solve, no hardcoded pixel constants — same
-   principle as SEngine.fitBoard for cards, just solved locally since
-   this board is a square grid rather than columns of cards)
+   GRID BUILDING
    ========================================================= */
-function fitMatchBoard(){
-  const header = document.querySelector('header');
-  const stage = document.querySelector('.stage');
-  const frame = document.querySelector('.table-frame');
-  const felt = document.querySelector('.table-felt');
-  const bottombar = document.querySelector('.bottombar');
-  if(!header || !stage || !frame || !felt) return;
-
-  const headerH = header.getBoundingClientRect().height;
-  const bottombarH = bottombar ? bottombar.getBoundingClientRect().height : 0;
-  const stageCS = getComputedStyle(stage), frameCS = getComputedStyle(frame), feltCS = getComputedStyle(felt);
-  const vPad = parseFloat(stageCS.paddingTop)+parseFloat(stageCS.paddingBottom)
-             + parseFloat(frameCS.paddingTop)+parseFloat(frameCS.paddingBottom)
-             + parseFloat(feltCS.paddingTop)+parseFloat(feltCS.paddingBottom);
-  const hPad = parseFloat(stageCS.paddingLeft)+parseFloat(stageCS.paddingRight)
-             + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
-             + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
-
-  const availH = window.innerHeight - headerH - bottombarH - vPad - 10;
-  const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
-
-  const gap = Math.max(4, Math.round(Math.min(availW, availH) * 0.012));
-  const tileByW = (availW - gap*(COLS-1)) / COLS;
-  const tileByH = (availH - gap*(ROWS-1)) / ROWS;
-  const tile = Math.max(28, Math.min(72, Math.floor(Math.min(tileByW, tileByH))));
-
-  TILE_SIZE = tile; TILE_GAP = gap;
-  document.documentElement.style.setProperty('--tile-w', tile+'px');
-  document.documentElement.style.setProperty('--tile-h', tile+'px');
-
-  arena.style.width = (tile*COLS + gap*(COLS-1))+'px';
-  arena.style.height = (tile*ROWS + gap*(ROWS-1))+'px';
-
-  // Instant reposition (no transition) — a resize shouldn't animate
-  // every tile sliding to its new spot.
-  arena.classList.add('m3-instant');
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const cell = grid[r] && grid[r][c];
-    if(!cell) continue;
-    const el = getEl(cell.id);
-    if(!el) continue;
-    el.style.left = colToPx(c)+'px';
-    el.style.top = rowToPx(r)+'px';
-  }
-  void arena.offsetWidth;
-  arena.classList.remove('m3-instant');
+function emptyGrid(){
+  const g = [];
+  for(let r=0;r<MAX_ROWS;r++) g.push(new Array(COLS).fill(null));
+  return g;
 }
-// .m3-instant kills the left/top transition during a resize reflow.
-const styleEl = document.createElement('style');
-styleEl.textContent = '.m3-arena.m3-instant .m3-tile{ transition:none !important; }';
-document.head.appendChild(styleEl);
-
-/* =========================================================
-   TILE RENDERING
-   ========================================================= */
-function renderTileContent(el, cell){
-  el.innerHTML = '';
-  el.classList.remove('m3-dark-text','m3-chip','m3-blocker');
-  el.classList.remove('m3-special-striped-h','m3-special-striped-v','m3-special-colorbomb','m3-special-bomb','m3-special-fish');
-
-  if(cell.type==='blocker'){
-    el.style.background = '#3a3a3a';
-    el.classList.add('m3-blocker');
-    const span = document.createElement('span');
-    span.className = 'm3-glyph'; span.textContent = '🪨';
-    el.appendChild(span);
-    return;
-  }
-
-  const t = TILESETS[state.tileset].types[cell.type];
-  if(t.shape){
-    el.style.background = 'rgba(255,255,255,0.07)';
-    const g = document.createElement('div');
-    g.className = 'm3-gem m3-gem-'+t.shape;
-    g.style.background = t.color;
-    el.appendChild(g);
-  } else if(t.text){
-    el.style.background = t.color;
-    el.classList.add('m3-chip');
-    if(t.dark) el.classList.add('m3-dark-text');
-    const span = document.createElement('span');
-    span.className = 'm3-chiptext'; span.textContent = t.text;
-    el.appendChild(span);
-  } else {
-    el.style.background = t.color;
-    if(t.dark) el.classList.add('m3-dark-text');
-    const span = document.createElement('span');
-    span.className = 'm3-glyph'; span.textContent = t.glyph;
-    el.appendChild(span);
-  }
-  el.classList.toggle('m3-special-striped-h', cell.special==='striped-row');
-  el.classList.toggle('m3-special-striped-v', cell.special==='striped-col');
-  el.classList.toggle('m3-special-colorbomb', cell.special==='colorbomb');
-  el.classList.toggle('m3-special-bomb', cell.special==='bomb');
-  el.classList.toggle('m3-special-fish', cell.special==='fish');
+function randomFrom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function makeRandomRow(){
+  const pal = activePalette();
+  const row = new Array(COLS);
+  for(let c=0;c<COLS;c++) row[c] = randomFrom(pal);
+  return row;
 }
-function createTileEl(cell){
-  const el = document.createElement('div');
-  el.className = 'm3-tile';
-  el.dataset.id = cell.id;
-  el.style.left = colToPx(cell.c)+'px';
-  el.style.top = rowToPx(cell.r)+'px';
-  renderTileContent(el, cell);
-  attachTileEvents(el, cell.id);
-  return el;
+function buildInitialGrid(){
+  const g = emptyGrid();
+  for(let r=0;r<INIT_ROWS;r++) g[r] = makeRandomRow();
+  return g;
 }
-function moveElTo(cell){
-  const el = getEl(cell.id);
-  if(!el) return;
-  el.style.left = colToPx(cell.c)+'px';
-  el.style.top = rowToPx(cell.r)+'px';
+function colorsPresent(){
+  const set = new Set();
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++){ if(state.grid[r][c]) set.add(state.grid[r][c]); }
+  return Array.from(set);
+}
+function pickNextColor(){
+  const present = colorsPresent();
+  return present.length ? randomFrom(present) : randomFrom(activePalette());
 }
 
 /* =========================================================
-   BOARD GENERATION
+   MATCHING / FLOATING
    ========================================================= */
-function initGrid(){
-  grid = Array.from({length:ROWS}, ()=> Array(COLS).fill(null));
-  for(let r=0;r<ROWS;r++){
+function floodMatch(row, col){
+  const color = state.grid[row][col];
+  if(!color) return [];
+  const seen = new Set([row+'_'+col]);
+  const stack = [{row,col}];
+  const out = [];
+  while(stack.length){
+    const cur = stack.pop();
+    out.push(cur);
+    for(const n of neighborsOf(cur.row, cur.col)){
+      const key = n.row+'_'+n.col;
+      if(seen.has(key)) continue;
+      if(state.grid[n.row][n.col] === color){ seen.add(key); stack.push(n); }
+    }
+  }
+  return out;
+}
+function findFloating(){
+  const reachable = new Set();
+  const stack = [];
+  for(let c=0;c<COLS;c++){
+    if(state.grid[0][c]){ reachable.add('0_'+c); stack.push({row:0,col:c}); }
+  }
+  while(stack.length){
+    const cur = stack.pop();
+    for(const n of neighborsOf(cur.row, cur.col)){
+      const key = n.row+'_'+n.col;
+      if(reachable.has(key)) continue;
+      if(state.grid[n.row][n.col]){ reachable.add(key); stack.push(n); }
+    }
+  }
+  const floating = [];
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++){
+    if(state.grid[r][c] && !reachable.has(r+'_'+c)) floating.push({row:r,col:c});
+  }
+  return floating;
+}
+function findNearestEmptyCell(x,y){
+  let best=null, bestD=Infinity;
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++){
+    if(state.grid[r][c]) continue;
+    const d = distSq(cellCenter(r,c), {x,y});
+    if(d<bestD){ bestD=d; best={row:r,col:c}; }
+  }
+  return best;
+}
+
+/* =========================================================
+   SIZING
+   ========================================================= */
+const BUBBLE_ARROW_OFFSET_RATIO = 0.85; // how far the shooter bubble sits from the pivot, along the aim direction, in bubble-widths
+let arrowW = 0, arrowH = 0;
+function computeSize(){
+  const wrap = document.getElementById('board-wrap');
+  const availW = wrap.clientWidth || 300;
+  const availH = wrap.clientHeight || 400;
+  const fieldWidthUnits = COLS + 0.5;
+  // Reserve below the grid for: the ballista's upward reach, the
+  // shooter itself, a gap, and now the queue row UNDER the shooter
+  // (previously beside it) — with #board-wrap actually stretching to
+  // the felt's real height now (see the .table-felt fix above), this
+  // number means what it says instead of being computed against a
+  // wrong, too-small clientHeight.
+  const fieldHeightUnits = MAX_ROWS * 0.8660254 + 5.0;
+  const wByWidth = availW / fieldWidthUnits;
+  const wByHeight = availH / fieldHeightUnits;
+  bubbleW = Math.floor(clamp(Math.min(wByWidth, wByHeight), 18, 110));
+  rowH = bubbleW * 0.8660254;
+  fieldWpx = fieldWidthUnits * bubbleW;
+  fieldHpx = fieldHeightUnits * bubbleW;
+  document.documentElement.style.setProperty('--bubble-w', bubbleW+'px');
+  const field = document.getElementById('bubble-field');
+  field.style.width = fieldWpx+'px';
+  field.style.height = fieldHpx+'px';
+  // Shooter sits low, but not glued to the very bottom edge — leaves
+  // room below it for the queue row + a margin to the field's bottom.
+  shooterPos = { x: fieldWpx/2, y: fieldHpx - bubbleW*2.0 };
+
+  const danger = document.getElementById('danger-line');
+  danger.style.top = (DANGER_ROW*rowH + bubbleW*0.5)+'px';
+
+  // Ballista: sized once here, rotated per-frame in positionBallista().
+  arrowW = bubbleW*0.55;
+  arrowH = bubbleW*2.3;
+  const arrowEl = document.getElementById('ballista');
+  arrowEl.style.width = arrowW+'px';
+  arrowEl.style.height = arrowH+'px';
+  arrowEl.style.left = (shooterPos.x - arrowW/2)+'px';
+  arrowEl.style.top = (shooterPos.y - arrowH)+'px';
+
+  // Queue: a single row of 5 uniform, full-size bubbles directly
+  // below the shooter (queue-0 leftmost/soonest, queue-4 rightmost),
+  // with a light ring on queue-0 to mark it as "up next" without
+  // needing a size or elevation difference to do it.
+  const qSpacing = bubbleW*1.05;
+  const queueRowY = shooterPos.y + bubbleW*1.3;
+  const queueOriginX = shooterPos.x - qSpacing*2;
+  for(let i=0;i<QUEUE_SIZE;i++){
+    const el = document.getElementById('queue-'+i);
+    el.style.width = bubbleW+'px'; el.style.height = bubbleW+'px';
+    el.style.left = (queueOriginX + i*qSpacing - bubbleW/2)+'px';
+    el.style.top = (queueRowY - bubbleW/2)+'px';
+  }
+  const nextLabel = document.getElementById('next-label');
+  nextLabel.style.width = (bubbleW*2)+'px';
+  nextLabel.style.left = (shooterPos.x - bubbleW)+'px';
+  nextLabel.style.top = (queueRowY - bubbleW*0.85)+'px';
+
+  positionBallista(aimAngleDeg, aimDir);
+}
+function positionBallista(angleDeg, dir){
+  const arrowEl = document.getElementById('ballista');
+  arrowEl.style.transform = 'rotate('+angleDeg+'deg)';
+  const offset = bubbleW*BUBBLE_ARROW_OFFSET_RATIO;
+  const bx = shooterPos.x + dir.x*offset, by = shooterPos.y + dir.y*offset;
+  const shooterEl = document.getElementById('shooter-bubble');
+  shooterEl.style.left = (bx - bubbleW/2)+'px';
+  shooterEl.style.top = (by - bubbleW/2)+'px';
+}
+function shooterBubblePos(dir){
+  const offset = bubbleW*BUBBLE_ARROW_OFFSET_RATIO;
+  return { x: shooterPos.x + dir.x*offset, y: shooterPos.y + dir.y*offset };
+}
+
+/* =========================================================
+   RENDERING
+   ========================================================= */
+function renderGrid(){
+  const layer = document.getElementById('grid-layer');
+  layer.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for(let r=0;r<MAX_ROWS;r++){
     for(let c=0;c<COLS;c++){
-      let type;
-      let guard = 0;
-      do{
-        type = Math.floor(Math.random()*TYPE_COUNT);
-        guard++;
-      } while(guard<40 && (
-        (c>=2 && grid[r][c-1] && grid[r][c-2] && grid[r][c-1].type===type && grid[r][c-2].type===type) ||
-        (r>=2 && grid[r-1][c] && grid[r-2][c] && grid[r-1][c].type===type && grid[r-2][c].type===type)
-      ));
-      grid[r][c] = newTileObj(r,c,type);
+      const color = state.grid[r][c];
+      if(!color) continue;
+      const pos = cellCenter(r,c);
+      const el = document.createElement('div');
+      el.className = 'bubble';
+      el.id = 'b_'+r+'_'+c;
+      el.dataset.color = color;
+      el.style.left = (pos.x - bubbleW/2)+'px';
+      el.style.top = (pos.y - bubbleW/2)+'px';
+      el.innerHTML = bubbleContentHTML(color);
+      frag.appendChild(el);
     }
   }
-  if(!hasAnyMove()) initGrid();
+  layer.appendChild(frag);
 }
-function renderBoardFresh(){
-  arena.innerHTML = '';
-  domMap = {};
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const cell = grid[r][c];
-    const el = createTileEl(cell);
-    el.classList.add('m3-spawn');
-    arena.appendChild(el);
-    domMap[cell.id] = el;
-  }
-  void arena.offsetWidth;
-  requestAnimationFrame(()=>{
-    arena.querySelectorAll('.m3-spawn').forEach(e=> e.classList.remove('m3-spawn'));
-  });
-}
-
-/* =========================================================
-   MATCH DETECTION
-   ========================================================= */
-function findMatchGroups(){
-  const matched = Array.from({length:ROWS}, ()=> Array(COLS).fill(false));
-  const runs = [];
-  for(let r=0;r<ROWS;r++){
-    let c=0;
-    while(c<COLS){
-      const cell = grid[r][c];
-      if(!cell || cell.type==='blocker'){ c++; continue; }
-      let c2=c+1;
-      while(c2<COLS && grid[r][c2] && grid[r][c2].type===cell.type) c2++;
-      const len = c2-c;
-      if(len>=3){
-        const cells=[];
-        for(let k=c;k<c2;k++){ matched[r][k]=true; cells.push(r+','+k); }
-        runs.push({dir:'h', length:len, cells});
-      }
-      c=c2;
-    }
-  }
-  for(let c=0;c<COLS;c++){
-    let r=0;
-    while(r<ROWS){
-      const cell = grid[r][c];
-      if(!cell || cell.type==='blocker'){ r++; continue; }
-      let r2=r+1;
-      while(r2<ROWS && grid[r2][c] && grid[r2][c].type===cell.type) r2++;
-      const len = r2-r;
-      if(len>=3){
-        const cells=[];
-        for(let k=r;k<r2;k++){ matched[k][c]=true; cells.push(k+','+c); }
-        runs.push({dir:'v', length:len, cells});
-      }
-      r=r2;
-    }
-  }
-  // 2x2 block match (Fish) — the two line-scans above only ever find
-  // straight runs, so a swap that completes nothing but a square (no
-  // 3-in-a-row either direction) would otherwise never register as a
-  // match at all and just silently revert.
-  for(let r=0;r<ROWS-1;r++){
-    for(let c=0;c<COLS-1;c++){
-      const a=grid[r][c], b=grid[r][c+1], cc=grid[r+1][c], d=grid[r+1][c+1];
-      if(a && b && cc && d && a.type!=='blocker' && a.type===b.type && a.type===cc.type && a.type===d.type){
-        const cells = [r+','+c, r+','+(c+1), (r+1)+','+c, (r+1)+','+(c+1)];
-        cells.forEach(k=>{ const p=keyToRC(k); matched[p.r][p.c]=true; });
-        runs.push({dir:'square', length:4, cells});
-      }
-    }
-  }
-  if(runs.length===0) return [];
-  const visited = Array.from({length:ROWS}, ()=> Array(COLS).fill(false));
-  const groups = [];
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    if(matched[r][c] && !visited[r][c]){
-      const stack=[[r,c]]; visited[r][c]=true;
-      const cellsSet = new Set();
-      while(stack.length){
-        const [rr,cc] = stack.pop();
-        cellsSet.add(rr+','+cc);
-        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr,dc])=>{
-          const nr=rr+dr, nc=cc+dc;
-          if(nr>=0 && nr<ROWS && nc>=0 && nc<COLS && matched[nr][nc] && !visited[nr][nc]){
-            visited[nr][nc]=true; stack.push([nr,nc]);
-          }
-        });
-      }
-      const groupRuns = runs.filter(run=> run.cells.some(k=> cellsSet.has(k)));
-      groups.push({cells:cellsSet, runs:groupRuns});
-    }
-  }
-  return groups;
-}
-function hasMatchAnywhere(){
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const cell = grid[r][c];
-    if(!cell) continue;
-    if(c<=COLS-3 && grid[r][c+1] && grid[r][c+2] && grid[r][c+1].type===cell.type && grid[r][c+2].type===cell.type) return true;
-    if(r<=ROWS-3 && grid[r+1][c] && grid[r+2][c] && grid[r+1][c].type===cell.type && grid[r+2][c].type===cell.type) return true;
-  }
-  return false;
-}
-function wouldMatchIfSwapped(r1,c1,r2,c2){
-  const a=grid[r1][c1], b=grid[r2][c2];
-  const t1=a.type, t2=b.type;
-  a.type=t2; b.type=t1;
-  const result = hasMatchAnywhere();
-  a.type=t1; b.type=t2;
-  return result;
-}
-function findHintMove(){
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const cell = grid[r][c];
-    if(cell.type==='blocker') continue;
-    if(c<COLS-1){
-      const nb = grid[r][c+1];
-      if(nb.type!=='blocker' && (cell.special || nb.special || wouldMatchIfSwapped(r,c,r,c+1))) return {a:cell,b:nb};
-    }
-    if(r<ROWS-1){
-      const nb = grid[r+1][c];
-      if(nb.type!=='blocker' && (cell.special || nb.special || wouldMatchIfSwapped(r,c,r+1,c))) return {a:cell,b:nb};
-    }
-  }
-  return null;
-}
-function hasAnyMove(){ return !!findHintMove(); }
-
-/* =========================================================
-   SPECIAL TILES
-   ========================================================= */
-function getSpecialClearKeys(cell, otherType){
-  const keys = [];
-  if(cell.special==='striped-row'){
-    for(let c=0;c<COLS;c++) if(grid[cell.r][c]) keys.push(cell.r+','+c);
-  } else if(cell.special==='striped-col'){
-    for(let r=0;r<ROWS;r++) if(grid[r][cell.c]) keys.push(r+','+cell.c);
-  } else if(cell.special==='colorbomb'){
-    const target = otherType!=null ? otherType : cell.type;
-    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-      if(grid[r][c] && grid[r][c].type===target) keys.push(r+','+c);
-    }
-  } else if(cell.special==='bomb'){
-    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
-      const r=cell.r+dr, c=cell.c+dc;
-      if(r>=0 && r<ROWS && c>=0 && c<COLS && grid[r][c]) keys.push(r+','+c);
-    }
-  } else if(cell.special==='fish'){
-    const blockerCandidates = [];
-    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-      if(grid[r][c] && grid[r][c].type==='blocker') blockerCandidates.push(r+','+c);
-    }
-    if(blockerCandidates.length){
-      keys.push(blockerCandidates[Math.floor(Math.random()*blockerCandidates.length)]);
-    } else {
-      // No blocker on the board — clear up to 5 tiles of whichever
-      // color it was swapped with (its own color if it wasn't
-      // triggered by a swap, e.g. caught in a natural cascade).
-      const targetType = otherType!=null ? otherType : cell.type;
-      const candidates = [];
-      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-        if(grid[r][c] && grid[r][c].type===targetType && !(r===cell.r && c===cell.c)) candidates.push(r+','+c);
-      }
-      for(let i=candidates.length-1;i>0;i--){
-        const j = Math.floor(Math.random()*(i+1));
-        [candidates[i],candidates[j]] = [candidates[j],candidates[i]];
-      }
-      candidates.slice(0,5).forEach(k=> keys.push(k));
-    }
-  }
-  return keys;
-}
-function hasExistingSpecial(key){
-  const {r,c} = keyToRC(key);
-  const cell = grid[r][c];
-  return !!(cell && cell.special);
-}
-
-/* =========================================================
-   CLEAR + GRAVITY + CASCADE
-   ========================================================= */
-function centroidPx(keys){
-  let sx=0, sy=0, n=0;
-  keys.forEach(k=>{
-    const {r,c} = keyToRC(k);
-    sx += colToPx(c) + TILE_SIZE/2;
-    sy += rowToPx(r) + TILE_SIZE/2;
-    n++;
-  });
-  return n ? {x:sx/n, y:sy/n} : {x:0,y:0};
-}
-function spawnScorePop(text, x, y){
-  const span = document.createElement('span');
-  span.className = 'm3-scorepop';
-  span.textContent = text;
-  span.style.left = x+'px';
-  span.style.top = y+'px';
-  arena.appendChild(span);
-  setTimeout(()=> span.remove(), 820);
-}
-function updateScoreDisplay(){
-  const el = document.getElementById('score-val');
-  el.textContent = state.mode==='classic' ? (state.score+' / '+state.targetScore) : state.score;
-}
-function updateMovesDisplay(){
-  document.getElementById('time-val').textContent = state.movesLeft;
-}
-function showWinModal(){
-  document.getElementById('win-score-line').textContent = 'Score: '+state.score+' (target was '+state.targetScore+')';
-  document.getElementById('win-overlay').classList.add('show');
-}
-function showLoseModal(){
-  document.getElementById('lose-score-line').textContent = 'Final score: '+state.score+' / '+state.targetScore;
-  document.getElementById('lose-overlay').classList.add('show');
-}
-document.getElementById('win-keep-playing').addEventListener('click', ()=>{
-  document.getElementById('win-overlay').classList.remove('show');
-  state.gameOver = false;
-});
-document.getElementById('win-newgame').addEventListener('click', ()=>{
-  document.getElementById('win-overlay').classList.remove('show');
-  newGame();
-});
-document.getElementById('lose-close').addEventListener('click', ()=>{
-  document.getElementById('lose-overlay').classList.remove('show');
-});
-document.getElementById('lose-newgame').addEventListener('click', ()=>{
-  document.getElementById('lose-overlay').classList.remove('show');
-  newGame();
-});
-
-// Clears `clearKeys` (expanding once through any specials caught up in
-// them), scores it, animates it, applies gravity/refill, then checks
-// for a resulting cascade and recurses. `specialMap` (key -> new
-// special type) reserves anchor cells that get UPGRADED instead of
-// cleared — how a fresh striped/bomb tile actually gets created.
-async function resolveBoard(clearKeys, comboLevel, specialMap){
-  specialMap = specialMap || {};
-  // Chain reaction: any special tile already sitting among the cells
-  // about to clear fires too. `fired` tracks which specials have
-  // already gone off so each one fires exactly once per resolution —
-  // without it, a re-scanned Fish (whose target is picked fresh each
-  // call) could keep rolling a new random target and adding cells
-  // indefinitely instead of settling.
-  const expanded = new Set(clearKeys);
-  const fired = new Set();
-  let guard = 0;
-  let grew = true;
-  while(grew && guard<20){
-    grew = false; guard++;
-    const snapshot = Array.from(expanded);
-    for(const k of snapshot){
-      if(specialMap[k]) continue; // this one's being upgraded, not cleared/activated
-      if(fired.has(k)) continue;
-      const {r,c} = keyToRC(k);
-      const cell = grid[r][c];
-      if(cell && cell.special){
-        fired.add(k);
-        getSpecialClearKeys(cell, null).forEach(k2=>{
-          if(!expanded.has(k2)){ expanded.add(k2); grew = true; }
-        });
-      }
-    }
-  }
-
-  const centroid = centroidPx(expanded);
-  const points = expanded.size * 10 * comboLevel;
-  state.score += points;
-  updateScoreDisplay();
-  spawnScorePop('+'+points+(comboLevel>1 ? ' x'+comboLevel : ''), centroid.x, centroid.y);
-
-  // Upgrade special anchors first (keep the tile, change its face).
-  Object.keys(specialMap).forEach(k=>{
-    const {r,c} = keyToRC(k);
-    const cell = grid[r][c];
-    if(!cell) return;
-    cell.special = specialMap[k];
-    renderTileContent(getEl(cell.id), cell);
-  });
-
-  // Pop everything else.
-  const toRemove = [];
-  expanded.forEach(k=>{
-    if(specialMap[k]) return;
-    const {r,c} = keyToRC(k);
-    const cell = grid[r][c];
-    if(!cell) return;
-    toRemove.push(cell);
-    const el = getEl(cell.id);
-    if(el) el.classList.add('m3-pop');
-  });
-  if(toRemove.length) await sleep(240);
-  toRemove.forEach(cell=>{
-    const el = getEl(cell.id);
-    if(el) el.remove();
-    delete domMap[cell.id];
-    grid[cell.r][cell.c] = null;
-  });
-
-  await applyGravityAndRefill();
-
-  const nextGroups = findMatchGroups();
-  if(nextGroups.length>0){
-    const {clearKeys:nk, specialMap:nsm} = computeGroupsAndSpecials(nextGroups, null);
-    await resolveBoard(nk, comboLevel+1, nsm);
-  } else {
-    maybeSpawnBlocker(comboLevel);
+function renderShooterHUD(){
+  const shooterEl = document.getElementById('shooter-bubble');
+  shooterEl.dataset.color = state.shooterColor;
+  shooterEl.innerHTML = bubbleContentHTML(state.shooterColor);
+  for(let i=0;i<QUEUE_SIZE;i++){
+    const el = document.getElementById('queue-'+i);
+    const color = state.nextQueue[i];
+    el.dataset.color = color;
+    el.innerHTML = bubbleContentHTML(color);
   }
 }
-
-// A cascade chain of 3+ (a "longer run of matches") has a chance to
-// drop a Blocker onto the board — picked from whatever's called at the
-// natural end of the chain (see the call site above), so it fires
-// exactly once per swap/activation, not once per cascade step within
-// it. Converts an existing plain (non-special) tile in place rather
-// than needing a dedicated empty slot, since the grid is always full.
-function maybeSpawnBlocker(comboLevel){
-  if(comboLevel < 3) return;
-  const candidates = [];
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const cell = grid[r][c];
-    if(cell && !cell.special && cell.type!=='blocker') candidates.push(cell);
-  }
-  if(!candidates.length) return;
-  const target = candidates[Math.floor(Math.random()*candidates.length)];
-  target.type = 'blocker';
-  renderTileContent(getEl(target.id), target);
-  E.showToast(toastEl, 'A blocker appeared!', 1500);
-}
-
-// Priority when a group qualifies for more than one special: an
-// intersecting T/L shape (Bomb) outranks a straight 5-line (Color
-// Bomb), which outranks a straight 4-line (striped), which outranks a
-// 2x2 square (Fish) — same rarity ordering the genre uses.
-function computeGroupsAndSpecials(groups, anchorPrefKeys){
-  const clearKeys = new Set();
-  const specialMap = {};
-  groups.forEach(g=>{
-    g.cells.forEach(k=> clearKeys.add(k));
-
-    const hRuns = g.runs.filter(r=> r.dir==='h' && r.length>=3);
-    const vRuns = g.runs.filter(r=> r.dir==='v' && r.length>=3);
-    const sqRuns = g.runs.filter(r=> r.dir==='square');
-    const lineRuns = g.runs.filter(r=> r.dir==='h' || r.dir==='v');
-
-    let specialType = null;
-    let anchorSet = null;
-
-    // T/L: any horizontal run intersecting any vertical run.
-    let intersection = null;
-    outer:
-    for(const hr of hRuns){
-      for(const vr of vRuns){
-        const shared = hr.cells.find(k=> vr.cells.indexOf(k)!==-1);
-        if(shared){ intersection = shared; break outer; }
-      }
-    }
-
-    if(intersection){
-      specialType = 'bomb';
-      anchorSet = [intersection];
-    } else {
-      let longest = null;
-      lineRuns.forEach(r=>{ if(!longest || r.length>longest.length) longest = r; });
-      if(longest && longest.length>=5){
-        specialType = 'colorbomb';
-        anchorSet = longest.cells;
-      } else if(longest && longest.length===4){
-        specialType = longest.dir==='h' ? 'striped-col' : 'striped-row';
-        anchorSet = longest.cells;
-      } else if(sqRuns.length>0){
-        specialType = 'fish';
-        anchorSet = sqRuns[0].cells;
-      }
-    }
-
-    if(specialType){
-      // Never anchor a new special on a cell that already holds one —
-      // that cell's existing special needs to actually clear/fire,
-      // not get silently overwritten by the one being created here.
-      let anchorKey = null;
-      if(anchorPrefKeys){
-        anchorKey = anchorPrefKeys.find(k=> anchorSet.indexOf(k)!==-1 && !hasExistingSpecial(k));
-      }
-      if(!anchorKey) anchorKey = anchorSet.find(k=> !hasExistingSpecial(k));
-      if(!anchorKey) anchorKey = anchorSet[0]; // rare: every candidate cell already special
-      specialMap[anchorKey] = specialType;
-    }
-  });
-  return { clearKeys, specialMap };
-}
-
-async function applyGravityAndRefill(){
-  let anyMoved = false;
-  for(let c=0;c<COLS;c++){
-    let writeR = ROWS-1;
-    for(let r=ROWS-1;r>=0;r--){
-      if(grid[r][c]){
-        if(r!==writeR){
-          const cell = grid[r][c];
-          grid[writeR][c] = cell; grid[r][c] = null;
-          cell.r = writeR; cell.c = c;
-          moveElTo(cell);
-          anyMoved = true;
-        }
-        writeR--;
-      }
-    }
-    let newCount = 0;
-    for(let r=writeR;r>=0;r--){
-      newCount++;
-      const type = Math.floor(Math.random()*TYPE_COUNT);
-      const cell = newTileObj(r,c,type);
-      grid[r][c] = cell;
-      const el = createTileEl(cell);
-      el.style.top = rowToPx(r-newCount)+'px';
-      arena.appendChild(el);
-      domMap[cell.id] = el;
-      anyMoved = true;
-    }
-  }
-  if(anyMoved){
-    void arena.offsetWidth;
-    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-      moveElTo(grid[r][c]);
-    }
-    await sleep(260);
-  }
-}
-
-/* =========================================================
-   SWAP / INPUT
-   ========================================================= */
-function findCellById(id){
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    if(grid[r][c] && grid[r][c].id===id) return grid[r][c];
-  }
-  return null;
-}
-function isAdjacent(a,b){ return (Math.abs(a.r-b.r)+Math.abs(a.c-b.c))===1; }
-function neighborInDir(cell, dir){
-  let r=cell.r, c=cell.c;
-  if(dir==='left') c--; else if(dir==='right') c++; else if(dir==='up') r--; else if(dir==='down') r++;
-  if(r<0||r>=ROWS||c<0||c>=COLS) return null;
-  return grid[r][c];
-}
-function swapModel(a,b){
-  const ar=a.r, ac=a.c, br=b.r, bc=b.c;
-  grid[ar][ac]=b; grid[br][bc]=a;
-  b.r=ar; b.c=ac; a.r=br; a.c=bc;
-}
-function clearSelectionVisual(){
-  if(selectedId){
-    const el = getEl(selectedId);
-    if(el) el.classList.remove('selected');
-  }
-  selectedId = null;
-}
-
-// Explicit combo rules for swapping two specials directly into each
-// other. Anything not covered here falls back to each special firing
-// its own solo effect independently (still both fire, just with no
-// bonus interaction) rather than silently guessing at a rule.
-function comboActivate(a, b){
-  const keys = new Set();
-  const sa = a.special, sb = b.special;
-  const isStripe = s => s==='striped-row' || s==='striped-col';
-  const cr = Math.round((a.r+b.r)/2), cc = Math.round((a.c+b.c)/2);
-
-  if(sa==='bomb' && sb==='bomb'){
-    for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++){
-      const r=cr+dr, c=cc+dc;
-      if(r>=0 && r<ROWS && c>=0 && c<COLS && grid[r][c]) keys.add(r+','+c);
-    }
-  } else if((sa==='bomb' && sb==='colorbomb') || (sa==='colorbomb' && sb==='bomb')){
-    const bombCell = sa==='bomb' ? a : b;
-    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-      if(grid[r][c] && grid[r][c].type===bombCell.type) keys.add(r+','+c);
-    }
-  } else if(isStripe(sa) && isStripe(sb)){
-    if(sa===sb){
-      if(sa==='striped-row'){
-        for(let dr=-1;dr<=1;dr++){
-          const r=cr+dr; if(r<0||r>=ROWS) continue;
-          for(let c=0;c<COLS;c++) if(grid[r][c]) keys.add(r+','+c);
-        }
-      } else {
-        for(let dc=-1;dc<=1;dc++){
-          const c=cc+dc; if(c<0||c>=COLS) continue;
-          for(let r=0;r<ROWS;r++) if(grid[r][c]) keys.add(r+','+c);
-        }
-      }
-    } else {
-      for(let dr=-1;dr<=1;dr++){
-        const r=cr+dr; if(r<0||r>=ROWS) continue;
-        for(let c=0;c<COLS;c++) if(grid[r][c]) keys.add(r+','+c);
-      }
-      for(let dc=-1;dc<=1;dc++){
-        const c=cc+dc; if(c<0||c>=COLS) continue;
-        for(let r=0;r<ROWS;r++) if(grid[r][c]) keys.add(r+','+c);
-      }
-    }
-  } else if(sa==='fish' && sb==='fish'){
-    // Targets up to 5 blockers; any slot with no blocker left to fill
-    // it converts to 4 random (non-blocker) tiles instead — so 0
-    // blockers on the field = 5 slots x 4 = 20 random tiles, 1
-    // blocker = 1 real hit + 4 missing slots x 4 = 16 random tiles.
-    const blockerKeys = [];
-    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-      if(grid[r][c] && grid[r][c].type==='blocker') blockerKeys.push(r+','+c);
-    }
-    for(let i=blockerKeys.length-1;i>0;i--){
-      const j = Math.floor(Math.random()*(i+1));
-      [blockerKeys[i],blockerKeys[j]] = [blockerKeys[j],blockerKeys[i]];
-    }
-    const usedBlockers = blockerKeys.slice(0,5);
-    usedBlockers.forEach(k=> keys.add(k));
-    const missingSlots = 5 - usedBlockers.length;
-    if(missingSlots>0){
-      const randomCandidates = [];
-      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-        const k = r+','+c;
-        if(grid[r][c] && grid[r][c].type!=='blocker' && !keys.has(k)) randomCandidates.push(k);
-      }
-      for(let i=randomCandidates.length-1;i>0;i--){
-        const j = Math.floor(Math.random()*(i+1));
-        [randomCandidates[i],randomCandidates[j]] = [randomCandidates[j],randomCandidates[i]];
-      }
-      randomCandidates.slice(0, missingSlots*4).forEach(k=> keys.add(k));
-    }
-  } else if(sa==='colorbomb' && sb==='colorbomb'){
-    // Full field clear — not a win condition on its own, just every
-    // tile on the board at once (scored the same as any other clear,
-    // so this is naturally the single biggest point payout available).
-    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-      if(grid[r][c]) keys.add(r+','+c);
-    }
-  } else {
-    getSpecialClearKeys(a, b.type).forEach(k=> keys.add(k));
-    getSpecialClearKeys(b, a.type).forEach(k=> keys.add(k));
-  }
-  keys.add(cellKey(a)); keys.add(cellKey(b));
-  return keys;
-}
-
-async function doSwapAttempt(a,b){
-  if(animating || state.gameOver) return;
-  if(a.type==='blocker' || b.type==='blocker'){
-    E.showToast(toastEl, "Blockers can't be swapped", 1200);
-    return;
-  }
-  animating = true;
-  try{
-    const aHadSpecial = a.special, bHadSpecial = b.special;
-    swapModel(a,b);
-    moveElTo(a); moveElTo(b);
-    await sleep(200);
-
-    if(aHadSpecial && bHadSpecial){
-      const toClear = comboActivate(a, b);
-      consumeMove();
-      await resolveBoard(toClear, 1, {});
-      checkNoMoves();
-      checkGameEnd();
-      return;
-    }
-
-    if(aHadSpecial || bHadSpecial){
-      const toClear = new Set();
-      if(aHadSpecial) getSpecialClearKeys(a, b.type).forEach(k=> toClear.add(k));
-      if(bHadSpecial) getSpecialClearKeys(b, a.type).forEach(k=> toClear.add(k));
-      toClear.add(cellKey(a)); toClear.add(cellKey(b));
-      consumeMove();
-      await resolveBoard(toClear, 1, {});
-      checkNoMoves();
-      checkGameEnd();
-      return;
-    }
-
-    const groups = findMatchGroups();
-    if(groups.length===0){
-      swapModel(a,b);
-      moveElTo(a); moveElTo(b);
-      await sleep(200);
-      return;
-    }
-    consumeMove();
-    const {clearKeys, specialMap} = computeGroupsAndSpecials(groups, [cellKey(a), cellKey(b)]);
-    await resolveBoard(clearKeys, 1, specialMap);
-    checkNoMoves();
-    checkGameEnd();
-  } finally {
-    animating = false;
-  }
-}
-async function activateSpecialInPlace(cell){
-  if(animating || state.gameOver || !cell.special) return;
-  animating = true;
-  try{
-    const toClear = new Set(getSpecialClearKeys(cell, null));
-    toClear.add(cellKey(cell));
-    consumeMove();
-    await resolveBoard(toClear, 1, {});
-    checkNoMoves();
-    checkGameEnd();
-  } finally {
-    animating = false;
-  }
-}
-function consumeMove(){
-  if(state.mode!=='classic' || state.gameOver || state.hasWon) return;
-  state.movesLeft = Math.max(0, state.movesLeft-1);
-  updateMovesDisplay();
-}
-function checkGameEnd(){
-  if(state.mode!=='classic' || state.gameOver) return;
-  if(!state.hasWon && state.score>=state.targetScore){
-    state.hasWon = true;
-    state.gameOver = true;
-    showWinModal();
-  } else if(!state.hasWon && state.movesLeft<=0){
-    state.gameOver = true;
-    showLoseModal();
-  }
-}
-function checkNoMoves(){
-  if(state.gameOver) return;
-  if(!hasAnyMove()){
-    E.showToast(toastEl, 'No moves left — reshuffling...', 1800);
-    setTimeout(reshuffleBoard, 700);
-  }
-}
-async function reshuffleBoard(){
-  if(animating || state.gameOver) return;
-  animating = true;
-  Object.values(domMap).forEach(el=> el.classList.add('m3-pop'));
-  await sleep(240);
-  initGrid();
-  renderBoardFresh();
-  animating = false;
-}
-
-function attachTileEvents(el, id){
-  el.addEventListener('pointerdown', (e)=>{
-    if(animating || state.gameOver) return;
-    try{ el.setPointerCapture(e.pointerId); }catch(err){}
-    pointerDownInfo = { id, x:e.clientX, y:e.clientY };
-  });
-  el.addEventListener('pointerup', (e)=>{
-    if(animating || state.gameOver || !pointerDownInfo){ pointerDownInfo=null; return; }
-    const dx = e.clientX - pointerDownInfo.x, dy = e.clientY - pointerDownInfo.y;
-    const dist = Math.hypot(dx,dy);
-    const startId = pointerDownInfo.id;
-    pointerDownInfo = null;
-    const startCell = findCellById(startId);
-    if(!startCell) return;
-    if(startCell.type==='blocker') return;
-
-    if(dist > TILE_SIZE*0.28){
-      let dir;
-      if(Math.abs(dx) > Math.abs(dy)) dir = dx>0 ? 'right' : 'left';
-      else dir = dy>0 ? 'down' : 'up';
-      const target = neighborInDir(startCell, dir);
-      clearSelectionVisual();
-      if(target) doSwapAttempt(startCell, target);
-      return;
-    }
-
-    // Tap: a lone special activates immediately in place; otherwise
-    // it's the usual two-tap select/swap.
-    if(selectedId===null){
-      if(startCell.special){
-        activateSpecialInPlace(startCell);
-        return;
-      }
-      selectedId = startId;
-      getEl(startId).classList.add('selected');
-    } else if(selectedId===startId){
-      clearSelectionVisual();
-    } else {
-      const selCell = findCellById(selectedId);
-      clearSelectionVisual();
-      if(selCell && isAdjacent(selCell, startCell)){
-        doSwapAttempt(selCell, startCell);
-      } else {
-        selectedId = startId;
-        getEl(startId).classList.add('selected');
-      }
-    }
-  });
-}
-
-/* =========================================================
-   NEW GAME / HINT / SHUFFLE
-   ========================================================= */
-function newGame(){
-  clearSelectionVisual();
-  state.score = 0;
-  state.seconds = 0;
-  state.gameOver = false;
-  state.hasWon = false;
-  if(state.mode==='classic'){
-    const diff = DIFFICULTIES[state.difficulty];
-    state.movesLeft = diff.moves;
-    state.targetScore = diff.target;
-  }
-  updateScoreDisplay();
-  updateMovesDisplay();
-  updateTimeDisplay();
-  initGrid();
-  fitMatchBoard();
-  renderBoardFresh();
-  applyHudVisibility();
-}
-function updateTimeDisplay(){
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
   const m = Math.floor(state.seconds/60), s = state.seconds%60;
   document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
 }
-let timerInterval = null;
-function syncTimerInterval(){
-  clearInterval(timerInterval);
-  if(state.showTimer){
-    timerInterval = setInterval(()=>{ state.seconds++; updateTimeDisplay(); }, 1000);
+function renderAll(){
+  renderGrid();
+  renderShooterHUD();
+  renderHUD();
+}
+
+/* =========================================================
+   AIMING
+   simulateShot() walks the exact same collision rules fireShot()'s
+   animation loop uses (wall bounce, ceiling stop, first-bubble stop)
+   but does it instantly, step by step, instead of over animation
+   frames — so the aim preview can never promise a shot that the real
+   physics wouldn't actually deliver. That was the bug in the old
+   single straight-line preview: it pointed at cells behind other
+   bubbles that a real shot could never reach without hitting whatever
+   was in front of them first.
+   ========================================================= */
+const MAX_AIM_ANGLE = 75 * Math.PI/180;
+function simulateShot(dir){
+  const r = bubbleW/2;
+  const step = Math.max(2, bubbleW*0.12);
+  const start = shooterBubblePos(dir);
+  let x = start.x, y = start.y;
+  let vx = dir.x, vy = dir.y;
+  const points = [{x,y}];
+  let guard = 0;
+  while(guard++ < 900){
+    x += vx*step; y += vy*step;
+    let bounced = false;
+    if(x-r < 0){ x = r; vx = -vx; bounced = true; }
+    else if(x+r > fieldWpx){ x = fieldWpx-r; vx = -vx; bounced = true; }
+    if(bounced) points.push({x,y});
+
+    let hit = null;
+    outer:
+    for(let rr=0; rr<MAX_ROWS; rr++){
+      for(let cc=0; cc<COLS; cc++){
+        if(!state.grid[rr][cc]) continue;
+        const cp = cellCenter(rr,cc);
+        if(distSq({x,y}, cp) < (bubbleW*0.92)*(bubbleW*0.92)){ hit = {row:rr, col:cc}; break outer; }
+      }
+    }
+
+    if(y-r <= 0 || hit){
+      points.push({x,y});
+      let landing = null;
+      if(hit){
+        const empties = neighborsOf(hit.row, hit.col).filter(n => !state.grid[n.row][n.col]);
+        if(empties.length){
+          empties.sort((a,b)=> distSq(cellCenter(a.row,a.col),{x,y}) - distSq(cellCenter(b.row,b.col),{x,y}));
+          landing = empties[0];
+        } else {
+          landing = findNearestEmptyCell(x,y);
+        }
+      } else {
+        const colGuess = clamp(Math.round((x - bubbleW/2)/bubbleW), 0, COLS-1);
+        landing = !state.grid[0][colGuess] ? {row:0, col:colGuess} : findNearestEmptyCell(x,y);
+      }
+      return { points, landing };
+    }
+  }
+  points.push({x,y});
+  return { points, landing: null };
+}
+function renderAimSegment(container, a, b){
+  const dx = b.x-a.x, dy = b.y-a.y;
+  const len = Math.hypot(dx,dy);
+  if(len < 0.5) return;
+  const angleDeg = Math.atan2(dy,dx) * 180/Math.PI;
+  const seg = document.createElement('div');
+  seg.className = 'aim-line';
+  seg.style.left = a.x+'px';
+  seg.style.top = a.y+'px';
+  seg.style.width = len+'px';
+  seg.style.transform = 'rotate('+angleDeg+'deg)';
+  container.appendChild(seg);
+}
+function updateAim(clientX, clientY){
+  if(busy) return;
+  const field = document.getElementById('bubble-field');
+  const rect = field.getBoundingClientRect();
+  const localX = clientX - rect.left, localY = clientY - rect.top;
+  let vx = localX - shooterPos.x;
+  let vy = localY - shooterPos.y;
+  if(vy > -bubbleW*0.3) vy = -bubbleW*0.3; // never allow aiming downward/sideways-flat
+  let ang = Math.atan2(vx, -vy); // angle from straight up, + = right
+  ang = clamp(ang, -MAX_AIM_ANGLE, MAX_AIM_ANGLE);
+  aimDir = { x: Math.sin(ang), y: -Math.cos(ang) };
+  aimAngleDeg = ang * 180/Math.PI;
+  positionBallista(aimAngleDeg, aimDir);
+
+  const sim = simulateShot(aimDir);
+  const layer = document.getElementById('aim-path-layer');
+  layer.innerHTML = '';
+  if(state.showBounce){
+    // Full real path: every bounce segment through to the landing point.
+    for(let i=0; i<sim.points.length-1; i++) renderAimSegment(layer, sim.points[i], sim.points[i+1]);
+  } else {
+    // Simple mode still respects the first collision — just the
+    // initial straight segment, capped to a readable length, rather
+    // than an arbitrary fixed-length line pointing past whatever's
+    // actually in the way.
+    const capLen = Math.min(fieldHpx*0.85, 320);
+    const first = sim.points[0], second = sim.points[1] || first;
+    const dx = second.x-first.x, dy = second.y-first.y;
+    const realLen = Math.hypot(dx,dy);
+    const t = realLen>0 ? Math.min(1, capLen/realLen) : 0;
+    renderAimSegment(layer, first, { x: first.x+dx*t, y: first.y+dy*t });
+  }
+
+  const marker = document.getElementById('landing-marker');
+  if(state.showBounce && state.showLanding && sim.landing){
+    const pos = cellCenter(sim.landing.row, sim.landing.col);
+    marker.style.left = (pos.x - bubbleW/2)+'px';
+    marker.style.top = (pos.y - bubbleW/2)+'px';
+    marker.style.display = 'block';
+  } else {
+    marker.style.display = 'none';
   }
 }
-function applyHudVisibility(){
-  E.applyHudVisibility(state);
-  const chipTime = document.getElementById('chip-time');
-  const label = document.getElementById('chip-time-label');
-  if(state.mode==='classic'){
-    label.textContent = 'MOVES';
-    chipTime.style.display = '';
+function hideAim(){
+  document.getElementById('aim-path-layer').innerHTML = '';
+  document.getElementById('landing-marker').style.display = 'none';
+}
+
+/* =========================================================
+   FIRING / PHYSICS
+   ========================================================= */
+function cancelFlight(){
+  if(flyReq){ cancelAnimationFrame(flyReq); flyReq = null; }
+  const flying = document.getElementById('flying-bubble');
+  flying.style.display = 'none';
+}
+function fireShot(){
+  if(busy || state.gameOver) return;
+  busy = true;
+  hideAim();
+  undo.push();
+
+  const flying = document.getElementById('flying-bubble');
+  flying.dataset.color = state.shooterColor;
+  flying.innerHTML = bubbleContentHTML(state.shooterColor);
+  flying.style.display = 'flex';
+
+  let { x, y } = shooterBubblePos(aimDir);
+  const speed = bubbleW * 15;
+  let vx = aimDir.x*speed, vy = aimDir.y*speed;
+  let lastT = null;
+
+  function frame(t){
+    if(lastT===null) lastT = t;
+    const dt = Math.min((t-lastT)/1000, 0.032);
+    lastT = t;
+    x += vx*dt; y += vy*dt;
+    const r = bubbleW/2;
+    if(x-r < 0){ x = r; vx = -vx; }
+    else if(x+r > fieldWpx){ x = fieldWpx-r; vx = -vx; }
+
+    let hit = null;
+    outer:
+    for(let rr=0; rr<MAX_ROWS; rr++){
+      for(let cc=0; cc<COLS; cc++){
+        if(!state.grid[rr][cc]) continue;
+        const cp = cellCenter(rr,cc);
+        if(distSq({x,y}, cp) < (bubbleW*0.92)*(bubbleW*0.92)){ hit = {row:rr, col:cc}; break outer; }
+      }
+    }
+
+    if(y - r <= 0 || hit){
+      resolveLanding(x, y, hit);
+      return;
+    }
+    flying.style.left = (x-r)+'px';
+    flying.style.top = (y-r)+'px';
+    flyReq = requestAnimationFrame(frame);
+  }
+  flyReq = requestAnimationFrame(frame);
+}
+function resolveLanding(x, y, hit){
+  cancelFlight();
+  let target = null;
+  if(hit){
+    const empties = neighborsOf(hit.row, hit.col).filter(n => !state.grid[n.row][n.col]);
+    if(empties.length){
+      empties.sort((a,b)=> distSq(cellCenter(a.row,a.col),{x,y}) - distSq(cellCenter(b.row,b.col),{x,y}));
+      target = empties[0];
+    } else {
+      target = findNearestEmptyCell(x,y);
+    }
   } else {
-    label.textContent = 'TIME';
+    const colGuess = clamp(Math.round((x - bubbleW/2)/bubbleW), 0, COLS-1);
+    target = !state.grid[0][colGuess] ? {row:0, col:colGuess} : findNearestEmptyCell(x,y);
+  }
+  if(!target){ triggerGameOver(); return; }
+
+  state.grid[target.row][target.col] = state.shooterColor;
+  renderGrid();
+  const landedEl = document.getElementById('b_'+target.row+'_'+target.col);
+  if(landedEl){
+    landedEl.classList.add('landing');
+    setTimeout(()=>{ if(landedEl) landedEl.classList.remove('landing'); }, 240);
+  }
+
+  const group = floodMatch(target.row, target.col);
+  if(group.length >= 3) handlePop(group);
+  else finishShot();
+}
+function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
+function handlePop(group){
+  addScore(group.length*10 + Math.max(0, group.length-3)*5);
+  group.forEach(({row,col})=>{
+    const el = document.getElementById('b_'+row+'_'+col);
+    if(el) el.classList.add('pop');
+  });
+  setTimeout(()=>{
+    group.forEach(({row,col})=>{ state.grid[row][col] = null; });
+    const floating = findFloating();
+    if(floating.length){
+      addScore(floating.length*20);
+      floating.forEach(({row,col})=>{
+        const el = document.getElementById('b_'+row+'_'+col);
+        if(el){
+          el.style.setProperty('--fall-x', (Math.random()*50-25)+'px');
+          el.style.setProperty('--fall-r', (Math.random()*140-70)+'deg');
+          el.classList.add('fall');
+        }
+      });
+      setTimeout(()=>{
+        floating.forEach(({row,col})=>{ state.grid[row][col] = null; });
+        renderGrid();
+        finishShot();
+      }, 480);
+    } else {
+      renderGrid();
+      finishShot();
+    }
+  }, 260);
+}
+function pushNewRow(){
+  for(let r=MAX_ROWS-1; r>0; r--) state.grid[r] = state.grid[r-1];
+  state.grid[0] = makeRandomRow();
+}
+function isGridEmpty(){
+  for(let r=0;r<MAX_ROWS;r++) for(let c=0;c<COLS;c++) if(state.grid[r][c]) return false;
+  return true;
+}
+function isDanger(){
+  for(let r=DANGER_ROW; r<MAX_ROWS; r++) for(let c=0;c<COLS;c++) if(state.grid[r][c]) return true;
+  return false;
+}
+function finishShot(){
+  state.shotsFired++;
+  state.shooterColor = state.nextQueue.shift();
+  state.nextQueue.push(pickNextColor());
+  renderShooterHUD();
+
+  if(state.shotsFired % SHOTS_PER_PUSH === 0) pushNewRow();
+  renderGrid();
+
+  if(isGridEmpty()){ triggerWin(); return; }
+  if(isDanger()){ triggerGameOver(); return; }
+  busy = false;
+}
+function triggerWin(){
+  clearInterval(state.timerHandle);
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('win-sub').textContent = state.showTimer
+    ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+    : (state.showScore ? ('Score '+state.score) : 'Board cleared.');
+  document.getElementById('winmask').classList.add('show');
+}
+function triggerGameOver(){
+  clearInterval(state.timerHandle);
+  document.getElementById('gameovermask').classList.add('show');
+}
+function hideMasks(){
+  document.getElementById('winmask').classList.remove('show');
+  document.getElementById('gameovermask').classList.remove('show');
+}
+
+/* =========================================================
+   UNDO / TIMER / HUD
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({
+    grid: state.grid.map(r=>r.slice()),
+    score: state.score,
+    shooterColor: state.shooterColor,
+    nextQueue: state.nextQueue.slice(),
+    shotsFired: state.shotsFired
+  }),
+  (snap)=>{
+    cancelFlight();
+    state.grid = snap.grid.map(r=>r.slice());
+    state.score = snap.score;
+    state.shooterColor = snap.shooterColor;
+    state.nextQueue = snap.nextQueue.slice();
+    state.shotsFired = snap.shotsFired;
+    busy = false;
+    hideMasks();
+    if(!state.timerHandle && state.showTimer) syncTimerInterval();
+    renderAll();
+  },
+  document.getElementById('btn-undo')
+);
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+
+/* =========================================================
+   HINT
+   ========================================================= */
+function showHint(){
+  if(busy) return;
+  const color = state.shooterColor;
+  const visited = new Set();
+  let bestGroup = null;
+  for(let r=0;r<MAX_ROWS && !bestGroup;r++){
+    for(let c=0;c<COLS && !bestGroup;c++){
+      if(state.grid[r][c] !== color) continue;
+      const key = r+'_'+c;
+      if(visited.has(key)) continue;
+      const grp = floodMatch(r,c);
+      grp.forEach(g=>visited.add(g.row+'_'+g.col));
+      if(grp.length >= 2) bestGroup = grp;
+    }
+  }
+  if(bestGroup){
+    const els = bestGroup.map(g=>document.getElementById('b_'+g.row+'_'+g.col)).filter(Boolean);
+    E.pulseAll(els, 1300);
+    E.showToast(document.getElementById('hint-toast'), 'Aim for that '+nameFor(color)+' cluster!', 1800);
+  } else {
+    E.showToast(document.getElementById('hint-toast'), 'No easy match for your current bubble — try opening up space near the top.', 2200);
   }
 }
 
-document.getElementById('btn-hint').addEventListener('click', ()=>{
-  if(animating || state.gameOver) return;
-  const move = findHintMove();
-  if(move){
-    E.pulseAll([getEl(move.a.id), getEl(move.b.id)], 1000);
-  } else {
-    E.showToast(toastEl, 'No moves available', 1500);
-  }
-});
-document.getElementById('btn-shuffle').addEventListener('click', ()=>{
-  if(animating || state.gameOver) return;
-  E.showToast(toastEl, 'Board shuffled', 1200);
-  reshuffleBoard();
-});
+/* =========================================================
+   NEW GAME
+   ========================================================= */
+function newGame(){
+  cancelFlight();
+  busy = false;
+  clearInterval(state.timerHandle);
+  state.numColors = pendingSettings.numColors;
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.grid = buildInitialGrid();
+  state.score = 0;
+  state.seconds = 0;
+  state.shotsFired = 0;
+  state.shooterColor = pickNextColor();
+  state.nextQueue = [];
+  for(let i=0;i<QUEUE_SIZE;i++) state.nextQueue.push(pickNextColor());
+  aimDir = { x:0, y:-1 };
+  aimAngleDeg = 0;
+  undo.reset();
+  hideMasks();
+  applyHudVisibility();
+  syncTimerInterval();
+  computeSize();
+  renderAll();
+}
+
+/* =========================================================
+   INPUT WIRING
+   ========================================================= */
+const boardWrap = document.getElementById('board-wrap');
+window.addEventListener('pointermove', (e)=> updateAim(e.clientX, e.clientY));
+boardWrap.addEventListener('pointerdown', (e)=> updateAim(e.clientX, e.clientY));
+boardWrap.addEventListener('pointerup', (e)=>{ updateAim(e.clientX, e.clientY); fireShot(); });
+
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-hint').addEventListener('click', showHint);
 
 const confirmOverlay = document.getElementById('confirm-overlay');
 document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
 document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
-document.getElementById('confirm-yes').addEventListener('click', ()=>{
-  confirmOverlay.classList.remove('show');
-  newGame();
-});
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('win-newgame').addEventListener('click', ()=>{ document.getElementById('winmask').classList.remove('show'); newGame(); });
+document.getElementById('gameover-newgame').addEventListener('click', ()=>{ document.getElementById('gameovermask').classList.remove('show'); newGame(); });
+document.getElementById('gameover-undo').addEventListener('click', ()=>{ document.getElementById('gameovermask').classList.remove('show'); undo.undo(); });
 
 const helpOverlay = document.getElementById('help-overlay');
 document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
 document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
 helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+function buildLegendInto(containerId){
+  const wrap = document.getElementById(containerId);
+  COLORS.forEach((c,i)=>{
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.dataset.index = i;
+    row.innerHTML = '<div class="legend-swatch" data-color="'+c.id+'">'+(c.id==='void' ? '<span class="void-glyph"></span>' : '<span>'+c.glyph+'</span>')+'</div><span class="legend-name">'+c.name+'</span>';
+    wrap.appendChild(row);
+  });
+}
+buildLegendInto('legend-list');
+buildLegendInto('legend-list-settings');
 
 /* =========================================================
    SETTINGS
    ========================================================= */
-function buildTilesetPicker(){
-  const wrap = document.getElementById('tileset-picker');
-  wrap.innerHTML = '';
-  Object.keys(TILESETS).forEach(key=>{
-    const theme = TILESETS[key];
-    const cellWrap = document.createElement('div');
-    cellWrap.className = 'tilesetcell';
-    const sw = document.createElement('div');
-    sw.className = 'tilesetswatch';
-    sw.dataset.val = key;
-    theme.types.slice(0,4).forEach(t=>{
-      const mini = document.createElement('div');
-      mini.className = 'mini' + (t.dark ? ' dark' : '');
-      if(t.shape){
-        mini.style.background = 'rgba(255,255,255,0.07)';
-        const g = document.createElement('div');
-        g.className = 'm3-gem m3-gem-'+t.shape+' gem-mini';
-        g.style.background = t.color;
-        mini.appendChild(g);
-      } else {
-        mini.style.background = t.color;
-        mini.textContent = t.text || t.glyph;
-        if(t.text) mini.style.fontSize = '9px';
-      }
-      sw.appendChild(mini);
-    });
-    sw.addEventListener('click', ()=>{
-      pendingSettings.tileset = key;
-      state.tileset = key;
-      refreshTilesetPicker();
-      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-        const cell = grid[r][c];
-        if(cell) renderTileContent(getEl(cell.id), cell);
-      }
-    });
-    const label = document.createElement('div');
-    label.className = 'tilesetlabel';
-    label.textContent = theme.label;
-    cellWrap.appendChild(sw);
-    cellWrap.appendChild(label);
-    wrap.appendChild(cellWrap);
-  });
-  refreshTilesetPicker();
-}
-function refreshTilesetPicker(){
-  document.querySelectorAll('.tilesetswatch').forEach(sw=>{
-    sw.classList.toggle('active', sw.dataset.val===pendingSettings.tileset);
+function refreshColorsPicker(){
+  document.getElementById('rng-colors').value = pendingSettings.numColors;
+  document.getElementById('colors-val').textContent = pendingSettings.numColors + (pendingSettings.numColors===8 ? ' (Master)' : '');
+  document.querySelectorAll('#legend-list-settings .legend-row').forEach(row=>{
+    row.classList.toggle('locked', Number(row.dataset.index) >= pendingSettings.numColors);
   });
 }
-
-function buildModePicker(){
-  document.querySelectorAll('#mode-picker [data-mode]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      pendingSettings.mode = btn.dataset.mode;
-      refreshModePicker();
-    });
-  });
-  document.querySelectorAll('#difficulty-picker [data-diff]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      pendingSettings.difficulty = btn.dataset.diff;
-      refreshModePicker();
-    });
-  });
+document.getElementById('rng-colors').addEventListener('input', (e)=>{
+  pendingSettings.numColors = Number(e.target.value);
+  refreshColorsPicker();
+});
+function refreshLandingFieldEnabled(){
+  const landingToggle = document.getElementById('tog-landing');
+  landingToggle.disabled = !state.showBounce;
+  document.getElementById('field-landing').classList.toggle('sub-disabled', !state.showBounce);
 }
-function refreshModePicker(){
-  document.querySelectorAll('#mode-picker [data-mode]').forEach(b=>{
-    b.classList.toggle('mode-active', b.dataset.mode===pendingSettings.mode);
-  });
-  document.querySelectorAll('#difficulty-picker [data-diff]').forEach(b=>{
-    b.classList.toggle('mode-active', b.dataset.diff===pendingSettings.difficulty);
-  });
-  document.getElementById('difficulty-field').style.display = pendingSettings.mode==='classic' ? '' : 'none';
-}
-
-let settingsSnapshot = null;
-const settingsOverlay = document.getElementById('settings-overlay');
-const togTimer = document.getElementById('tog-timer');
-const togScore = document.getElementById('tog-score');
-
-function openSettings(){
-  settingsSnapshot = {
-    tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore,
-    mode: state.mode, difficulty: state.difficulty
-  };
-  pendingSettings.tileset = state.tileset;
-  pendingSettings.showTimer = state.showTimer;
-  pendingSettings.showScore = state.showScore;
-  pendingSettings.mode = state.mode;
-  pendingSettings.difficulty = state.difficulty;
-  togTimer.checked = state.showTimer;
-  togScore.checked = state.showScore;
-  refreshTilesetPicker();
-  refreshModePicker();
-  refreshVersionInfo();
-  settingsOverlay.classList.add('show');
-}
-function revertSettings(){
-  if(!settingsSnapshot) return;
-  state.tileset = settingsSnapshot.tileset;
-  state.showTimer = settingsSnapshot.showTimer;
-  state.showScore = settingsSnapshot.showScore;
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const cell = grid[r][c];
-    if(cell) renderTileContent(getEl(cell.id), cell);
+document.getElementById('tog-bounce').addEventListener('change', (e)=>{
+  pendingSettings.showBounce = e.target.checked;
+  state.showBounce = e.target.checked;
+  if(!state.showBounce){
+    state.showLanding = false;
+    pendingSettings.showLanding = false;
+    document.getElementById('tog-landing').checked = false;
   }
-  syncTimerInterval();
-  applyHudVisibility();
-}
+  refreshLandingFieldEnabled();
+});
+document.getElementById('tog-landing').addEventListener('change', (e)=>{
+  pendingSettings.showLanding = e.target.checked;
+  state.showLanding = e.target.checked;
+});
 function refreshVersionInfo(){
   const stylesVersion = E.getStylesheetVersion() || 'unknown';
   document.getElementById('version-info').textContent =
-    'Match3.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+    'BubbleShooter.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
 }
-document.getElementById('btn-settings').addEventListener('click', openSettings);
-document.getElementById('settings-cancel').addEventListener('click', ()=>{
-  revertSettings();
-  settingsOverlay.classList.remove('show');
-});
-document.getElementById('settings-apply').addEventListener('click', ()=>{
-  const modeChanged = pendingSettings.mode!==settingsSnapshot.mode || pendingSettings.difficulty!==settingsSnapshot.difficulty;
-  state.mode = pendingSettings.mode;
-  state.difficulty = pendingSettings.difficulty;
-  settingsOverlay.classList.remove('show');
-  if(modeChanged){
-    E.showToast(toastEl, 'Mode changed — starting a new game', 1800);
-    newGame();
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility, syncTimerInterval,
+  onRenderNeeded: renderAll,
+  extraSnapshot: ()=>({ numColors: pendingSettings.numColors, showBounce: pendingSettings.showBounce, showLanding: pendingSettings.showLanding }),
+  extraRestore: (snap)=>{
+    pendingSettings.numColors = snap.numColors; refreshColorsPicker();
+    pendingSettings.showBounce = snap.showBounce; state.showBounce = snap.showBounce;
+    document.getElementById('tog-bounce').checked = snap.showBounce;
+    pendingSettings.showLanding = snap.showLanding; state.showLanding = snap.showLanding;
+    document.getElementById('tog-landing').checked = snap.showLanding;
+    refreshLandingFieldEnabled();
+  },
+  extraOnOpen: ()=>{
+    pendingSettings.numColors = state.numColors; refreshColorsPicker(); refreshVersionInfo();
+    document.getElementById('tog-bounce').checked = state.showBounce;
+    document.getElementById('tog-landing').checked = state.showLanding;
+    refreshLandingFieldEnabled();
   }
 });
-togTimer.addEventListener('change', (e)=>{
-  pendingSettings.showTimer = e.target.checked;
-  state.showTimer = e.target.checked;
-  syncTimerInterval();
-  applyHudVisibility();
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
 });
-togScore.addEventListener('change', (e)=>{
-  pendingSettings.showScore = e.target.checked;
-  state.showScore = e.target.checked;
-  applyHudVisibility();
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
 });
-settingsOverlay.addEventListener('click', (e)=>{
-  if(e.target===settingsOverlay){ revertSettings(); settingsOverlay.classList.remove('show'); }
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
 });
 
 /* =========================================================
@@ -1462,15 +1213,33 @@ settingsOverlay.addEventListener('click', (e)=>{
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(fitMatchBoard, 100);
+  resizeTimer = setTimeout(()=>{
+    if(busy) return; // avoid remapping coordinates mid-flight
+    computeSize();
+    renderAll();
+  }, 100);
 });
+// ResizeObserver on the wrap itself catches layout settling a plain
+// window resize event wouldn't (initial flex layout finishing,
+// fonts loading, DevTools panel toggling, etc.) — the first
+// synchronous computeSize() call in newGame() can undershoot if the
+// browser hasn't finished laying out the page yet, and without this
+// that undershoot would just stick permanently on desktop.
+if(window.ResizeObserver){
+  let roTimer = null;
+  new ResizeObserver(()=>{
+    clearTimeout(roTimer);
+    roTimer = setTimeout(()=>{
+      if(busy) return;
+      computeSize();
+      renderAll();
+    }, 60);
+  }).observe(document.getElementById('board-wrap'));
+}
 
 /* =========================================================
    INIT
    ========================================================= */
-buildTilesetPicker();
-buildModePicker();
-applyHudVisibility();
 newGame();
 
 })();
