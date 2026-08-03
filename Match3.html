@@ -2,28 +2,28 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
-    Version 1.8
+    Version 1.9
 
-   Corrected three combo rules and a blocker rule against actual Candy
-   Crush behavior:
-   - Striped + Bomb (the T/L "wrapped" special) now does the 3-row-by-
-     3-column plus-sign clear it's supposed to — it had no dedicated
-     branch before and was silently falling back to each special just
-     firing its own individual effect.
-   - Bomb + Bomb now does two full 5x5 explosions back to back (with a
-     real gravity/refill pass between them, so the second one hits
-     whatever actually fell into place) instead of one single 5x5 —
-     comboActivate is async now specifically for this case.
-   - Color Bomb + Striped now converts every candy of the striped
-     candy's color into a striped candy of the same orientation and
-     detonates them all together, instead of not being a recognized
-     combo at all before this.
-   - Blockers are now actually cleared by adjacent matches — any tile
-     clearing (from a match OR a special's own effect) also clears a
-     blocker directly next to it on any side. This didn't exist at all
-     before; Fish's blocker-targeting was the only way to remove one.
-     A blocker clearing this way never triggers a special effect of
-     its own (it has none) and doesn't chain into any other blocker.
+   Blocker generation reworked — no longer spawned from long cascade
+   chains at all (that mechanic's removed, maybeSpawnBlocker is gone).
+   Now difficulty-driven instead: Easy/Medium have a small per-new-tile
+   chance of a movable blocker falling in from the top during play,
+   same as any other tile, drifting with gravity afterward; Hard plants
+   a handful directly on the field once at game start and they never
+   move (applyGravityAndRefill now treats a `fixed` blocker as a wall
+   its column's gravity splits around, rather than assuming every
+   column falls as one uninterrupted segment). Difficulty is no longer
+   hidden in Endless mode in Settings, since it now matters there too.
+
+   Default mode changed from Endless to Classic.
+
+   Hint no longer just returns the first legal swap it finds — it now
+   ranks every candidate and prefers, in order: swapping an existing
+   powerup, a swap that creates a new one, a swap that clears a
+   blocker, a swap that at least sets up a powerup once the pieces
+   above it settle (checked against the deterministic falling tiles
+   only, not the random ones that'd refill from the top), and only
+   falls back to any plain legal match if none of those exist.
 -->
 <html lang="en">
 <head>
@@ -124,10 +124,13 @@
     content:"\1F41F"; position:absolute; bottom:-15%; right:-15%;
     font-size: calc(var(--tile-w)*0.32); filter: drop-shadow(0 1px 1px rgba(0,0,0,.5));
   }
-  /* Blocker: an immovable obstacle, same plain look regardless of
-     which candy theme is active (it isn't a themed tile, it's a
-     hazard). Never joins a normal match; only clears as collateral
-     from a special's effect area, or as Fish's preferred target. */
+  /* Blocker: an obstacle, same plain look regardless of which candy
+     theme is active (it isn't a themed tile, it's a hazard). Never
+     joins a normal match; clears when any match/special lands next to
+     it (any side) or as Fish's preferred target. Movable on Easy/
+     Medium (falls in from the top, drifts with gravity like any other
+     tile); immovable on Hard (`fixed`, planted once at game start —
+     see initGrid/applyGravityAndRefill in the script below). */
   .m3-tile.m3-blocker{
     cursor: default;
     box-shadow: inset 0 0 10px rgba(0,0,0,.7), 0 2px 4px rgba(0,0,0,.5);
@@ -259,9 +262,9 @@
       <li>A <b>T or L</b> shaped match creates a <b>Bomb</b> — explodes the 3x3 area around it on its next swap or match, not the instant it's created.</li>
       <li>A <b>2x2 block</b> match creates a <b>Fish</b> — seeks out and clears a blocker tile if one exists, otherwise clears up to 5 tiles of whichever color it was swapped with.</li>
       <li>Swap two specials directly into each other for a combo: two Bombs together set off <b>two</b> full 5x5 explosions back to back; a Bomb + Color Bomb clears every tile of the Bomb's color; a Bomb + Striped clears a 3-row-by-3-column plus sign; two Stripes of the same direction clear 3 rows/columns instead of 1, opposite directions clear a plus shape; a Color Bomb + Striped turns every tile of the Striped candy's color into a Striped candy and detonates them all at once; two Fish sweep up to 5 blockers (backfilled with random tiles if fewer exist); two Color Bombs clear the entire board.</li>
-      <li><b>Blockers</b> are immovable and never join a normal match — they're cleared when any match or special effect lands directly next to them (any side), or by a Fish seeking one out. Clearing a blocker never triggers a special effect of its own. Longer cascade chains have a chance to drop a new one onto the board.</li>
+      <li><b>Blockers</b> never join a normal match — they're cleared when any match or special effect lands directly next to them (any side), or by a Fish seeking one out; clearing one never triggers a special effect of its own. On Easy/Medium they fall in from the top occasionally and drift down like any other tile; on Hard a few are planted directly on the field at the start and never move. Set difficulty in Settings — it applies in both Endless and Classic.</li>
       <li>Tap a special tile by itself to activate it in place, or swap/drag it into any neighbor — both work, matched or not.</li>
-      <li><b>Hint</b> highlights one swap you can currently make. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left) — neither costs a move.</li>
+      <li><b>Hint</b> picks the best move it can find: a swap involving an existing powerup first, then one that creates a new powerup, then one that clears a blocker, then one that at least sets up a powerup once things settle — a plain match only if none of those exist. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left) — neither costs a move.</li>
       <li>In <b>Classic mode</b> (Settings &gt; Mode), reach the target score before you run out of moves. <b>Endless</b> mode has no target or move limit.</li>
     </ul>
     <div class="modal-actions">
@@ -284,6 +287,7 @@
     </div>
     <div class="field" id="difficulty-field">
       <label>Difficulty</label>
+      <div class="sub" style="margin:2px 0 8px;">Also sets how Blockers behave (see Help) — applies in both modes.</div>
       <div class="modepicker" id="difficulty-picker">
         <button type="button" class="textbtn" data-diff="easy">Easy</button>
         <button type="button" class="textbtn" data-diff="medium">Medium</button>
@@ -321,7 +325,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.8';
+const PAGE_VERSION = '1.9';
 const E = window.SEngine;
 
 /* =========================================================
@@ -390,13 +394,20 @@ const DIFFICULTIES = {
   medium: { moves:20, target:4000 },
   hard:   { moves:16, target:7000 }
 };
+// Blocker behavior is difficulty-driven, not chain-length-driven —
+// see initGrid/spawnNewTileFor/applyGravityAndRefill. Hard plants a
+// fixed number on the field once, at the start; Easy/Medium instead
+// have a small per-new-tile chance of a movable blocker falling in
+// from the top during play, same as any other newly spawned tile.
+const HARD_BLOCKER_COUNT = 3;
+const BLOCKER_SPAWN_CHANCE = 0.04;
 
 /* =========================================================
    STATE
    ========================================================= */
 const state = {
   score:0, tileset:'candy', showTimer:false, showScore:true, seconds:0,
-  mode:'endless', difficulty:'medium', movesLeft:0, targetScore:0,
+  mode:'classic', difficulty:'medium', movesLeft:0, targetScore:0,
   gameOver:false, hasWon:false
 };
 const pendingSettings = {
@@ -417,6 +428,13 @@ const toastEl = document.getElementById('hint-toast');
 
 function sleep(ms){ return new Promise(res=> setTimeout(res, ms)); }
 function newTileObj(r,c,type){ return { id:'t'+(nextId++), r, c, type, special:null }; }
+// A blocker's own "type" is the string 'blocker' (never equal to a
+// real 0..TYPE_COUNT-1 candy type, so it never matches anything).
+// `fixed` is the difficulty-dependent part: Hard blockers are planted
+// once and never move (excluded from gravity entirely, see
+// applyGravityAndRefill); Easy/Medium blockers fall in from the top
+// like a normal tile and behave like any other tile under gravity.
+function newBlockerObj(r,c,fixed){ return { id:'t'+(nextId++), r, c, type:'blocker', special:null, fixed: !!fixed }; }
 function getEl(id){ return domMap[id]; }
 function cellKey(cell){ return cell.r+','+cell.c; }
 function keyToRC(key){ const p=key.split(','); return { r:+p[0], c:+p[1] }; }
@@ -560,7 +578,26 @@ function initGrid(){
       grid[r][c] = newTileObj(r,c,type);
     }
   }
+  // Hard: a few fixed blockers planted directly on the field at the
+  // start of the game, staying exactly where placed until an adjacent
+  // match clears one (see applyGravityAndRefill/resolveBoard) — no
+  // more spawn onto the field afterward on Hard. Easy/Medium don't
+  // plant any at start; theirs fall in from the top over time instead
+  // (see spawnNewTileFor), so nothing to do here for those.
+  if(state.difficulty==='hard') placeFixedBlockers(HARD_BLOCKER_COUNT);
   if(!hasAnyMove()) initGrid();
+}
+function placeFixedBlockers(count){
+  let placed = 0, attempts = 0;
+  while(placed<count && attempts<200){
+    attempts++;
+    const r = Math.floor(Math.random()*ROWS), c = Math.floor(Math.random()*COLS);
+    const cell = grid[r][c];
+    if(cell && cell.type!=='blocker'){
+      grid[r][c] = newBlockerObj(r, c, true);
+      placed++;
+    }
+  }
 }
 function renderBoardFresh(){
   arena.innerHTML = '';
@@ -670,20 +707,134 @@ function wouldMatchIfSwapped(r1,c1,r2,c2){
   a.type=t1; b.type=t2;
   return result;
 }
+// Does any cell in `keySet` sit directly next to a blocker (any side)?
+// Same adjacency rule resolveBoard itself uses to clear one.
+function clearSetTouchesBlocker(keySet){
+  for(const k of keySet){
+    const {r,c} = keyToRC(k);
+    const hits = [[1,0],[-1,0],[0,1],[0,-1]].some(([dr,dc])=>{
+      const nr=r+dr, nc=c+dc;
+      return nr>=0 && nr<ROWS && nc>=0 && nc<COLS && grid[nr][nc] && grid[nr][nc].type==='blocker';
+    });
+    if(hits) return true;
+  }
+  return false;
+}
+// What the board's EXISTING tiles (not the random ones that would
+// spawn to refill the top) look like after `clearKeys` clears and
+// gravity settles — cells that would be filled by a brand new random
+// tile are left `null` (unknowable ahead of time, so never counted
+// toward a hint's "sets up a powerup" tier).
+function simulateExistingTilesAfterClear(clearKeys){
+  const result = Array.from({length:ROWS}, ()=> Array(COLS).fill(null));
+  for(let c=0;c<COLS;c++){
+    const survivors = [];
+    for(let r=0;r<ROWS;r++){
+      if(clearKeys.has(r+','+c)) continue;
+      const cell = grid[r][c];
+      if(cell) survivors.push(cell.type);
+    }
+    const padStart = ROWS - survivors.length;
+    for(let i=0;i<survivors.length;i++) result[padStart+i][c] = survivors[i];
+  }
+  return result;
+}
+function typesGridHasPowerupPotential(t){
+  const isReal = v => v!==null && v!=='blocker';
+  for(let r=0;r<ROWS;r++){
+    let c=0;
+    while(c<COLS){
+      if(!isReal(t[r][c])){ c++; continue; }
+      let c2=c+1;
+      while(c2<COLS && t[r][c2]===t[r][c]) c2++;
+      if(c2-c>=4) return true;
+      c=c2;
+    }
+  }
+  for(let c=0;c<COLS;c++){
+    let r=0;
+    while(r<ROWS){
+      if(!isReal(t[r][c])){ r++; continue; }
+      let r2=r+1;
+      while(r2<ROWS && t[r2][c]===t[r][c]) r2++;
+      if(r2-r>=4) return true;
+      r=r2;
+    }
+  }
+  for(let r=0;r<ROWS-1;r++) for(let c=0;c<COLS-1;c++){
+    const a=t[r][c], b=t[r][c+1], cc=t[r+1][c], d=t[r+1][c+1];
+    if(isReal(a) && a===b && a===cc && a===d) return true;
+  }
+  // T/L intersection between a run>=3 each direction.
+  const hMatched = Array.from({length:ROWS}, ()=> Array(COLS).fill(false));
+  const vMatched = Array.from({length:ROWS}, ()=> Array(COLS).fill(false));
+  for(let r=0;r<ROWS;r++){
+    let c=0;
+    while(c<COLS){
+      if(!isReal(t[r][c])){ c++; continue; }
+      let c2=c+1;
+      while(c2<COLS && t[r][c2]===t[r][c]) c2++;
+      if(c2-c>=3) for(let k=c;k<c2;k++) hMatched[r][k]=true;
+      c=c2;
+    }
+  }
+  for(let c=0;c<COLS;c++){
+    let r=0;
+    while(r<ROWS){
+      if(!isReal(t[r][c])){ r++; continue; }
+      let r2=r+1;
+      while(r2<ROWS && t[r2][c]===t[r][c]) r2++;
+      if(r2-r>=3) for(let k=r;k<r2;k++) vMatched[k][c]=true;
+      r=r2;
+    }
+  }
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if(hMatched[r][c] && vMatched[r][c]) return true;
+  return false;
+}
+// Ranks a candidate swap: 0 = swapping an existing special (always
+// great), 1 = the match itself creates a new powerup, 2 = the match
+// clears a blocker, 3 = doesn't do either but the existing tiles left
+// behind would cascade into a powerup once they settle, 4 = a plain
+// match with none of the above. Returns null if the swap isn't a
+// legal move at all.
+function evaluateMoveTier(cellA, cellB){
+  if(cellA.special || cellB.special) return 0;
+  const t1=cellA.type, t2=cellB.type;
+  cellA.type=t2; cellB.type=t1;
+  let tier = null;
+  const groups = findMatchGroups();
+  if(groups.length>0){
+    const {clearKeys, specialMap} = computeGroupsAndSpecials(groups, [cellKey(cellA), cellKey(cellB)]);
+    if(Object.keys(specialMap).length>0) tier = 1;
+    else if(clearSetTouchesBlocker(clearKeys)) tier = 2;
+    else tier = typesGridHasPowerupPotential(simulateExistingTilesAfterClear(clearKeys)) ? 3 : 4;
+  }
+  cellA.type=t1; cellB.type=t2;
+  return tier;
+}
 function findHintMove(){
+  const candidates = [];
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
     const cell = grid[r][c];
     if(cell.type==='blocker') continue;
     if(c<COLS-1){
       const nb = grid[r][c+1];
-      if(nb.type!=='blocker' && (cell.special || nb.special || wouldMatchIfSwapped(r,c,r,c+1))) return {a:cell,b:nb};
+      if(nb.type!=='blocker'){
+        const tier = evaluateMoveTier(cell, nb);
+        if(tier!==null) candidates.push({a:cell, b:nb, tier});
+      }
     }
     if(r<ROWS-1){
       const nb = grid[r+1][c];
-      if(nb.type!=='blocker' && (cell.special || nb.special || wouldMatchIfSwapped(r,c,r+1,c))) return {a:cell,b:nb};
+      if(nb.type!=='blocker'){
+        const tier = evaluateMoveTier(cell, nb);
+        if(tier!==null) candidates.push({a:cell, b:nb, tier});
+      }
     }
   }
-  return null;
+  if(!candidates.length) return null;
+  candidates.sort((x,y)=> x.tier - y.tier);
+  return candidates[0];
 }
 function hasAnyMove(){ return !!findHintMove(); }
 
@@ -882,29 +1033,7 @@ async function resolveBoard(clearKeys, comboLevel, specialMap){
   if(nextGroups.length>0){
     const {clearKeys:nk, specialMap:nsm} = computeGroupsAndSpecials(nextGroups, null);
     await resolveBoard(nk, comboLevel+1, nsm);
-  } else {
-    maybeSpawnBlocker(comboLevel);
   }
-}
-
-// A cascade chain of 3+ (a "longer run of matches") has a chance to
-// drop a Blocker onto the board — picked from whatever's called at the
-// natural end of the chain (see the call site above), so it fires
-// exactly once per swap/activation, not once per cascade step within
-// it. Converts an existing plain (non-special) tile in place rather
-// than needing a dedicated empty slot, since the grid is always full.
-function maybeSpawnBlocker(comboLevel){
-  if(comboLevel < 3) return;
-  const candidates = [];
-  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-    const cell = grid[r][c];
-    if(cell && !cell.special && cell.type!=='blocker') candidates.push(cell);
-  }
-  if(!candidates.length) return;
-  const target = candidates[Math.floor(Math.random()*candidates.length)];
-  target.type = 'blocker';
-  renderTileContent(getEl(target.id), target);
-  E.showToast(toastEl, 'A blocker appeared!', 1500);
 }
 
 // Priority when a group qualifies for more than one special: an
@@ -969,42 +1098,74 @@ function computeGroupsAndSpecials(groups, anchorPrefKeys){
   return { clearKeys, specialMap };
 }
 
+// Gravity per column, but a `fixed` blocker (Hard difficulty) is a
+// wall it never crosses — tiles above it fall to rest on top of it,
+// tiles below it (if any) compact toward the true bottom, and the
+// blocker's own cell is never touched. Splits each column into the
+// segments a fixed blocker cuts it into and compacts each separately;
+// with no fixed blockers in the column this is just the plain single-
+// segment fall it always was.
 async function applyGravityAndRefill(){
   let anyMoved = false;
   for(let c=0;c<COLS;c++){
-    let writeR = ROWS-1;
-    for(let r=ROWS-1;r>=0;r--){
-      if(grid[r][c]){
-        if(r!==writeR){
-          const cell = grid[r][c];
-          grid[writeR][c] = cell; grid[r][c] = null;
-          cell.r = writeR; cell.c = c;
-          moveElTo(cell);
-          anyMoved = true;
+    let segStart = 0;
+    for(let r=0; r<=ROWS; r++){
+      const isFixedHere = r<ROWS && grid[r][c] && grid[r][c].fixed;
+      if(r===ROWS || isFixedHere){
+        const segEnd = r-1;
+        if(segEnd>=segStart){
+          if(compactColumnSegment(c, segStart, segEnd)) anyMoved = true;
         }
-        writeR--;
+        segStart = r+1; // skip over the fixed blocker's own row
       }
-    }
-    let newCount = 0;
-    for(let r=writeR;r>=0;r--){
-      newCount++;
-      const type = Math.floor(Math.random()*TYPE_COUNT);
-      const cell = newTileObj(r,c,type);
-      grid[r][c] = cell;
-      const el = createTileEl(cell);
-      el.style.top = rowToPx(r-newCount)+'px';
-      arena.appendChild(el);
-      domMap[cell.id] = el;
-      anyMoved = true;
     }
   }
   if(anyMoved){
     void arena.offsetWidth;
     for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
-      moveElTo(grid[r][c]);
+      if(grid[r][c]) moveElTo(grid[r][c]);
     }
     await sleep(260);
   }
+}
+function compactColumnSegment(c, top, bottom){
+  let moved = false;
+  let writeR = bottom;
+  for(let r=bottom; r>=top; r--){
+    if(grid[r][c]){
+      if(r!==writeR){
+        const cell = grid[r][c];
+        grid[writeR][c] = cell; grid[r][c] = null;
+        cell.r = writeR; cell.c = c;
+        moveElTo(cell);
+        moved = true;
+      }
+      writeR--;
+    }
+  }
+  let newCount = 0;
+  for(let r=writeR; r>=top; r--){
+    newCount++;
+    const cell = spawnNewTileFor(r, c);
+    grid[r][c] = cell;
+    const el = createTileEl(cell);
+    el.style.top = rowToPx(r-newCount)+'px';
+    arena.appendChild(el);
+    domMap[cell.id] = el;
+    moved = true;
+  }
+  return moved;
+}
+// Easy/Medium: a small per-new-tile chance of a movable blocker
+// falling in from the top instead of a candy — it participates in
+// gravity like any other tile from here on (not fixed), it just can
+// never be part of a match. Hard doesn't spawn any here at all; its
+// blockers are only ever the fixed ones planted once at initGrid.
+function spawnNewTileFor(r, c){
+  if(state.difficulty!=='hard' && Math.random() < BLOCKER_SPAWN_CHANCE){
+    return newBlockerObj(r, c, false);
+  }
+  return newTileObj(r, c, Math.floor(Math.random()*TYPE_COUNT));
 }
 
 /* =========================================================
@@ -1462,7 +1623,9 @@ function refreshModePicker(){
   document.querySelectorAll('#difficulty-picker [data-diff]').forEach(b=>{
     b.classList.toggle('mode-active', b.dataset.diff===pendingSettings.difficulty);
   });
-  document.getElementById('difficulty-field').style.display = pendingSettings.mode==='classic' ? '' : 'none';
+  // Difficulty now also controls blocker spawn/movement behavior (see
+  // Blocker settings note below), which applies in Endless too — so
+  // unlike before, it's never hidden just because Endless is selected.
 }
 
 let settingsSnapshot = null;
