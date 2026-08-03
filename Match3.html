@@ -2,14 +2,28 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
-    Version 1.7
+    Version 1.8
 
-   Added a favicon — there wasn't one at all before now, no <link
-   rel="icon"> existed in this file. Same 3-candy design as the crest,
-   as an inline SVG data URI (no separate image file needed, same
-   self-contained approach the crest itself uses). It's a separate
-   hardcoded copy, not derived from the crest markup, so if the
-   crest's candies/colors ever change this needs updating to match.
+   Corrected three combo rules and a blocker rule against actual Candy
+   Crush behavior:
+   - Striped + Bomb (the T/L "wrapped" special) now does the 3-row-by-
+     3-column plus-sign clear it's supposed to — it had no dedicated
+     branch before and was silently falling back to each special just
+     firing its own individual effect.
+   - Bomb + Bomb now does two full 5x5 explosions back to back (with a
+     real gravity/refill pass between them, so the second one hits
+     whatever actually fell into place) instead of one single 5x5 —
+     comboActivate is async now specifically for this case.
+   - Color Bomb + Striped now converts every candy of the striped
+     candy's color into a striped candy of the same orientation and
+     detonates them all together, instead of not being a recognized
+     combo at all before this.
+   - Blockers are now actually cleared by adjacent matches — any tile
+     clearing (from a match OR a special's own effect) also clears a
+     blocker directly next to it on any side. This didn't exist at all
+     before; Fish's blocker-targeting was the only way to remove one.
+     A blocker clearing this way never triggers a special effect of
+     its own (it has none) and doesn't chain into any other blocker.
 -->
 <html lang="en">
 <head>
@@ -244,8 +258,8 @@
       <li>A run of <b>5+</b> in a straight line creates a <b>Color Bomb</b> — swap it with any tile to clear every tile of that tile's color.</li>
       <li>A <b>T or L</b> shaped match creates a <b>Bomb</b> — explodes the 3x3 area around it on its next swap or match, not the instant it's created.</li>
       <li>A <b>2x2 block</b> match creates a <b>Fish</b> — seeks out and clears a blocker tile if one exists, otherwise clears up to 5 tiles of whichever color it was swapped with.</li>
-      <li>Swap two specials directly into each other for a combo: two Bombs together explode a bigger 5x5 area; a Bomb + Color Bomb clears every tile of the Bomb's color; two Stripes of the same direction clear 3 rows/columns instead of 1, and opposite directions clear a 3-wide plus shape; two Fish sweep up to 5 blockers (backfilled with random tiles if fewer exist); two Color Bombs clear the entire board.</li>
-      <li><b>Blockers</b> are immovable — they never join a normal match and only clear via a special's effect. Longer cascade chains have a chance to drop one onto the board.</li>
+      <li>Swap two specials directly into each other for a combo: two Bombs together set off <b>two</b> full 5x5 explosions back to back; a Bomb + Color Bomb clears every tile of the Bomb's color; a Bomb + Striped clears a 3-row-by-3-column plus sign; two Stripes of the same direction clear 3 rows/columns instead of 1, opposite directions clear a plus shape; a Color Bomb + Striped turns every tile of the Striped candy's color into a Striped candy and detonates them all at once; two Fish sweep up to 5 blockers (backfilled with random tiles if fewer exist); two Color Bombs clear the entire board.</li>
+      <li><b>Blockers</b> are immovable and never join a normal match — they're cleared when any match or special effect lands directly next to them (any side), or by a Fish seeking one out. Clearing a blocker never triggers a special effect of its own. Longer cascade chains have a chance to drop a new one onto the board.</li>
       <li>Tap a special tile by itself to activate it in place, or swap/drag it into any neighbor — both work, matched or not.</li>
       <li><b>Hint</b> highlights one swap you can currently make. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left) — neither costs a move.</li>
       <li>In <b>Classic mode</b> (Settings &gt; Mode), reach the target score before you run out of moves. <b>Endless</b> mode has no target or move limit.</li>
@@ -307,7 +321,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.7';
+const PAGE_VERSION = '1.8';
 const E = window.SEngine;
 
 /* =========================================================
@@ -810,6 +824,24 @@ async function resolveBoard(clearKeys, comboLevel, specialMap){
     }
   }
 
+  // Blockers: cleared by any match/activation directly adjacent to
+  // them on any side — but a blocker clearing never triggers a
+  // special effect of its own (it has none) and doesn't chain into
+  // clearing any further blockers beyond that single adjacency check.
+  const blockerAdds = new Set();
+  expanded.forEach(k=>{
+    if(specialMap[k]) return; // anchor cell, not actually clearing
+    const {r,c} = keyToRC(k);
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr,dc])=>{
+      const nr=r+dr, nc=c+dc;
+      if(nr>=0 && nr<ROWS && nc>=0 && nc<COLS){
+        const nb = grid[nr][nc];
+        if(nb && nb.type==='blocker') blockerAdds.add(nr+','+nc);
+      }
+    });
+  });
+  blockerAdds.forEach(k=> expanded.add(k));
+
   const centroid = centroidPx(expanded);
   const points = expanded.size * 10 * comboLevel;
   state.score += points;
@@ -1007,18 +1039,35 @@ function clearSelectionVisual(){
 // Explicit combo rules for swapping two specials directly into each
 // other. Anything not covered here falls back to each special firing
 // its own solo effect independently (still both fire, just with no
-// bonus interaction) rather than silently guessing at a rule.
-function comboActivate(a, b){
+// bonus interaction) rather than silently guessing at a rule. Async
+// because the bomb+bomb combo needs two separate resolveBoard passes
+// (gravity/refill happens between them) rather than one bigger clear —
+// for that one case this resolves the board itself and returns null so
+// the caller knows not to resolve again.
+async function comboActivate(a, b){
   const keys = new Set();
   const sa = a.special, sb = b.special;
   const isStripe = s => s==='striped-row' || s==='striped-col';
   const cr = Math.round((a.r+b.r)/2), cc = Math.round((a.c+b.c)/2);
 
   if(sa==='bomb' && sb==='bomb'){
-    for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++){
-      const r=cr+dr, c=cc+dc;
-      if(r>=0 && r<ROWS && c>=0 && c<COLS && grid[r][c]) keys.add(r+','+c);
-    }
+    // Two full 5x5 explosions, same footprint, back to back — the
+    // second one hits whatever fell into place after the first
+    // resolves and refills, not just a bigger single clear.
+    const area = ()=>{
+      const k = new Set();
+      for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++){
+        const r=cr+dr, c=cc+dc;
+        if(r>=0 && r<ROWS && c>=0 && c<COLS && grid[r][c]) k.add(r+','+c);
+      }
+      return k;
+    };
+    const first = area();
+    first.add(cellKey(a)); first.add(cellKey(b));
+    await resolveBoard(first, 1, {});
+    const second = area();
+    if(second.size) await resolveBoard(second, 1, {});
+    return null;
   } else if((sa==='bomb' && sb==='colorbomb') || (sa==='colorbomb' && sb==='bomb')){
     const bombCell = sa==='bomb' ? a : b;
     for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
@@ -1045,6 +1094,35 @@ function comboActivate(a, b){
       for(let dc=-1;dc<=1;dc++){
         const c=cc+dc; if(c<0||c>=COLS) continue;
         for(let r=0;r<ROWS;r++) if(grid[r][c]) keys.add(r+','+c);
+      }
+    }
+  } else if((isStripe(sa) && sb==='bomb') || (isStripe(sb) && sa==='bomb')){
+    // Striped + Bomb ("wrapped"): a 3-row-by-3-column plus sign,
+    // centered on the swap — same shape either combo direction, the
+    // striped candy's own orientation doesn't matter here.
+    for(let dr=-1;dr<=1;dr++){
+      const r=cr+dr; if(r<0||r>=ROWS) continue;
+      for(let c=0;c<COLS;c++) if(grid[r][c]) keys.add(r+','+c);
+    }
+    for(let dc=-1;dc<=1;dc++){
+      const c=cc+dc; if(c<0||c>=COLS) continue;
+      for(let r=0;r<ROWS;r++) if(grid[r][c]) keys.add(r+','+c);
+    }
+  } else if((isStripe(sa) && sb==='colorbomb') || (isStripe(sb) && sa==='colorbomb')){
+    // Color Bomb + Striped: every candy of the striped candy's own
+    // color turns into a striped candy (same orientation), then all
+    // of them detonate together — seeding every converted cell into
+    // the same clear set lets resolveBoard's existing chain-fire pass
+    // do the "detonates all at once" part for free.
+    const stripedCell = isStripe(sa) ? a : b;
+    const orientation = stripedCell.special;
+    const targetType = stripedCell.type;
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      const cell = grid[r][c];
+      if(cell && cell.type===targetType){
+        cell.special = orientation;
+        renderTileContent(getEl(cell.id), cell);
+        keys.add(r+','+c);
       }
     }
   } else if(sa==='fish' && sb==='fish'){
@@ -1104,9 +1182,9 @@ async function doSwapAttempt(a,b){
     await sleep(200);
 
     if(aHadSpecial && bHadSpecial){
-      const toClear = comboActivate(a, b);
       consumeMove();
-      await resolveBoard(toClear, 1, {});
+      const toClear = await comboActivate(a, b);
+      if(toClear) await resolveBoard(toClear, 1, {});
       checkNoMoves();
       checkGameEnd();
       return;
