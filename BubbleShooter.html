@@ -2,19 +2,23 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.8
+    Version 1.10
 
-   Badge's top-right quadrant swapped from the water droplet to the
-   shamrock — Water itself still uses &#128167; everywhere in actual
-   play (bubbles, legends); this only changes which glyph decorates
-   the header crest, per clarification that the shamrock request was
-   about the badge, not the Water element's own glyph.
+   Favicon switched from an SVG to a .webp (favicon-bubbleshooter.webp,
+   64x64, lossless, transparent) to match the suite's all-webp image
+   convention rather than being the one SVG exception. Rendered from
+   the same crest design (brass circle, cross, 4 quadrant glyphs) at
+   256px then downsampled for a clean result, since WebP doesn't scale
+   losslessly like the SVG did. <link rel="icon"> now points at it
+   directly; same no-breakage-if-missing behavior as every other image
+   reference in this file.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Bubble Shooter</title>
+<link rel="icon" type="image/webp" href="favicon-bubbleshooter.webp">
 <link rel="preload" as="image" href="images/BubbleShooter.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -380,7 +384,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.8';
+const PAGE_VERSION = '1.10';
 
 /* =========================================================
    ELEMENTAL PALETTE
