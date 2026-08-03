@@ -2,23 +2,20 @@
 <!--
     BubbleShooter.html
     Written by: Johnathon Largent
-    Version 1.10
+    Version 1.11
 
-   Favicon switched from an SVG to a .webp (favicon-bubbleshooter.webp,
-   64x64, lossless, transparent) to match the suite's all-webp image
-   convention rather than being the one SVG exception. Rendered from
-   the same crest design (brass circle, cross, 4 quadrant glyphs) at
-   256px then downsampled for a clean result, since WebP doesn't scale
-   losslessly like the SVG did. <link rel="icon"> now points at it
-   directly; same no-breakage-if-missing behavior as every other image
-   reference in this file.
+   Favicon href moved to images/favicon-bubbleshooter.webp, matching
+   where every other piece of art in this file already lives (the
+   images/BubbleShooter.webp background) instead of sitting bare next
+   to the HTML file. Same file, same no-breakage-if-missing behavior,
+   just the expected folder.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Bubble Shooter</title>
-<link rel="icon" type="image/webp" href="favicon-bubbleshooter.webp">
+<link rel="icon" type="image/webp" href="images/favicon-bubbleshooter.webp">
 <link rel="preload" as="image" href="images/BubbleShooter.webp">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -384,7 +381,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.10';
+const PAGE_VERSION = '1.11';
 
 /* =========================================================
    ELEMENTAL PALETTE
