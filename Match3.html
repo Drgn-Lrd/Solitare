@@ -2,38 +2,19 @@
 <!--
     Match3.html
     Written by: Johnathon Largent
-    Version 1.1
+    Version 1.4
 
-   Pre-wired a background photo hook, same convention every other
-   non-Klondike game uses (see FreeCell.html): a preload link plus an
-   html,body background-image override pointing at images/Match3.webp.
-   No such file exists yet — this is harmless until one does, and
-   dropping a photo in at that path is the only other step needed;
-   nothing else in this file has to change.
-
-    Version 1.0
-
-   Initial build. Casino-themed match-3 gravity game (swap adjacent
-   tiles to make a run of 3+, matches clear and everything above falls
-   to fill the gaps, endless score-attack play). Reuses the suite's
-   shared header/HUD/bottombar/overlay markup and CSS from styles.css,
-   and reuses engine.js's genuinely game-agnostic helpers (showToast,
-   pulse/pulseAll, applyHudVisibility, getStylesheetVersion) — but the
-   board itself, its interaction model (swap/drag instead of drag-to-
-   pile), and its win condition are nothing like a card game, so the
-   grid engine, match/cascade/gravity logic, and Settings' tile-theme
-   picker are all local to this file rather than forced into engine.js.
-
-   Six selectable tile themes (Settings > Tile Theme), defaulting to
-   Candies: Candies, Slot Symbols, Card Suits, Poker Chips (denomination
-   text doubles as colorblind-safe labeling), Gems (each cut a distinct
-   shape, not just a distinct color, for the same reason), and Dice
-   (pip count only — fully colorblind-safe by construction). Matching a
-   run of exactly 4 creates a striped tile (clears its row or column
-   when it next matches or is swapped); a run of 5+ creates a bomb
-   (clears every tile of one color). Swapping a special directly into
-   any neighbor activates it immediately, matched or not, same as the
-   genre standard.
+   Two more explicit combo rules, filling in gaps left as "falls back
+   to solo effects" last pass:
+   - Fish + Fish: targets up to 5 blockers. Any slot with no blocker
+     left to fill it converts to 4 random non-blocker tiles instead —
+     0 blockers on the field means 20 random tiles, 1 blocker means
+     that 1 real hit plus 16 random tiles from the other 4 slots.
+   - Color Bomb + Color Bomb: clears every tile on the board at once.
+     Not a win condition by itself — Classic mode's target/move check
+     runs the same as any other clear — just the single biggest score
+     payout available, since it's scored the same size*10*combo way
+     everything else is.
 -->
 <html lang="en">
 <head>
@@ -112,8 +93,27 @@
     content:""; position:absolute; top:8%; bottom:8%; left:44%; width:12%;
     background:rgba(255,255,255,.85); border-radius:4px; pointer-events:none;
   }
-  .m3-special-bomb{
+  .m3-special-colorbomb{
     box-shadow:0 0 0 3px rgba(255,255,255,.65), 0 0 16px rgba(255,255,255,.75), 0 2px 4px rgba(0,0,0,.45);
+  }
+  .m3-special-bomb{
+    box-shadow: inset 0 0 0 3px rgba(255,255,255,.65), 0 2px 4px rgba(0,0,0,.45);
+  }
+  .m3-special-bomb::before{
+    content:"\1F4A3"; position:absolute; top:-15%; right:-15%;
+    font-size: calc(var(--tile-w)*0.32); filter: drop-shadow(0 1px 1px rgba(0,0,0,.5));
+  }
+  .m3-special-fish::before{
+    content:"\1F41F"; position:absolute; bottom:-15%; right:-15%;
+    font-size: calc(var(--tile-w)*0.32); filter: drop-shadow(0 1px 1px rgba(0,0,0,.5));
+  }
+  /* Blocker: an immovable obstacle, same plain look regardless of
+     which candy theme is active (it isn't a themed tile, it's a
+     hazard). Never joins a normal match; only clears as collateral
+     from a special's effect area, or as Fish's preferred target. */
+  .m3-tile.m3-blocker{
+    cursor: default;
+    box-shadow: inset 0 0 10px rgba(0,0,0,.7), 0 2px 4px rgba(0,0,0,.5);
   }
 
   .m3-scorepop{
@@ -145,6 +145,12 @@
   .tilesetlabel{ font-size:11px; letter-spacing:.5px; color:#9fc9b6; margin-top:4px; text-align:center; }
   .tilesetgrid{ display:flex; gap:14px; flex-wrap:wrap; }
   .tilesetcell{ display:flex; flex-direction:column; align-items:center; }
+
+  .modepicker{ display:flex; gap:8px; flex-wrap:wrap; }
+  .modepicker button{ cursor:pointer; }
+  .modepicker button.mode-active{
+    outline: 2px solid #7ee6a8; outline-offset:-2px;
+  }
 </style>
 </head>
 <body>
@@ -182,7 +188,7 @@
     <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
     <button class="bottombtn" id="btn-shuffle" title="Shuffle the board"><span class="bicon">🔀</span><span class="blabel">Shuffle</span></button>
   </div>
-  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+  <div class="chip" id="chip-time" style="display:none"><span id="chip-time-label">TIME</span> <b id="time-val">0:00</b></div>
 </div>
 
 <div class="overlay" id="confirm-overlay">
@@ -196,6 +202,28 @@
   </div>
 </div>
 
+<div class="overlay" id="win-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Target Reached!</h3>
+    <div class="sub" id="win-score-line" style="margin-bottom:6px;"></div>
+    <div class="modal-actions">
+      <button class="textbtn" id="win-keep-playing">Keep Playing</button>
+      <button class="textbtn primary" id="win-newgame">New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="lose-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Out of Moves</h3>
+    <div class="sub" id="lose-score-line" style="margin-bottom:6px;"></div>
+    <div class="modal-actions">
+      <button class="textbtn" id="lose-close">Close</button>
+      <button class="textbtn primary" id="lose-newgame">Try Again</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="help-overlay">
   <div class="modal">
     <h3>How to Play</h3>
@@ -203,10 +231,15 @@
     <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
       <li>Swap two adjacent tiles to line up 3 or more of the same kind in a row or column.</li>
       <li>Matched tiles clear, everything above falls to fill the gap, and new tiles drop in from the top.</li>
-      <li>A run of exactly 4 creates a <b>striped</b> tile — matching or swapping it clears its whole row or column.</li>
-      <li>A run of 5 or more creates a <b>bomb</b> — swapping it with any tile clears every tile of that tile's color.</li>
-      <li>Swapping a special tile into any neighbor activates it immediately, even without a new match.</li>
-      <li><b>Hint</b> highlights one swap you can currently make. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left).</li>
+      <li>A run of exactly <b>4</b> creates a <b>striped</b> tile — clears its whole row or column.</li>
+      <li>A run of <b>5+</b> in a straight line creates a <b>Color Bomb</b> — swap it with any tile to clear every tile of that tile's color.</li>
+      <li>A <b>T or L</b> shaped match creates a <b>Bomb</b> — explodes the 3x3 area around it on its next swap or match, not the instant it's created.</li>
+      <li>A <b>2x2 block</b> match creates a <b>Fish</b> — seeks out and clears a blocker tile if one exists, otherwise clears up to 5 tiles of whichever color it was swapped with.</li>
+      <li>Swap two specials directly into each other for a combo: two Bombs together explode a bigger 5x5 area; a Bomb + Color Bomb clears every tile of the Bomb's color; two Stripes of the same direction clear 3 rows/columns instead of 1, and opposite directions clear a 3-wide plus shape; two Fish sweep up to 5 blockers (backfilled with random tiles if fewer exist); two Color Bombs clear the entire board.</li>
+      <li><b>Blockers</b> are immovable — they never join a normal match and only clear via a special's effect. Longer cascade chains have a chance to drop one onto the board.</li>
+      <li>Tap a special tile by itself to activate it in place, or swap/drag it into any neighbor — both work, matched or not.</li>
+      <li><b>Hint</b> highlights one swap you can currently make. <b>Shuffle</b> rearranges the board (also happens automatically if no move is left) — neither costs a move.</li>
+      <li>In <b>Classic mode</b> (Settings &gt; Mode), reach the target score before you run out of moves. <b>Endless</b> mode has no target or move limit.</li>
     </ul>
     <div class="modal-actions">
       <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
@@ -217,7 +250,23 @@
 <div class="overlay" id="settings-overlay">
   <div class="modal">
     <h3>Settings</h3>
-    <div class="sub">Tile theme applies instantly. Timer/score too.</div>
+    <div class="sub">Tile theme/timer/score apply instantly. Mode/difficulty apply on your next New Game.</div>
+
+    <div class="field">
+      <label>Mode</label>
+      <div class="modepicker" id="mode-picker">
+        <button type="button" class="textbtn" data-mode="endless">Endless</button>
+        <button type="button" class="textbtn" data-mode="classic">Classic (Target Score)</button>
+      </div>
+    </div>
+    <div class="field" id="difficulty-field">
+      <label>Difficulty</label>
+      <div class="modepicker" id="difficulty-picker">
+        <button type="button" class="textbtn" data-diff="easy">Easy</button>
+        <button type="button" class="textbtn" data-diff="medium">Medium</button>
+        <button type="button" class="textbtn" data-diff="hard">Hard</button>
+      </div>
+    </div>
 
     <div class="field">
       <label>Tile Theme</label>
@@ -249,7 +298,7 @@
 <script>
 (function(){
 "use strict";
-const PAGE_VERSION = '1.1';
+const PAGE_VERSION = '1.4';
 const E = window.SEngine;
 
 /* =========================================================
@@ -313,12 +362,24 @@ const TILESETS = {
 };
 const TYPE_COUNT = 6;
 const COLS = 8, ROWS = 8;
+const DIFFICULTIES = {
+  easy:   { moves:25, target:2000 },
+  medium: { moves:20, target:4000 },
+  hard:   { moves:16, target:7000 }
+};
 
 /* =========================================================
    STATE
    ========================================================= */
-const state = { score:0, tileset:'candy', showTimer:false, showScore:true, seconds:0 };
-const pendingSettings = { tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore };
+const state = {
+  score:0, tileset:'candy', showTimer:false, showScore:true, seconds:0,
+  mode:'endless', difficulty:'medium', movesLeft:0, targetScore:0,
+  gameOver:false, hasWon:false
+};
+const pendingSettings = {
+  tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore,
+  mode: state.mode, difficulty: state.difficulty
+};
 
 let grid = [];          // grid[r][c] = {id,r,c,type,special} | null
 let domMap = {};        // id -> element
@@ -400,9 +461,20 @@ document.head.appendChild(styleEl);
    TILE RENDERING
    ========================================================= */
 function renderTileContent(el, cell){
-  const t = TILESETS[state.tileset].types[cell.type];
   el.innerHTML = '';
-  el.classList.remove('m3-dark-text','m3-chip');
+  el.classList.remove('m3-dark-text','m3-chip','m3-blocker');
+  el.classList.remove('m3-special-striped-h','m3-special-striped-v','m3-special-colorbomb','m3-special-bomb','m3-special-fish');
+
+  if(cell.type==='blocker'){
+    el.style.background = '#3a3a3a';
+    el.classList.add('m3-blocker');
+    const span = document.createElement('span');
+    span.className = 'm3-glyph'; span.textContent = '🪨';
+    el.appendChild(span);
+    return;
+  }
+
+  const t = TILESETS[state.tileset].types[cell.type];
   if(t.shape){
     el.style.background = 'rgba(255,255,255,0.07)';
     const g = document.createElement('div');
@@ -425,7 +497,9 @@ function renderTileContent(el, cell){
   }
   el.classList.toggle('m3-special-striped-h', cell.special==='striped-row');
   el.classList.toggle('m3-special-striped-v', cell.special==='striped-col');
+  el.classList.toggle('m3-special-colorbomb', cell.special==='colorbomb');
   el.classList.toggle('m3-special-bomb', cell.special==='bomb');
+  el.classList.toggle('m3-special-fish', cell.special==='fish');
 }
 function createTileEl(cell){
   const el = document.createElement('div');
@@ -491,7 +565,7 @@ function findMatchGroups(){
     let c=0;
     while(c<COLS){
       const cell = grid[r][c];
-      if(!cell){ c++; continue; }
+      if(!cell || cell.type==='blocker'){ c++; continue; }
       let c2=c+1;
       while(c2<COLS && grid[r][c2] && grid[r][c2].type===cell.type) c2++;
       const len = c2-c;
@@ -507,7 +581,7 @@ function findMatchGroups(){
     let r=0;
     while(r<ROWS){
       const cell = grid[r][c];
-      if(!cell){ r++; continue; }
+      if(!cell || cell.type==='blocker'){ r++; continue; }
       let r2=r+1;
       while(r2<ROWS && grid[r2][c] && grid[r2][c].type===cell.type) r2++;
       const len = r2-r;
@@ -517,6 +591,20 @@ function findMatchGroups(){
         runs.push({dir:'v', length:len, cells});
       }
       r=r2;
+    }
+  }
+  // 2x2 block match (Fish) — the two line-scans above only ever find
+  // straight runs, so a swap that completes nothing but a square (no
+  // 3-in-a-row either direction) would otherwise never register as a
+  // match at all and just silently revert.
+  for(let r=0;r<ROWS-1;r++){
+    for(let c=0;c<COLS-1;c++){
+      const a=grid[r][c], b=grid[r][c+1], cc=grid[r+1][c], d=grid[r+1][c+1];
+      if(a && b && cc && d && a.type!=='blocker' && a.type===b.type && a.type===cc.type && a.type===d.type){
+        const cells = [r+','+c, r+','+(c+1), (r+1)+','+c, (r+1)+','+(c+1)];
+        cells.forEach(k=>{ const p=keyToRC(k); matched[p.r][p.c]=true; });
+        runs.push({dir:'square', length:4, cells});
+      }
     }
   }
   if(runs.length===0) return [];
@@ -562,13 +650,14 @@ function wouldMatchIfSwapped(r1,c1,r2,c2){
 function findHintMove(){
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
     const cell = grid[r][c];
+    if(cell.type==='blocker') continue;
     if(c<COLS-1){
       const nb = grid[r][c+1];
-      if(cell.special || nb.special || wouldMatchIfSwapped(r,c,r,c+1)) return {a:cell,b:nb};
+      if(nb.type!=='blocker' && (cell.special || nb.special || wouldMatchIfSwapped(r,c,r,c+1))) return {a:cell,b:nb};
     }
     if(r<ROWS-1){
       const nb = grid[r+1][c];
-      if(cell.special || nb.special || wouldMatchIfSwapped(r,c,r+1,c)) return {a:cell,b:nb};
+      if(nb.type!=='blocker' && (cell.special || nb.special || wouldMatchIfSwapped(r,c,r+1,c))) return {a:cell,b:nb};
     }
   }
   return null;
@@ -584,13 +673,45 @@ function getSpecialClearKeys(cell, otherType){
     for(let c=0;c<COLS;c++) if(grid[cell.r][c]) keys.push(cell.r+','+c);
   } else if(cell.special==='striped-col'){
     for(let r=0;r<ROWS;r++) if(grid[r][cell.c]) keys.push(r+','+cell.c);
-  } else if(cell.special==='bomb'){
+  } else if(cell.special==='colorbomb'){
     const target = otherType!=null ? otherType : cell.type;
     for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
       if(grid[r][c] && grid[r][c].type===target) keys.push(r+','+c);
     }
+  } else if(cell.special==='bomb'){
+    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+      const r=cell.r+dr, c=cell.c+dc;
+      if(r>=0 && r<ROWS && c>=0 && c<COLS && grid[r][c]) keys.push(r+','+c);
+    }
+  } else if(cell.special==='fish'){
+    const blockerCandidates = [];
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      if(grid[r][c] && grid[r][c].type==='blocker') blockerCandidates.push(r+','+c);
+    }
+    if(blockerCandidates.length){
+      keys.push(blockerCandidates[Math.floor(Math.random()*blockerCandidates.length)]);
+    } else {
+      // No blocker on the board — clear up to 5 tiles of whichever
+      // color it was swapped with (its own color if it wasn't
+      // triggered by a swap, e.g. caught in a natural cascade).
+      const targetType = otherType!=null ? otherType : cell.type;
+      const candidates = [];
+      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+        if(grid[r][c] && grid[r][c].type===targetType && !(r===cell.r && c===cell.c)) candidates.push(r+','+c);
+      }
+      for(let i=candidates.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [candidates[i],candidates[j]] = [candidates[j],candidates[i]];
+      }
+      candidates.slice(0,5).forEach(k=> keys.push(k));
+    }
   }
   return keys;
+}
+function hasExistingSpecial(key){
+  const {r,c} = keyToRC(key);
+  const cell = grid[r][c];
+  return !!(cell && cell.special);
 }
 
 /* =========================================================
@@ -616,8 +737,35 @@ function spawnScorePop(text, x, y){
   setTimeout(()=> span.remove(), 820);
 }
 function updateScoreDisplay(){
-  document.getElementById('score-val').textContent = state.score;
+  const el = document.getElementById('score-val');
+  el.textContent = state.mode==='classic' ? (state.score+' / '+state.targetScore) : state.score;
 }
+function updateMovesDisplay(){
+  document.getElementById('time-val').textContent = state.movesLeft;
+}
+function showWinModal(){
+  document.getElementById('win-score-line').textContent = 'Score: '+state.score+' (target was '+state.targetScore+')';
+  document.getElementById('win-overlay').classList.add('show');
+}
+function showLoseModal(){
+  document.getElementById('lose-score-line').textContent = 'Final score: '+state.score+' / '+state.targetScore;
+  document.getElementById('lose-overlay').classList.add('show');
+}
+document.getElementById('win-keep-playing').addEventListener('click', ()=>{
+  document.getElementById('win-overlay').classList.remove('show');
+  state.gameOver = false;
+});
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('win-overlay').classList.remove('show');
+  newGame();
+});
+document.getElementById('lose-close').addEventListener('click', ()=>{
+  document.getElementById('lose-overlay').classList.remove('show');
+});
+document.getElementById('lose-newgame').addEventListener('click', ()=>{
+  document.getElementById('lose-overlay').classList.remove('show');
+  newGame();
+});
 
 // Clears `clearKeys` (expanding once through any specials caught up in
 // them), scores it, animates it, applies gravity/refill, then checks
@@ -627,19 +775,25 @@ function updateScoreDisplay(){
 async function resolveBoard(clearKeys, comboLevel, specialMap){
   specialMap = specialMap || {};
   // Chain reaction: any special tile already sitting among the cells
-  // about to clear fires too, one pass (keeps this from ever looping
-  // forever on a pathological board).
+  // about to clear fires too. `fired` tracks which specials have
+  // already gone off so each one fires exactly once per resolution —
+  // without it, a re-scanned Fish (whose target is picked fresh each
+  // call) could keep rolling a new random target and adding cells
+  // indefinitely instead of settling.
   const expanded = new Set(clearKeys);
+  const fired = new Set();
   let guard = 0;
   let grew = true;
-  while(grew && guard<6){
+  while(grew && guard<20){
     grew = false; guard++;
     const snapshot = Array.from(expanded);
     for(const k of snapshot){
       if(specialMap[k]) continue; // this one's being upgraded, not cleared/activated
+      if(fired.has(k)) continue;
       const {r,c} = keyToRC(k);
       const cell = grid[r][c];
       if(cell && cell.special){
+        fired.add(k);
         getSpecialClearKeys(cell, null).forEach(k2=>{
           if(!expanded.has(k2)){ expanded.add(k2); grew = true; }
         });
@@ -687,23 +841,87 @@ async function resolveBoard(clearKeys, comboLevel, specialMap){
   if(nextGroups.length>0){
     const {clearKeys:nk, specialMap:nsm} = computeGroupsAndSpecials(nextGroups, null);
     await resolveBoard(nk, comboLevel+1, nsm);
+  } else {
+    maybeSpawnBlocker(comboLevel);
   }
 }
 
+// A cascade chain of 3+ (a "longer run of matches") has a chance to
+// drop a Blocker onto the board — picked from whatever's called at the
+// natural end of the chain (see the call site above), so it fires
+// exactly once per swap/activation, not once per cascade step within
+// it. Converts an existing plain (non-special) tile in place rather
+// than needing a dedicated empty slot, since the grid is always full.
+function maybeSpawnBlocker(comboLevel){
+  if(comboLevel < 3) return;
+  const candidates = [];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cell = grid[r][c];
+    if(cell && !cell.special && cell.type!=='blocker') candidates.push(cell);
+  }
+  if(!candidates.length) return;
+  const target = candidates[Math.floor(Math.random()*candidates.length)];
+  target.type = 'blocker';
+  renderTileContent(getEl(target.id), target);
+  E.showToast(toastEl, 'A blocker appeared!', 1500);
+}
+
+// Priority when a group qualifies for more than one special: an
+// intersecting T/L shape (Bomb) outranks a straight 5-line (Color
+// Bomb), which outranks a straight 4-line (striped), which outranks a
+// 2x2 square (Fish) — same rarity ordering the genre uses.
 function computeGroupsAndSpecials(groups, anchorPrefKeys){
   const clearKeys = new Set();
   const specialMap = {};
   groups.forEach(g=>{
     g.cells.forEach(k=> clearKeys.add(k));
-    let chosen = null;
-    g.runs.forEach(run=>{
-      if(run.length>=4 && (!chosen || run.length>chosen.length)) chosen = run;
-    });
-    if(chosen){
+
+    const hRuns = g.runs.filter(r=> r.dir==='h' && r.length>=3);
+    const vRuns = g.runs.filter(r=> r.dir==='v' && r.length>=3);
+    const sqRuns = g.runs.filter(r=> r.dir==='square');
+    const lineRuns = g.runs.filter(r=> r.dir==='h' || r.dir==='v');
+
+    let specialType = null;
+    let anchorSet = null;
+
+    // T/L: any horizontal run intersecting any vertical run.
+    let intersection = null;
+    outer:
+    for(const hr of hRuns){
+      for(const vr of vRuns){
+        const shared = hr.cells.find(k=> vr.cells.indexOf(k)!==-1);
+        if(shared){ intersection = shared; break outer; }
+      }
+    }
+
+    if(intersection){
+      specialType = 'bomb';
+      anchorSet = [intersection];
+    } else {
+      let longest = null;
+      lineRuns.forEach(r=>{ if(!longest || r.length>longest.length) longest = r; });
+      if(longest && longest.length>=5){
+        specialType = 'colorbomb';
+        anchorSet = longest.cells;
+      } else if(longest && longest.length===4){
+        specialType = longest.dir==='h' ? 'striped-col' : 'striped-row';
+        anchorSet = longest.cells;
+      } else if(sqRuns.length>0){
+        specialType = 'fish';
+        anchorSet = sqRuns[0].cells;
+      }
+    }
+
+    if(specialType){
+      // Never anchor a new special on a cell that already holds one —
+      // that cell's existing special needs to actually clear/fire,
+      // not get silently overwritten by the one being created here.
       let anchorKey = null;
-      if(anchorPrefKeys) anchorKey = anchorPrefKeys.find(k=> chosen.cells.indexOf(k)!==-1);
-      if(!anchorKey) anchorKey = chosen.cells[Math.floor(chosen.cells.length/2)];
-      const specialType = chosen.length>=5 ? 'bomb' : (chosen.dir==='h' ? 'striped-col' : 'striped-row');
+      if(anchorPrefKeys){
+        anchorKey = anchorPrefKeys.find(k=> anchorSet.indexOf(k)!==-1 && !hasExistingSpecial(k));
+      }
+      if(!anchorKey) anchorKey = anchorSet.find(k=> !hasExistingSpecial(k));
+      if(!anchorKey) anchorKey = anchorSet[0]; // rare: every candidate cell already special
       specialMap[anchorKey] = specialType;
     }
   });
@@ -777,8 +995,98 @@ function clearSelectionVisual(){
   selectedId = null;
 }
 
+// Explicit combo rules for swapping two specials directly into each
+// other. Anything not covered here falls back to each special firing
+// its own solo effect independently (still both fire, just with no
+// bonus interaction) rather than silently guessing at a rule.
+function comboActivate(a, b){
+  const keys = new Set();
+  const sa = a.special, sb = b.special;
+  const isStripe = s => s==='striped-row' || s==='striped-col';
+  const cr = Math.round((a.r+b.r)/2), cc = Math.round((a.c+b.c)/2);
+
+  if(sa==='bomb' && sb==='bomb'){
+    for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++){
+      const r=cr+dr, c=cc+dc;
+      if(r>=0 && r<ROWS && c>=0 && c<COLS && grid[r][c]) keys.add(r+','+c);
+    }
+  } else if((sa==='bomb' && sb==='colorbomb') || (sa==='colorbomb' && sb==='bomb')){
+    const bombCell = sa==='bomb' ? a : b;
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      if(grid[r][c] && grid[r][c].type===bombCell.type) keys.add(r+','+c);
+    }
+  } else if(isStripe(sa) && isStripe(sb)){
+    if(sa===sb){
+      if(sa==='striped-row'){
+        for(let dr=-1;dr<=1;dr++){
+          const r=cr+dr; if(r<0||r>=ROWS) continue;
+          for(let c=0;c<COLS;c++) if(grid[r][c]) keys.add(r+','+c);
+        }
+      } else {
+        for(let dc=-1;dc<=1;dc++){
+          const c=cc+dc; if(c<0||c>=COLS) continue;
+          for(let r=0;r<ROWS;r++) if(grid[r][c]) keys.add(r+','+c);
+        }
+      }
+    } else {
+      for(let dr=-1;dr<=1;dr++){
+        const r=cr+dr; if(r<0||r>=ROWS) continue;
+        for(let c=0;c<COLS;c++) if(grid[r][c]) keys.add(r+','+c);
+      }
+      for(let dc=-1;dc<=1;dc++){
+        const c=cc+dc; if(c<0||c>=COLS) continue;
+        for(let r=0;r<ROWS;r++) if(grid[r][c]) keys.add(r+','+c);
+      }
+    }
+  } else if(sa==='fish' && sb==='fish'){
+    // Targets up to 5 blockers; any slot with no blocker left to fill
+    // it converts to 4 random (non-blocker) tiles instead — so 0
+    // blockers on the field = 5 slots x 4 = 20 random tiles, 1
+    // blocker = 1 real hit + 4 missing slots x 4 = 16 random tiles.
+    const blockerKeys = [];
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      if(grid[r][c] && grid[r][c].type==='blocker') blockerKeys.push(r+','+c);
+    }
+    for(let i=blockerKeys.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [blockerKeys[i],blockerKeys[j]] = [blockerKeys[j],blockerKeys[i]];
+    }
+    const usedBlockers = blockerKeys.slice(0,5);
+    usedBlockers.forEach(k=> keys.add(k));
+    const missingSlots = 5 - usedBlockers.length;
+    if(missingSlots>0){
+      const randomCandidates = [];
+      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+        const k = r+','+c;
+        if(grid[r][c] && grid[r][c].type!=='blocker' && !keys.has(k)) randomCandidates.push(k);
+      }
+      for(let i=randomCandidates.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [randomCandidates[i],randomCandidates[j]] = [randomCandidates[j],randomCandidates[i]];
+      }
+      randomCandidates.slice(0, missingSlots*4).forEach(k=> keys.add(k));
+    }
+  } else if(sa==='colorbomb' && sb==='colorbomb'){
+    // Full field clear — not a win condition on its own, just every
+    // tile on the board at once (scored the same as any other clear,
+    // so this is naturally the single biggest point payout available).
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      if(grid[r][c]) keys.add(r+','+c);
+    }
+  } else {
+    getSpecialClearKeys(a, b.type).forEach(k=> keys.add(k));
+    getSpecialClearKeys(b, a.type).forEach(k=> keys.add(k));
+  }
+  keys.add(cellKey(a)); keys.add(cellKey(b));
+  return keys;
+}
+
 async function doSwapAttempt(a,b){
-  if(animating) return;
+  if(animating || state.gameOver) return;
+  if(a.type==='blocker' || b.type==='blocker'){
+    E.showToast(toastEl, "Blockers can't be swapped", 1200);
+    return;
+  }
   animating = true;
   try{
     const aHadSpecial = a.special, bHadSpecial = b.special;
@@ -786,13 +1094,24 @@ async function doSwapAttempt(a,b){
     moveElTo(a); moveElTo(b);
     await sleep(200);
 
+    if(aHadSpecial && bHadSpecial){
+      const toClear = comboActivate(a, b);
+      consumeMove();
+      await resolveBoard(toClear, 1, {});
+      checkNoMoves();
+      checkGameEnd();
+      return;
+    }
+
     if(aHadSpecial || bHadSpecial){
       const toClear = new Set();
       if(aHadSpecial) getSpecialClearKeys(a, b.type).forEach(k=> toClear.add(k));
       if(bHadSpecial) getSpecialClearKeys(b, a.type).forEach(k=> toClear.add(k));
       toClear.add(cellKey(a)); toClear.add(cellKey(b));
+      consumeMove();
       await resolveBoard(toClear, 1, {});
       checkNoMoves();
+      checkGameEnd();
       return;
     }
 
@@ -803,21 +1122,54 @@ async function doSwapAttempt(a,b){
       await sleep(200);
       return;
     }
+    consumeMove();
     const {clearKeys, specialMap} = computeGroupsAndSpecials(groups, [cellKey(a), cellKey(b)]);
     await resolveBoard(clearKeys, 1, specialMap);
     checkNoMoves();
+    checkGameEnd();
   } finally {
     animating = false;
   }
 }
+async function activateSpecialInPlace(cell){
+  if(animating || state.gameOver || !cell.special) return;
+  animating = true;
+  try{
+    const toClear = new Set(getSpecialClearKeys(cell, null));
+    toClear.add(cellKey(cell));
+    consumeMove();
+    await resolveBoard(toClear, 1, {});
+    checkNoMoves();
+    checkGameEnd();
+  } finally {
+    animating = false;
+  }
+}
+function consumeMove(){
+  if(state.mode!=='classic' || state.gameOver || state.hasWon) return;
+  state.movesLeft = Math.max(0, state.movesLeft-1);
+  updateMovesDisplay();
+}
+function checkGameEnd(){
+  if(state.mode!=='classic' || state.gameOver) return;
+  if(!state.hasWon && state.score>=state.targetScore){
+    state.hasWon = true;
+    state.gameOver = true;
+    showWinModal();
+  } else if(!state.hasWon && state.movesLeft<=0){
+    state.gameOver = true;
+    showLoseModal();
+  }
+}
 function checkNoMoves(){
+  if(state.gameOver) return;
   if(!hasAnyMove()){
     E.showToast(toastEl, 'No moves left — reshuffling...', 1800);
     setTimeout(reshuffleBoard, 700);
   }
 }
 async function reshuffleBoard(){
-  if(animating) return;
+  if(animating || state.gameOver) return;
   animating = true;
   Object.values(domMap).forEach(el=> el.classList.add('m3-pop'));
   await sleep(240);
@@ -828,18 +1180,19 @@ async function reshuffleBoard(){
 
 function attachTileEvents(el, id){
   el.addEventListener('pointerdown', (e)=>{
-    if(animating) return;
+    if(animating || state.gameOver) return;
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
     pointerDownInfo = { id, x:e.clientX, y:e.clientY };
   });
   el.addEventListener('pointerup', (e)=>{
-    if(animating || !pointerDownInfo){ pointerDownInfo=null; return; }
+    if(animating || state.gameOver || !pointerDownInfo){ pointerDownInfo=null; return; }
     const dx = e.clientX - pointerDownInfo.x, dy = e.clientY - pointerDownInfo.y;
     const dist = Math.hypot(dx,dy);
     const startId = pointerDownInfo.id;
     pointerDownInfo = null;
     const startCell = findCellById(startId);
     if(!startCell) return;
+    if(startCell.type==='blocker') return;
 
     if(dist > TILE_SIZE*0.28){
       let dir;
@@ -851,8 +1204,13 @@ function attachTileEvents(el, id){
       return;
     }
 
-    // Tap: two-tap select/swap.
+    // Tap: a lone special activates immediately in place; otherwise
+    // it's the usual two-tap select/swap.
     if(selectedId===null){
+      if(startCell.special){
+        activateSpecialInPlace(startCell);
+        return;
+      }
       selectedId = startId;
       getEl(startId).classList.add('selected');
     } else if(selectedId===startId){
@@ -877,11 +1235,20 @@ function newGame(){
   clearSelectionVisual();
   state.score = 0;
   state.seconds = 0;
+  state.gameOver = false;
+  state.hasWon = false;
+  if(state.mode==='classic'){
+    const diff = DIFFICULTIES[state.difficulty];
+    state.movesLeft = diff.moves;
+    state.targetScore = diff.target;
+  }
   updateScoreDisplay();
+  updateMovesDisplay();
   updateTimeDisplay();
   initGrid();
   fitMatchBoard();
   renderBoardFresh();
+  applyHudVisibility();
 }
 function updateTimeDisplay(){
   const m = Math.floor(state.seconds/60), s = state.seconds%60;
@@ -894,10 +1261,20 @@ function syncTimerInterval(){
     timerInterval = setInterval(()=>{ state.seconds++; updateTimeDisplay(); }, 1000);
   }
 }
-function applyHudVisibility(){ E.applyHudVisibility(state); }
+function applyHudVisibility(){
+  E.applyHudVisibility(state);
+  const chipTime = document.getElementById('chip-time');
+  const label = document.getElementById('chip-time-label');
+  if(state.mode==='classic'){
+    label.textContent = 'MOVES';
+    chipTime.style.display = '';
+  } else {
+    label.textContent = 'TIME';
+  }
+}
 
 document.getElementById('btn-hint').addEventListener('click', ()=>{
-  if(animating) return;
+  if(animating || state.gameOver) return;
   const move = findHintMove();
   if(move){
     E.pulseAll([getEl(move.a.id), getEl(move.b.id)], 1000);
@@ -906,7 +1283,7 @@ document.getElementById('btn-hint').addEventListener('click', ()=>{
   }
 });
 document.getElementById('btn-shuffle').addEventListener('click', ()=>{
-  if(animating) return;
+  if(animating || state.gameOver) return;
   E.showToast(toastEl, 'Board shuffled', 1200);
   reshuffleBoard();
 });
@@ -977,19 +1354,49 @@ function refreshTilesetPicker(){
   });
 }
 
+function buildModePicker(){
+  document.querySelectorAll('#mode-picker [data-mode]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      pendingSettings.mode = btn.dataset.mode;
+      refreshModePicker();
+    });
+  });
+  document.querySelectorAll('#difficulty-picker [data-diff]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      pendingSettings.difficulty = btn.dataset.diff;
+      refreshModePicker();
+    });
+  });
+}
+function refreshModePicker(){
+  document.querySelectorAll('#mode-picker [data-mode]').forEach(b=>{
+    b.classList.toggle('mode-active', b.dataset.mode===pendingSettings.mode);
+  });
+  document.querySelectorAll('#difficulty-picker [data-diff]').forEach(b=>{
+    b.classList.toggle('mode-active', b.dataset.diff===pendingSettings.difficulty);
+  });
+  document.getElementById('difficulty-field').style.display = pendingSettings.mode==='classic' ? '' : 'none';
+}
+
 let settingsSnapshot = null;
 const settingsOverlay = document.getElementById('settings-overlay');
 const togTimer = document.getElementById('tog-timer');
 const togScore = document.getElementById('tog-score');
 
 function openSettings(){
-  settingsSnapshot = { tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore };
+  settingsSnapshot = {
+    tileset: state.tileset, showTimer: state.showTimer, showScore: state.showScore,
+    mode: state.mode, difficulty: state.difficulty
+  };
   pendingSettings.tileset = state.tileset;
   pendingSettings.showTimer = state.showTimer;
   pendingSettings.showScore = state.showScore;
+  pendingSettings.mode = state.mode;
+  pendingSettings.difficulty = state.difficulty;
   togTimer.checked = state.showTimer;
   togScore.checked = state.showScore;
   refreshTilesetPicker();
+  refreshModePicker();
   refreshVersionInfo();
   settingsOverlay.classList.add('show');
 }
@@ -1016,7 +1423,14 @@ document.getElementById('settings-cancel').addEventListener('click', ()=>{
   settingsOverlay.classList.remove('show');
 });
 document.getElementById('settings-apply').addEventListener('click', ()=>{
+  const modeChanged = pendingSettings.mode!==settingsSnapshot.mode || pendingSettings.difficulty!==settingsSnapshot.difficulty;
+  state.mode = pendingSettings.mode;
+  state.difficulty = pendingSettings.difficulty;
   settingsOverlay.classList.remove('show');
+  if(modeChanged){
+    E.showToast(toastEl, 'Mode changed — starting a new game', 1800);
+    newGame();
+  }
 });
 togTimer.addEventListener('change', (e)=>{
   pendingSettings.showTimer = e.target.checked;
@@ -1046,6 +1460,7 @@ window.addEventListener('resize', ()=>{
    INIT
    ========================================================= */
 buildTilesetPicker();
+buildModePicker();
 applyHudVisibility();
 newGame();
 
