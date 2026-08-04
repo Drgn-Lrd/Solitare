@@ -2,15 +2,14 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 6.5
+    Version 8.0
 
-   Match 3's mini board now reshuffles its tiles on every reload, same
-   idea as the card/mahjong/bubble passes above it — a fourth pass at
-   the bottom of the shared script repaints all 24 .mc-m3-tile squares
-   with a random candy (glyph + color) from the same 6-item Candies set
-   Match3.html itself defaults to, keeping the fixed 6x4 block layout.
-   Two tiles are also randomly promoted to a striped or bomb power-up
-   overlay each load, echoing what a run of 4/5+ creates in-game.
+   8 games now active (up from 7) — major version bump per instruction.
+   Mahjong, Bubble Shooter, and Match 3 have graduated from "Testing"
+   to "Play Now," joining Klondike/FreeCell/Spider as approved/live.
+   TriPeaks is newly linked to TriPeaks.html with a "Testing" pill,
+   same status Tut's Tomb still carries. Golf is now the only tile
+   still marked "In Dev" / inert.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -40,11 +39,11 @@
   one is dropped in at the matching images/ path — see this file's own
   changelog above.
 
-  Tiles for Klondike/FreeCell/Spider link out to their real files and
-  are approved/live (Play Now). Tut's Tomb, Mahjong, Bubble Shooter,
-  and Match 3 are playable but still marked Testing until signed off.
-  TriPeaks and Golf are marked IN DEV and stay inert (no navigation)
-  until built.
+  Tiles for Klondike/FreeCell/Spider/Mahjong/Bubble Shooter/Match 3
+  link out to their real files and are approved/live (Play Now).
+  Tut's Tomb and TriPeaks are playable but still marked Testing until
+  signed off. Golf is the only tile still marked IN DEV and stays
+  inert (no navigation) until built.
 -->
 <html lang="en">
 <head>
@@ -539,7 +538,7 @@
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-mahjong"></div>
-          <div class="tile-head"><h2>Mahjong</h2><span class="status-pill testing">Testing</span></div>
+          <div class="tile-head"><h2>Mahjong</h2><span class="status-pill play">Play Now</span></div>
           <div class="mini-board">
             <div class="pyramid-wrap" style="width:112px; height:93px;">
               <div class="mc mahjong-face mc-abs" style="left:48px; top:0px;"></div>
@@ -584,7 +583,7 @@
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-bubbleshooter"></div>
-          <div class="tile-head"><h2>Bubble Shooter</h2><span class="status-pill testing">Testing</span></div>
+          <div class="tile-head"><h2>Bubble Shooter</h2><span class="status-pill play">Play Now</span></div>
           <div class="mini-board">
             <div class="pyramid-wrap" id="bs-mini-board" style="width:126px; height:74px;">
               <div class="mc-bubble mc-abs" data-color="fire"  style="left:0px;  top:0px;">&#128293;</div>
@@ -634,7 +633,7 @@
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-match3"></div>
-          <div class="tile-head"><h2>Match 3</h2><span class="status-pill testing">Testing</span></div>
+          <div class="tile-head"><h2>Match 3</h2><span class="status-pill play">Play Now</span></div>
           <div class="mini-board">
             <div class="mc-m3-grid" id="m3-mini-board">
               <div class="mc-m3-tile"></div>
@@ -671,12 +670,12 @@
       <p class="tile-desc">Swap adjacent tiles to line up <b>3 or more</b>. Chain cascades, build stripes and bombs, and keep the board clear — endless score attack.</p>
     </a>
 
-    <!-- TRIPEAKS — in dev -->
-    <div class="tile-link disabled">
+    <!-- TRIPEAKS — playable -->
+    <a class="tile-link" href="TriPeaks.html">
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-tripeaks"></div>
-          <div class="tile-head"><h2>TriPeaks</h2><span class="status-pill dev">In Dev</span></div>
+          <div class="tile-head"><h2>TriPeaks</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
             <div class="pyramid-wrap" style="height:60px;">
               <!-- peak 1 (left) -->
@@ -718,7 +717,7 @@
         </div>
       </div>
       <p class="tile-desc">Clear three overlapping peaks by picking cards one rank higher or lower than the waste pile.</p>
-    </div>
+    </a>
 
     <!-- GOLF — in dev -->
     <div class="tile-link disabled">
