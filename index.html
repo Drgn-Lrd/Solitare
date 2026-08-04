@@ -2,14 +2,12 @@
 <!--
     index.html
     Written by: Johnathon Largent
-    Version 8.0
+    Version 9.1
 
-   8 games now active (up from 7) — major version bump per instruction.
-   Mahjong, Bubble Shooter, and Match 3 have graduated from "Testing"
-   to "Play Now," joining Klondike/FreeCell/Spider as approved/live.
-   TriPeaks is newly linked to TriPeaks.html with a "Testing" pill,
-   same status Tut's Tomb still carries. Golf is now the only tile
-   still marked "In Dev" / inert.
+   Reordered the grid: Match 3 and Tut's Tomb swapped positions, so
+   the bottom row now reads Tut's Tomb / TriPeaks / Golf (the three
+   newest Testing tiles together) and the middle row reads Match 3 /
+   Mahjong / Bubble Shooter. No status/content changes, just position.
 -->
 <!--
   Solitaire Suite hub page. Casino-table aesthetic reusing the exact
@@ -41,9 +39,8 @@
 
   Tiles for Klondike/FreeCell/Spider/Mahjong/Bubble Shooter/Match 3
   link out to their real files and are approved/live (Play Now).
-  Tut's Tomb and TriPeaks are playable but still marked Testing until
-  signed off. Golf is the only tile still marked IN DEV and stays
-  inert (no navigation) until built.
+  Tut's Tomb, TriPeaks, and Golf are playable but still marked Testing
+  until signed off. No tile is left IN DEV/inert.
 -->
 <html lang="en">
 <head>
@@ -487,50 +484,46 @@
       <p class="tile-desc">10 tableau columns, two decks. Stack <b>any suit</b> descending, but only matching-suit runs move together — clear all 8 runs to win.</p>
     </a>
 
-    <!-- TUT'S TOMB (Pyramid) — playable -->
-    <a class="tile-link" href="Tut'sTomb.html">
+    <!-- MATCH 3 — playable -->
+    <a class="tile-link" href="Match3.html">
       <div class="tile-frame">
         <div class="tile-felt">
-          <div class="tile-bg-art art-tut"></div>
-          <div class="tile-head"><h2>Tut's Tomb</h2><span class="status-pill testing">Testing</span></div>
+          <div class="tile-bg-art art-match3"></div>
+          <div class="tile-head"><h2>Match 3</h2><span class="status-pill play">Play Now</span></div>
           <div class="mini-board">
-            <div class="pyramid-wrap" style="height:99px;">
-              <div class="mc face mc-abs" style="left:102.5px; top:0px;"></div>
-              <div class="mc face mc-abs" style="left:95px; top:13px;"></div>
-              <div class="mc face mc-abs" style="left:110px; top:13px;"></div>
-              <div class="mc face mc-abs" style="left:87.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:102.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:117.5px; top:26px;"></div>
-              <div class="mc face mc-abs" style="left:80px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:95px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:110px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:125px; top:39px;"></div>
-              <div class="mc face mc-abs" style="left:72.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:87.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:102.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:117.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:132.5px; top:52px;"></div>
-              <div class="mc face mc-abs" style="left:65px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:80px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:95px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:110px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:125px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:140px; top:65px;"></div>
-              <div class="mc face mc-abs" style="left:57.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:72.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:87.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:102.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:117.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:132.5px; top:78px;"></div>
-              <div class="mc face mc-abs" style="left:147.5px; top:78px;"></div>
-            </div>
-            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:6px;">
-              <div class="mc gold-back"></div><div class="mc face"></div>
+            <div class="mc-m3-grid" id="m3-mini-board">
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
+              <div class="mc-m3-tile"></div>
             </div>
           </div>
         </div>
       </div>
-      <p class="tile-desc">Pair exposed cards that sum to 13 to clear the pyramid — Egyptian-themed, unlimited waste-pile cycling.</p>
+      <p class="tile-desc">Swap adjacent tiles to line up <b>3 or more</b>. Chain cascades, build stripes and bombs, and keep the board clear — endless score attack.</p>
     </a>
 
     <!-- MAHJONG — playable -->
@@ -628,46 +621,50 @@
       <p class="tile-desc">Aim and fire to match <b>3+ of the same element</b> — every color carries its own glyph, so it's colorblind-friendly by design.</p>
     </a>
 
-    <!-- MATCH 3 — playable -->
-    <a class="tile-link" href="Match3.html">
+    <!-- TUT'S TOMB (Pyramid) — playable -->
+    <a class="tile-link" href="Tut'sTomb.html">
       <div class="tile-frame">
         <div class="tile-felt">
-          <div class="tile-bg-art art-match3"></div>
-          <div class="tile-head"><h2>Match 3</h2><span class="status-pill play">Play Now</span></div>
+          <div class="tile-bg-art art-tut"></div>
+          <div class="tile-head"><h2>Tut's Tomb</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
-            <div class="mc-m3-grid" id="m3-mini-board">
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
-              <div class="mc-m3-tile"></div>
+            <div class="pyramid-wrap" style="height:99px;">
+              <div class="mc face mc-abs" style="left:102.5px; top:0px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:13px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:13px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:26px;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:39px;"></div>
+              <div class="mc face mc-abs" style="left:72.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:132.5px; top:52px;"></div>
+              <div class="mc face mc-abs" style="left:65px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:80px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:95px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:110px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:125px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:140px; top:65px;"></div>
+              <div class="mc face mc-abs" style="left:57.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:72.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:87.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:102.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:117.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:132.5px; top:78px;"></div>
+              <div class="mc face mc-abs" style="left:147.5px; top:78px;"></div>
+            </div>
+            <div class="mc-row" style="justify-content:center; gap:6px; margin-top:6px;">
+              <div class="mc gold-back"></div><div class="mc face"></div>
             </div>
           </div>
         </div>
       </div>
-      <p class="tile-desc">Swap adjacent tiles to line up <b>3 or more</b>. Chain cascades, build stripes and bombs, and keep the board clear — endless score attack.</p>
+      <p class="tile-desc">Pair exposed cards that sum to 13 to clear the pyramid — Egyptian-themed, unlimited waste-pile cycling.</p>
     </a>
 
     <!-- TRIPEAKS — playable -->
@@ -719,12 +716,12 @@
       <p class="tile-desc">Clear three overlapping peaks by picking cards one rank higher or lower than the waste pile.</p>
     </a>
 
-    <!-- GOLF — in dev -->
-    <div class="tile-link disabled">
+    <!-- GOLF — playable -->
+    <a class="tile-link" href="Golf.html">
       <div class="tile-frame">
         <div class="tile-felt">
           <div class="tile-bg-art art-golf"></div>
-          <div class="tile-head"><h2>Golf</h2><span class="status-pill dev">In Dev</span></div>
+          <div class="tile-head"><h2>Golf</h2><span class="status-pill testing">Testing</span></div>
           <div class="mini-board">
             <div class="mc-cols">
               <div class="mc-col"><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div><div class="mc face"></div></div>
@@ -742,8 +739,8 @@
           </div>
         </div>
       </div>
-      <p class="tile-desc">Fast-paced card matching. Clear 35 tableau cards onto the waste pile in sequential order.</p>
-    </div>
+      <p class="tile-desc">Pair each exposed tableau card with the waste pile — one rank up or down, suit doesn't matter — to clear all 35 cards.</p>
+    </a>
 
     
   </div>
