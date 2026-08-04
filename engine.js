@@ -1,38 +1,14 @@
 /*
     engine.js
     Written by: Johnathon Largent
-    Version 2.9
+    Version 9.0
 
-   New shared setColumnHeight(col, pileLength, metrics), exported
-   alongside cardMetrics. The tableau column height formula (and its
-   exact pairing with .tcol.drop-ok::after's +/-4px overhang in
-   styles.css) was duplicated in Klondike/FreeCell/Yukon's own
-   renderTableau() — each with its own copy of the same line, which is
-   exactly how one of them silently picked up a stray "+ 8" the others
-   didn't share a fix for. Pulled out here so that formula, and its
-   relationship to the highlight CSS, can only be defined in one place
-   going forward.
-
-    Version 2.8
-
-   fitBoard now rounds cardW to a whole pixel before writing it to
-   --card-w. A fractional --card-w (e.g. 73.4px) was giving the
-   .selected ring and the .drop-ok glow — both sized directly off
-   --card-w/--card-h — a soft anti-aliased edge that browsers render
-   only on the bottom/right of a fractional box, never the top/left.
-   That read as the highlight being lopsided/thicker on two sides,
-   even though the box-shadow/border values themselves were already
-   symmetric. See styles.css's matching change to --card-h.
-
-    Version 2.7
-
-   Face card art now loads from webp instead of svg — cardImgSrc() is
-   the single spot every game shares, so this one line covers all of
-   Klondike/FreeCell/Yukon. Card BACKS were already extension-agnostic
-   here (backImgSrc() just echoes whatever full filename `style`
-   already carries), so their webp switch happens entirely in each
-   game's own KNOWN_BACK_FILES/backStyle/back-picker — see those
-   files' own changelogs.
+   No functional change — realigning to the versioning scheme's actual
+   rule: a shared file's main (X) version number tracks the current
+   count of active (Play Now + Testing) games, not an independent
+   running total. Golf going live as Testing brings the suite to 9
+   active games, so engine.js and styles.css both jump to 9.0 here
+   alongside index.html, matching that count going forward.
  */
 /* =========================================================================
    SOLITAIRE ENGINE (shared across Klondike, FreeCell, and future games)
@@ -74,7 +50,7 @@ window.SEngine = (function(){
 // what lets a settings modal show all three (page/engine/styles) at
 // once. getStylesheetVersion() reads a --stylesheet-version custom
 // property off :root; returns null if styles.css hasn't declared one.
-const ENGINE_VERSION = '2.9';
+const ENGINE_VERSION = '9.0';
 function getStylesheetVersion(){
   const v = getComputedStyle(document.documentElement).getPropertyValue('--stylesheet-version');
   return v ? v.trim().replace(/^['"]|['"]$/g, '') : null;
