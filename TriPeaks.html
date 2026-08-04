@@ -2,40 +2,21 @@
 <!--
     TriPeaks.html
     Written by: Johnathon Largent
-    Version 1.0
+    Version 1.1
 
-   New game: TriPeaks. Three interlocking pyramids of 28 tableau cards
-   (rows of 10/9/6/3 — base row closest to the viewer and dealt
-   face-up, everything above it face-down until BOTH of its two
-   supporting cards below are cleared) built on the shared engine.js +
-   styles.css exactly like Klondike/FreeCell: stock + waste only, no
-   foundations. Tap any uncovered peak card one rank above or below
-   the waste pile's top card (Ace/King wrap is on by default — toggle
-   in Settings) to send it to waste; tap the stock to draw when
-   nothing's playable (one-way, no reshuffle-back — matches most
-   TriPeaks implementations). Win by clearing all 28 peak cards;
-   leftover stock is fine.
-
-   Board sizing/positioning (fitPeaksBoard + PEAK_LAYOUT below) is
-   bespoke to this file rather than SEngine.fitBoard/tableau columns —
-   a fixed 4-row pyramid doesn't fit that helper's variable-depth
-   tableau-column assumptions. It still reads E.CARD_RATIO from
-   engine.js instead of re-deriving its own copy, so the two can't
-   drift apart the way the old duplicated column-height formula did.
-   The pyramid's exact proportions (row step = 0.619 * card height,
-   base row cards edge-to-edge with no horizontal gap) match the mini
-   preview already sitting in index.html's TriPeaks tile, just scaled
-   up to real card size, so the "coming soon" preview and the real
-   board read as the same shape.
-
-   Interactions are deliberately NOT wired through SEngine.initInteractions
-   — that system is built for drag/click-to-move BETWEEN piles with a
-   destination choice, which doesn't apply here (a peak card has
-   exactly one legal destination: the waste pile). Peak/stock cards
-   get plain click handlers instead; everything else shared (card
-   art/back building, preload, undo stack, settings shell, toast/hint
-   pulse, win cascade, HUD visibility) still comes from engine.js
-   untouched.
+   Stock/waste moved to the bottom of the board, centered under the
+   peaks (matching the index.html tile preview) — the "cards
+   remaining" chip moved up into its own slim row above the peaks so
+   it isn't paired with stock/waste anymore. Draw now defaults to
+   Continuous: once the stock runs dry, the waste pile reshuffles
+   back into it (same two-click recycle pattern as Klondike — one
+   click to reshuffle, a second to actually draw) instead of just
+   stopping. A "Continuous Draw" toggle in Settings switches to the
+   old one-pass/no-reshuffle behavior. Also added Thoughtful mode
+   (Settings, default off): shows covered peak cards' real faces,
+   dimmed via the shared .card.thoughtful CSS class (same one
+   Klondike's Thoughtful uses), still non-interactive/unplayable —
+   it's a planning aid, not a way to cheat a covered card into play.
 -->
 <html lang="en">
 <head>
@@ -74,7 +55,9 @@
      variable-depth tableau columns that doesn't apply here) — width
      and height are both set explicitly in JS from the current
      --card-w, see fitPeaksBoard()/renderPeaks() below. */
+  .cards-row{ justify-content:center; margin-bottom: clamp(10px,2vw,20px); }
   .peaks-row{ justify-content:center; }
+  .bottom-row{ justify-content:center; margin-top: clamp(10px,2vw,20px); }
   .peaks-wrap{ position:relative; flex-shrink:0; }
   .peaks-wrap .card{ cursor:default; }
 
@@ -115,18 +98,20 @@
 <div class="stage">
   <div class="table-frame">
     <div class="table-felt">
-      <div class="row top-row">
-        <div class="stockwaste">
-          <div class="pile slot" id="pile-stock" data-type="stock">
-            <div class="slot-mark">▼</div>
-            <div class="stock-count" id="stock-count"></div>
-          </div>
-          <div class="pile slot" id="pile-waste" data-type="waste"></div>
-        </div>
+      <div class="row cards-row">
         <div class="chip" id="peaks-left-chip">CARDS <b id="peaks-left-val">28</b></div>
       </div>
       <div class="row peaks-row">
         <div class="peaks-wrap" id="peaks-wrap"></div>
+      </div>
+      <div class="row bottom-row">
+        <div class="stockwaste">
+          <div class="pile slot" id="pile-stock" data-type="stock">
+            <div class="slot-mark" id="stock-slot-mark">▼</div>
+            <div class="stock-count" id="stock-count"></div>
+          </div>
+          <div class="pile slot" id="pile-waste" data-type="waste"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -179,8 +164,9 @@
       <li>28 cards form three peaks. Only the bottom row starts face-up — a card higher up flips face-up once BOTH cards directly beneath it are cleared.</li>
       <li>Tap any uncovered peak card that's exactly one rank above or below the top waste card to play it.</li>
       <li>By default Ace and King count as adjacent (K → A → 2) — turn this off in Settings for stricter rules.</li>
-      <li>Tap the stock pile to draw a new waste card when nothing's playable. The stock doesn't reshuffle once it runs out.</li>
+      <li>Tap the stock pile to draw a new waste card when nothing's playable. By default the stock reshuffles from the waste once it runs out (Continuous Draw, toggle off in Settings for a single pass with no reshuffle).</li>
       <li>Clear all 28 peak cards to win — cards left in the stock don't matter.</li>
+      <li>Thoughtful Mode (Settings, off by default) shows the real faces of still-covered cards, dimmed, so you can plan ahead — they're still unplayable until uncovered.</li>
       <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make.</li>
     </ul>
     <div class="modal-actions">
@@ -223,6 +209,20 @@
       </div>
       <div class="fieldnote">When on, Ace and King count as one rank apart (K→A→2), same as most TriPeaks implementations. Turn off for stricter Ace-low-only rules.</div>
     </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Continuous Draw</span>
+        <label class="switch"><input type="checkbox" id="tog-continuous" checked><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">When on, an empty stock reshuffles the waste pile back into it so you can keep drawing indefinitely. Turn off for a single pass through the stock with no reshuffle.</div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Thoughtful Mode</span>
+        <label class="switch"><input type="checkbox" id="tog-thoughtful"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Shows still-covered peak cards' real faces, dimmed — a planning aid. They stay unplayable until actually uncovered.</div>
+    </div>
 
     <div class="field">
       <label>Testing</label>
@@ -248,7 +248,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '2.0';
+const PAGE_VERSION = '1.1';
 const RANKS = E.RANKS;
 const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 
@@ -297,6 +297,8 @@ const state = {
   showTimer: false,
   showScore: false,
   wrapEnabled: true,
+  recycleStock: true,
+  thoughtful: false,
   backStyle: 'back_10.webp',
   peaks: [],   // 28 slots, card object or null once played
   stock: [], waste: [],
@@ -305,7 +307,7 @@ const state = {
   timerHandle: null,
   cascadePlayed: false
 };
-const pendingSettings = { showTimer:false, showScore:false, wrapEnabled:true, backStyle:'back_10.webp' };
+const pendingSettings = { showTimer:false, showScore:false, wrapEnabled:true, recycleStock:true, thoughtful:false, backStyle:'back_10.webp' };
 
 /* =========================================================
    RULES
@@ -346,6 +348,18 @@ function playPeak(i){
 }
 function drawStock(){
   if(!state.stock.length){
+    if(state.recycleStock && state.waste.length){
+      // Same two-click recycle pattern as Klondike: this click just
+      // turns the waste back into the stock (face-down, reversed so
+      // the draw order doesn't just repeat); a second click on the
+      // now-refilled stock actually draws. Continuous TriPeaks decks
+      // are meant to be reusable indefinitely, so no reshuffle limit.
+      undo.push();
+      state.stock = state.waste.reverse().map(c=>({ ...c, faceUp:false }));
+      state.waste = [];
+      renderAll();
+      return true;
+    }
     E.showToast(document.getElementById('hint-toast'), 'No cards left in the stock.');
     return false;
   }
@@ -365,6 +379,7 @@ function findAnyMove(){
     if(canPlayPeak(i)) return { type:'peak', index:i };
   }
   if(state.stock.length) return { type:'draw' };
+  if(state.recycleStock && state.waste.length) return { type:'draw' };
   return null;
 }
 function findCardEl(pileType, pileKey, index){
@@ -413,11 +428,22 @@ function fitPeaksBoard(){
              + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
              + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
 
-  const topRowEl = document.querySelector('.top-row');
-  const topRowH = topRowEl ? topRowEl.getBoundingClientRect().height : 0;
-  const topRowGap = topRowEl ? (parseFloat(getComputedStyle(topRowEl).marginBottom) || 18) : 18;
+  // Two extra rows now flank the peaks (cards-remaining chip above,
+  // stock/waste below) instead of Klondike/FreeCell's single top-row —
+  // both eat into the available height. Same last-frame-size
+  // approximation fitBoard itself relies on for card-containing rows:
+  // measures whatever --card-w currently produced, not a simultaneous
+  // solve, which is fine since it converges after a resize or two.
+  const cardsRowEl = document.querySelector('.cards-row');
+  const cardsRowH = cardsRowEl ? cardsRowEl.getBoundingClientRect().height : 0;
+  const cardsRowGap = cardsRowEl ? (parseFloat(getComputedStyle(cardsRowEl).marginBottom) || 18) : 18;
 
-  const availH = window.innerHeight - headerH - bottombarH - vPad - topRowH - topRowGap - 10;
+  const bottomRowEl = document.querySelector('.bottom-row');
+  const bottomRowH = bottomRowEl ? bottomRowEl.getBoundingClientRect().height : 0;
+  const bottomRowGap = bottomRowEl ? (parseFloat(getComputedStyle(bottomRowEl).marginTop) || 18) : 18;
+
+  const availH = window.innerHeight - headerH - bottombarH - vPad
+               - cardsRowH - cardsRowGap - bottomRowH - bottomRowGap - 10;
   const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
 
   // Vertical: total pyramid height = cardH * (1 + 3*PEAK_ROW_STEP_FRAC)
@@ -461,6 +487,10 @@ function renderStock(){
   const p = document.getElementById('pile-stock');
   p.querySelectorAll('.card').forEach(e=>e.remove());
   document.getElementById('stock-count').textContent = state.stock.length ? state.stock.length : '';
+  // Empty-slot glyph: a recycle arrow when the stock can reshuffle
+  // from the waste, otherwise just an empty-slot marker.
+  document.getElementById('stock-slot-mark').textContent =
+    state.stock.length ? '▼' : (state.recycleStock && state.waste.length ? '↺' : '');
   if(state.stock.length){
     const top = state.stock[state.stock.length-1];
     const fake = { id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false };
@@ -486,8 +516,14 @@ function renderPeaks(){
     const card = state.peaks[slot.flat];
     if(!card) return;
     const faceUp = isUncovered(slot.flat);
-    const renderCard = { ...card, faceUp };
+    // Thoughtful mode: a still-covered card shows its real face,
+    // dimmed via the shared .card.thoughtful class (pointer-events
+    // already disabled there) — purely a planning aid, the card
+    // stays unplayable until it's actually uncovered.
+    const revealing = !faceUp && state.thoughtful;
+    const renderCard = { ...card, faceUp: faceUp || revealing };
     const el = makeCardEl(renderCard, 'peak', slot.flat, slot.flat, false, null);
+    if(revealing) el.classList.add('thoughtful');
     el.style.left = (slot.x*cardW)+'px';
     el.style.top = ((3-slot.row)*stepV)+'px';
     el.style.zIndex = String(4-slot.row);
@@ -563,6 +599,8 @@ function newGame(){
   state.showScore = pendingSettings.showScore;
   state.backStyle = pendingSettings.backStyle;
   state.wrapEnabled = pendingSettings.wrapEnabled;
+  state.recycleStock = pendingSettings.recycleStock;
+  state.thoughtful = pendingSettings.thoughtful;
 
   const deck = E.shuffle(E.buildDeck());
   state.peaks = deck.splice(0,28).map(c=>({ ...c, faceUp:false }));
@@ -604,15 +642,35 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraSnapshot: ()=>({ wrapEnabled: pendingSettings.wrapEnabled }),
+  extraSnapshot: ()=>({
+    wrapEnabled: pendingSettings.wrapEnabled,
+    recycleStock: pendingSettings.recycleStock,
+    thoughtful: pendingSettings.thoughtful
+  }),
   extraRestore: (snap)=>{
     pendingSettings.wrapEnabled = snap.wrapEnabled;
     state.wrapEnabled = snap.wrapEnabled;
     document.getElementById('tog-wrap').checked = snap.wrapEnabled;
+
+    pendingSettings.recycleStock = snap.recycleStock;
+    state.recycleStock = snap.recycleStock;
+    document.getElementById('tog-continuous').checked = snap.recycleStock;
+
+    pendingSettings.thoughtful = snap.thoughtful;
+    state.thoughtful = snap.thoughtful;
+    document.getElementById('tog-thoughtful').checked = snap.thoughtful;
+    renderAll();
   },
   extraOnOpen: ()=>{
     pendingSettings.wrapEnabled = state.wrapEnabled;
     document.getElementById('tog-wrap').checked = state.wrapEnabled;
+
+    pendingSettings.recycleStock = state.recycleStock;
+    document.getElementById('tog-continuous').checked = state.recycleStock;
+
+    pendingSettings.thoughtful = state.thoughtful;
+    document.getElementById('tog-thoughtful').checked = state.thoughtful;
+
     refreshVersionInfo();
   }
 });
@@ -624,6 +682,17 @@ function refreshVersionInfo(){
 document.getElementById('tog-wrap').addEventListener('change', (e)=>{
   pendingSettings.wrapEnabled = e.target.checked;
   state.wrapEnabled = e.target.checked;
+});
+document.getElementById('tog-continuous').addEventListener('change', (e)=>{
+  pendingSettings.recycleStock = e.target.checked;
+  state.recycleStock = e.target.checked;
+  renderStock();
+  checkNoMoves();
+});
+document.getElementById('tog-thoughtful').addEventListener('change', (e)=>{
+  pendingSettings.thoughtful = e.target.checked;
+  state.thoughtful = e.target.checked;
+  renderPeaks();
 });
 document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
 document.getElementById('settings-cancel').addEventListener('click', ()=>{
