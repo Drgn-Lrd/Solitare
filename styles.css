@@ -1,14 +1,14 @@
 /*
     styles.css
     Written by: Johnathon Largent
-    Version 2.10
+    Version 9.0
 
-   .tcol.drop-ok::after's right edge had the same indirect-math problem
-   the bottom edge did (fixed last version): width:calc(var(--card-w) +
-   8px) combined with left:-4px instead of anchoring directly.
-   Replaced with right:calc(100% - var(--card-w) - 4px), which ties
-   the right edge straight to --card-w the same way left already was,
-   instead of deriving it through a separate width calculation.
+   No functional change — realigning to the versioning scheme's actual
+   rule: a shared file's main (X) version number tracks the current
+   count of active (Play Now + Testing) games, not an independent
+   running total. Golf going live as Testing brings the suite to 9
+   active games, so styles.css and engine.js both jump to 9.0 here
+   alongside index.html, matching that count going forward.
  */
 /* =========================================================================
    SHARED SOLITAIRE SUITE STYLESHEET
@@ -25,7 +25,7 @@
    controls and concrete "change this to do X" pointers.
    ========================================================= */
 :root{
-  --stylesheet-version: '2.10';
+  --stylesheet-version: '9.0';
   /* Stored as bare "r,g,b" triplets (not full color values) so they can
      be dropped into rgba(var(--x), alpha) for the felt's transparency
      — rgba() with a var() alpha channel is old, well-supported syntax,
