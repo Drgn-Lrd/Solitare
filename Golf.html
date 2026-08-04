@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<!--
+    Golf.html
+    Written by: Johnathon Largent
+    Version 1.0
+
+   First build. Golf Solitaire on the shared engine.js + styles.css
+   foundation — 7 tableau columns of 5 face-up cards (35 total), a
+   17-card stock, and a single foundation/waste pile that starts with
+   one card flipped from the stock (leaving 16 draws). Any exposed
+   tableau card exactly one rank above or below the foundation's top
+   card can be played onto it, suit doesn't matter, and — matching
+   traditional rules — ranks never wrap (no Ace-on-King or
+   King-on-Ace). No redeal once the stock runs out. Reuses
+   engine.js's drag/drop + click-to-move pipeline untouched: only
+   tableau top cards are ever movable, and the foundation pile is the
+   only legal drop target. Score follows real Golf scoring (strokes =
+   stock draws + cards left in the tableau, lower is better) instead
+   of Klondike's point total.
+-->
+<!--
+  Golf — built on the shared engine.js + styles.css extracted from
+  Klondike/FreeCell. This file only contains what's actually specific
+  to Golf: the 7x5 tableau deal, the single foundation pile, the
+  rank-adjacency rule (no wrap), and scoring. Everything else —
+  drag/drop, click-to-move, undo, settings shell, hint pulse/toast,
+  win cascade, screen-fit sizing, card asset loading/fallback — comes
+  from engine.js untouched, so a fix made there benefits every game in
+  the suite automatically.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Golf</title>
+<link rel="preload" as="image" href="images/Golf.webp">
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Golf-only background: swaps the shared black/vignette body
+     background (see html,body in styles.css) for this preloaded
+     photo, just for this game — same treatment FreeCell/Spider use
+     for their own backgrounds. The wood frame + green felt
+     (.table-frame / .table-felt) sit on their own elements on top of
+     this, already see-through via --table-opacity, so the photo shows
+     through the whole table, not just the margins around it. */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/Golf.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
+  /* No dedicated cropped-photo crest exists yet for Golf (the
+     Klondike/Spider/FreeCell crests are each hand-measured against
+     their own reference image) — a plain glyph crest on the shared
+     brass circle keeps things looking finished in the meantime, and
+     can be swapped for a photo crop later the same way those were. */
+  .brand .crest::before{ content:'\26F3'; }
+
+  /* Small numeric badge overlaid on the stock pile showing exactly
+     how many draws are left (Golf draws one card at a time, unlike
+     Spider's 10-card deals, so this is just state.stock.length) —
+     same idea/markup as Spider's own .stock-badge. */
+  .stock-badge{
+    position:absolute; bottom:-8px; right:-8px; z-index:5;
+    background: var(--brass); color:#2a1e05; font-weight:bold;
+    font-size:11px; min-width:20px; height:20px; border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4); pointer-events:none;
+    padding:0 4px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true"></div>
+    <div class="brand-text">
+      <h1>Golf<span class="title-suffix"> - Solitaire</span></h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="row top-row">
+        <div class="stockwaste">
+          <div class="pile slot" id="pile-stock" data-type="stock">
+            <div class="slot-mark">⛳</div>
+            <div class="stock-badge" id="stock-badge" style="display:none;"></div>
+          </div>
+        </div>
+        <div class="foundations">
+          <div class="pile slot" id="pile-foundation" data-type="foundation"><div class="slot-mark">⛳</div></div>
+        </div>
+      </div>
+      <div class="row tableau-row" id="tableau"></div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">STROKES <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+    <button class="bottombtn" id="btn-automove" title="Play any forced single moves"><span class="bicon">➤</span><span class="blabel">Auto Play</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="winmask" id="winmask">
+  <div class="winmask-modal">
+    <h2>Course Clear!</h2>
+    <p id="win-sub">Cleared in — </p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  </div>
+</div>
+
+<div class="winmask" id="nomovesmask">
+  <h2>No More Moves</h2>
+  <p>Looks like the round is over.</p>
+  <p id="nomoves-sub" style="margin-top:-4px;"></p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="nomoves-undo">Undo Last Move</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="nomoves-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">Golf Solitaire</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>Play the exposed (bottom) card of any tableau column onto the foundation pile if it's exactly <b>one rank higher or lower</b> — suit doesn't matter.</li>
+      <li>Ranks never wrap: a King can't take an Ace, and an Ace can't take a King.</li>
+      <li>Tap the stock pile to flip a new card onto the foundation when you're stuck. There's no reshuffle — once the stock runs out, that's it.</li>
+      <li>Clear all 7 columns to win. If you run out of moves with cards still on the table, the round ends there.</li>
+      <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make. <b>Auto Play</b> plays any column that's currently the only one able to move.</li>
+      <li>Score follows real Golf scoring: strokes = stock draws + cards left on the table. Lower is better — zero is a perfect round.</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Card back applies instantly. Timer/strokes too.</div>
+
+    <div class="field">
+      <label>Card Back</label>
+      <div class="backpicker" id="back-picker">
+        <div class="backswatch" data-val="back_6.webp"><img src="cards/back_6.webp" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.webp"><img src="cards/back_7.webp" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.webp"><img src="cards/back_9.webp" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.webp"><img src="cards/back_10.webp" alt="Back 10"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Strokes</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Testing</label>
+      <button class="textbtn" id="settings-preview-win" style="width:100%;">Preview Win Screen</button>
+      <div class="fieldnote">Plays the win cascade + dialog without touching your current game.</div>
+    </div>
+
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const E = window.SEngine;
+const PAGE_VERSION = '1.0';
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+const state = {
+  showTimer: false,
+  showScore: false,
+  backStyle: 'back_10.webp',
+  stock: [],
+  foundation: [],
+  tableau: [[],[],[],[],[],[],[]],
+  strokes: 0,
+  seconds: 0,
+  timerHandle: null,
+  cascadePlayed: false
+};
+const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp' };
+const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
+
+/* =========================================================
+   RULES
+   Suit never matters in Golf — only rank adjacency, and ranks never
+   wrap (no Ace-on-King or King-on-Ace).
+   ========================================================= */
+function canPlayOnFoundation(card, topCard){
+  if(!topCard) return false;
+  return Math.abs(E.rankValue(card.rank) - E.rankValue(topCard.rank)) === 1;
+}
+function findPileArray(pileType, key){
+  if(pileType==='tableau') return state.tableau[key];
+  if(pileType==='foundation') return state.foundation;
+  if(pileType==='stock') return state.stock;
+  return null;
+}
+// Every tableau column whose exposed (bottom/top-of-array) card is
+// currently playable onto the foundation — used by the hint scanner,
+// the no-moves check, and Auto Play's "only one option" guard.
+function findPlayableColumns(){
+  const top = state.foundation[state.foundation.length-1];
+  const cols = [];
+  for(let c=0;c<7;c++){
+    const pile = state.tableau[c];
+    if(!pile.length) continue;
+    if(canPlayOnFoundation(pile[pile.length-1], top)) cols.push(c);
+  }
+  return cols;
+}
+function drawFromStock(){
+  if(!state.stock.length) return; // no redeal in Golf — one pass only
+  undo.push();
+  const c = state.stock.pop();
+  c.faceUp = true;
+  state.foundation.push(c);
+  state.strokes++;
+  renderAll();
+}
+function canMoveExact(fromType, fromKey, fromIndex, toType, toKey){
+  if(fromType!=='tableau' || toType!=='foundation') return false;
+  const pile = state.tableau[fromKey];
+  if(!pile || fromIndex !== pile.length-1) return false;
+  const card = pile[fromIndex];
+  const top = state.foundation[state.foundation.length-1];
+  return canPlayOnFoundation(card, top);
+}
+// No widening in Golf — a column only ever offers its single exposed
+// card, there's no run to search back through the way Klondike does.
+function canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey){
+  return canMoveExact(fromType, fromKey, fromIndex, toType, toKey) ? fromIndex : -1;
+}
+function tryMove(fromType, fromKey, fromIndex, toType, toKey){
+  if(!canMoveExact(fromType, fromKey, fromIndex, toType, toKey)) return false;
+  undo.push();
+  const pile = state.tableau[fromKey];
+  const card = pile.pop();
+  state.foundation.push(card);
+  renderAll();
+  return true;
+}
+function tryMoveAuto(fromType, fromKey, fromIndex, toType, toKey){
+  const idx = canMoveWithWiden(fromType, fromKey, fromIndex, toType, toKey);
+  if(idx<0) return false;
+  return tryMove(fromType, fromKey, idx, toType, toKey);
+}
+function autoMoveToFoundation(fromType, fromKey, fromIndex){
+  if(fromType!=='tableau') return false;
+  return tryMoveAuto(fromType, fromKey, fromIndex, 'foundation', 'foundation');
+}
+// Auto Play only ever takes a move when exactly one column can move —
+// a genuinely forced play, not a choice the player would want made
+// for them. The moment two or more columns are both playable, it
+// stops and leaves the decision to the player.
+function autoMoveAll(){
+  let movedAny = false, guard = 0;
+  while(guard<200){
+    guard++;
+    const cols = findPlayableColumns();
+    if(cols.length!==1) break;
+    const c = cols[0];
+    if(!tryMove('tableau', c, state.tableau[c].length-1, 'foundation', 'foundation')) break;
+    movedAny = true;
+  }
+  return movedAny;
+}
+
+/* =========================================================
+   HINT / NO-MOVES SCANNER
+   ========================================================= */
+function findAnyMove(){
+  const cols = findPlayableColumns();
+  if(cols.length) return {type:'tableau-foundation', fromKey:cols[0]};
+  if(state.stock.length) return {type:'draw'};
+  return null;
+}
+function findCardEl(pileType, pileKey, index){
+  return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
+}
+function showHint(){
+  const move = findAnyMove();
+  const toastEl = document.getElementById('hint-toast');
+  if(!move){ E.showToast(toastEl, "No moves left — try Undo or New Game."); return; }
+  if(move.type==='draw'){
+    E.showToast(toastEl, 'Draw from the stock.');
+    E.pulse(document.getElementById('pile-stock'));
+    return;
+  }
+  const col = move.fromKey;
+  E.showToast(toastEl, 'Play the exposed card in column '+(col+1)+'.');
+  E.pulse(findCardEl('tableau', col, state.tableau[col].length-1));
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function ensureTableauCols(){
+  const row = document.getElementById('tableau');
+  if(row.children.length===7) return;
+  row.innerHTML = '';
+  for(let i=0;i<7;i++){
+    const col = document.createElement('div');
+    col.className = 'tcol';
+    col.dataset.index = i;
+    col.innerHTML = '<div class="pile slot"></div>';
+    row.appendChild(col);
+  }
+}
+function makeCardEl(card, pileType, pileKey, index, covered){
+  return E.makeCardEl(card, pileType, pileKey, index, covered, state.backStyle, E.attachCardEvents);
+}
+function renderAll(){
+  E.purgeStrayCards();
+  ensureTableauCols();
+  E.fitBoard({
+    columns: 7,
+    getMaxStackDepth: ()=> Math.max(5, ...state.tableau.map(c=>c.length)),
+    minStackForFit: 5
+  });
+  renderHUD();
+  renderStock();
+  renderFoundation();
+  renderTableau();
+  const won = checkWin();
+  if(!won) checkNoMoves();
+}
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.strokes;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+}
+function renderStock(){
+  const p = document.getElementById('pile-stock');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  if(state.stock.length){
+    const top = state.stock[state.stock.length-1];
+    const fake = {id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false};
+    p.appendChild(makeCardEl(fake,'stock','stock',state.stock.length-1));
+  }
+  const badge = document.getElementById('stock-badge');
+  badge.textContent = state.stock.length;
+  badge.style.display = state.stock.length>0 ? 'flex' : 'none';
+}
+function renderFoundation(){
+  const p = document.getElementById('pile-foundation');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  if(state.foundation.length){
+    const i = state.foundation.length-1;
+    p.appendChild(makeCardEl(state.foundation[i],'foundation','foundation',i));
+  }
+}
+function renderTableau(){
+  const metrics = E.cardMetrics(0.183);
+  for(let c=0;c<7;c++){
+    const col = document.querySelector('.tcol[data-index="'+c+'"]');
+    col.querySelectorAll('.card').forEach(e=>e.remove());
+    const pile = state.tableau[c];
+    pile.forEach((card, i)=>{
+      const el = makeCardEl(card,'tableau',c,i, i<pile.length-1);
+      el.style.top = (i*metrics.overlap)+'px';
+      col.appendChild(el);
+    });
+    E.setColumnHeight(col, pile.length, metrics);
+  }
+}
+
+/* =========================================================
+   WIN + CASCADE + GAME OVER
+   ========================================================= */
+function tableauLeft(){ return state.tableau.reduce((n,col)=>n+col.length,0); }
+function checkWin(){
+  if(tableauLeft()===0){
+    clearInterval(state.timerHandle);
+    if(!state.cascadePlayed){
+      state.cascadePlayed = true;
+      launchCascade();
+      const m = Math.floor(state.seconds/60), s = state.seconds%60;
+      document.getElementById('win-sub').textContent = state.showTimer
+        ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · '+state.strokes+' strokes':''))
+        : (state.showScore ? (state.strokes+' strokes') : 'Well played.');
+      document.getElementById('win-newgame').textContent = 'Play Again';
+      setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+    }
+    return true;
+  }
+  return false;
+}
+function checkNoMoves(){
+  const mask = document.getElementById('nomovesmask');
+  if(state.stock.length===0 && findPlayableColumns().length===0){
+    const left = tableauLeft();
+    document.getElementById('nomoves-sub').textContent =
+      left+' left on the table · '+state.strokes+' draws · score '+(state.strokes+left);
+    mask.classList.add('show');
+  } else {
+    mask.classList.remove('show');
+  }
+}
+function launchCascade(){
+  const source = document.getElementById('pile-foundation');
+  const cards = state.foundation.slice().reverse().map(card=>({ card, sourceEl: source }));
+  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 70, gravity: 0.3, bounceDamp: 0.6, trail: true, sequential: true, sequentialMaxWait: 150 });
+}
+let previewingWin = false;
+let previewCascadeLayer = null;
+function previewWinScreen(){
+  previewingWin = true;
+  const deck = E.shuffle(E.buildDeck());
+  deck.forEach(c=> c.faceUp = true);
+  const source = document.getElementById('pile-foundation');
+  const cards = deck.map(card=>({ card, sourceEl: source }));
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0.183),
+    { stagger: 70, gravity: 0.3, bounceDamp: 0.6, trail: true, sequential: true, sequentialMaxWait: 150 });
+  document.getElementById('win-sub').textContent = 'Preview — not a real win';
+  document.getElementById('win-newgame').textContent = 'Close Preview';
+  setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+}
+
+/* =========================================================
+   UNDO / TIMER / HUD
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({ stock: state.stock, foundation: state.foundation, tableau: state.tableau, strokes: state.strokes }),
+  (snap)=>{ state.stock=snap.stock; state.foundation=snap.foundation; state.tableau=snap.tableau; state.strokes=snap.strokes; E.clearSelection(); renderAll(); },
+  document.getElementById('btn-undo')
+);
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+
+/* =========================================================
+   DEAL / NEW GAME
+   ========================================================= */
+function newGame(){
+  clearInterval(state.timerHandle);
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.backStyle = pendingSettings.backStyle;
+
+  const deck = E.shuffle(E.buildDeck());
+  state.tableau = [[],[],[],[],[],[],[]];
+  for(let row=0; row<5; row++){
+    for(let col=0; col<7; col++){
+      const card = deck.pop();
+      card.faceUp = true;
+      state.tableau[col].push(card);
+    }
+  }
+  state.stock = deck; // remaining 17
+  const first = state.stock.pop();
+  first.faceUp = true;
+  state.foundation = [first];
+  state.strokes = 0;
+  state.seconds = 0;
+  state.cascadePlayed = false;
+  undo.reset();
+  E.clearSelection();
+  const oldCascade = document.getElementById('cascade-layer');
+  if(oldCascade) oldCascade.remove();
+
+  document.getElementById('winmask').classList.remove('show');
+  document.getElementById('nomovesmask').classList.remove('show');
+  applyHudVisibility();
+  syncTimerInterval();
+  renderAll();
+}
+
+/* =========================================================
+   INTERACTION WIRING
+   ========================================================= */
+function isCardMovable(card, pileType, pileKey, index){
+  if(pileType!=='tableau') return false; // foundation/stock cards never move
+  const pile = state.tableau[pileKey];
+  return index === pile.length-1;
+}
+function resolveDropTarget(x,y){
+  const el = document.elementFromPoint(x,y);
+  if(!el) return null;
+  const slot = el.closest('#pile-foundation');
+  if(slot) return { type:'foundation', key:'foundation', highlightEl:slot };
+  return null;
+}
+function getAllZones(){
+  const el = document.getElementById('pile-foundation');
+  return el ? [{type:'foundation', key:'foundation', el}] : [];
+}
+const resolveHoverTargetPadded = E.makePaddedResolver(getAllZones, 30);
+
+E.initInteractions({
+  findPileArray,
+  isCardMovable,
+  resolveDropTarget,
+  resolveHoverTargetPadded,
+  canMoveWithWiden,
+  tryMoveAuto,
+  autoMoveToFoundation,
+  onRenderNeeded: renderAll
+});
+
+document.getElementById('pile-stock').addEventListener('click', ()=>{ E.clearSelection(); drawFromStock(); });
+document.getElementById('pile-foundation').addEventListener('click', ()=>{
+  const sel = E.getSelected();
+  if(sel){ tryMoveAuto(sel.pileType, sel.pileKey, sel.index, 'foundation', 'foundation'); E.clearSelection(); }
+});
+
+/* =========================================================
+   SETTINGS / DIALOGS
+   ========================================================= */
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility, syncTimerInterval,
+  onRenderNeeded: renderAll,
+  extraOnOpen: refreshVersionInfo
+});
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'Golf.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
+});
+document.getElementById('settings-preview-win').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  previewWinScreen();
+});
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('winmask').classList.remove('show');
+  if(previewCascadeLayer){ previewCascadeLayer.remove(); previewCascadeLayer = null; }
+  if(previewingWin){
+    previewingWin = false;
+    document.getElementById('win-newgame').textContent = 'Play Again';
+    return; // real game underneath was never touched — just close the dialog
+  }
+  newGame();
+});
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-automove').addEventListener('click', ()=>{ E.clearSelection(); autoMoveAll(); });
+document.getElementById('btn-hint').addEventListener('click', ()=>{ E.clearSelection(); showHint(); });
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('nomoves-undo').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  undo.undo();
+});
+document.getElementById('nomoves-newgame').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  newGame();
+});
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{
+    E.fitBoard({ columns:7, getMaxStackDepth:()=>Math.max(5,...state.tableau.map(c=>c.length)), minStackForFit:5 });
+  }, 100);
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+E.preloadAllCardImages(KNOWN_BACK_FILES);
+ensureTableauCols();
+newGame();
+
+})();
+</script>
+</body>
+</html>
