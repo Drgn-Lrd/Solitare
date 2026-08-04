@@ -2,31 +2,25 @@
 <!--
     Golf.html
     Written by: Johnathon Largent
-    Version 1.0
+    Version 1.1
 
-   First build. Golf Solitaire on the shared engine.js + styles.css
-   foundation — 7 tableau columns of 5 face-up cards (35 total), a
-   17-card stock, and a single foundation/waste pile that starts with
-   one card flipped from the stock (leaving 16 draws). Any exposed
-   tableau card exactly one rank above or below the foundation's top
-   card can be played onto it, suit doesn't matter, and — matching
-   traditional rules — ranks never wrap (no Ace-on-King or
-   King-on-Ace). No redeal once the stock runs out. Reuses
-   engine.js's drag/drop + click-to-move pipeline untouched: only
-   tableau top cards are ever movable, and the foundation pile is the
-   only legal drop target. Score follows real Golf scoring (strokes =
-   stock draws + cards left in the tableau, lower is better) instead
-   of Klondike's point total.
+   Stock + foundation moved down to a bottom-row (traditional Golf
+   layout — tableau up top, draw/waste pile at the bottom), same
+   table-felt-as-flex-column + margin-top:auto technique Spider uses
+   for its own bottom row, instead of the Klondike-style top-row this
+   first build launched with. Also adds a Settings toggle for wrap
+   (Easy Golf variant: Ace plays on King and King plays on Ace) — off
+   by default so traditional no-wrap rules still apply out of the box.
 -->
 <!--
   Golf — built on the shared engine.js + styles.css extracted from
   Klondike/FreeCell. This file only contains what's actually specific
   to Golf: the 7x5 tableau deal, the single foundation pile, the
-  rank-adjacency rule (no wrap), and scoring. Everything else —
-  drag/drop, click-to-move, undo, settings shell, hint pulse/toast,
-  win cascade, screen-fit sizing, card asset loading/fallback — comes
-  from engine.js untouched, so a fix made there benefits every game in
-  the suite automatically.
+  rank-adjacency rule (no wrap unless the Wrap setting is on), and
+  scoring. Everything else — drag/drop, click-to-move, undo, settings
+  shell, hint pulse/toast, win cascade, screen-fit sizing, card asset
+  loading/fallback — comes from engine.js untouched, so a fix made
+  there benefits every game in the suite automatically.
 -->
 <html lang="en">
 <head>
@@ -69,6 +63,15 @@
     box-shadow: 0 2px 4px rgba(0,0,0,.4); pointer-events:none;
     padding:0 4px;
   }
+
+  /* table-felt becomes its own flex column so the bottom row can be
+     pinned to the true bottom edge via margin-top:auto below — same
+     technique Spider uses for its own draw pile, instead of the
+     shared .top-row every other game uses. Real Golf traditionally
+     puts the stock/waste at the bottom of the layout, under the
+     tableau, not up top. */
+  .table-felt{ display:flex; flex-direction:column; }
+  .bottom-row{ justify-content:center; align-items:flex-end; gap: clamp(24px,6vw,64px); margin-top:auto; padding-top: clamp(10px,2vw,20px); }
 </style>
 </head>
 <body>
@@ -93,7 +96,8 @@
 <div class="stage">
   <div class="table-frame">
     <div class="table-felt">
-      <div class="row top-row">
+      <div class="row tableau-row" id="tableau"></div>
+      <div class="row bottom-row">
         <div class="stockwaste">
           <div class="pile slot" id="pile-stock" data-type="stock">
             <div class="slot-mark">⛳</div>
@@ -104,7 +108,6 @@
           <div class="pile slot" id="pile-foundation" data-type="foundation"><div class="slot-mark">⛳</div></div>
         </div>
       </div>
-      <div class="row tableau-row" id="tableau"></div>
     </div>
   </div>
 </div>
@@ -156,7 +159,7 @@
     <div class="sub">Golf Solitaire</div>
     <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
       <li>Play the exposed (bottom) card of any tableau column onto the foundation pile if it's exactly <b>one rank higher or lower</b> — suit doesn't matter.</li>
-      <li>Ranks never wrap: a King can't take an Ace, and an Ace can't take a King.</li>
+      <li>Ranks never wrap: a King can't take an Ace, and an Ace can't take a King — unless you turn on Wrap in Settings (Easy Golf variant).</li>
       <li>Tap the stock pile to flip a new card onto the foundation when you're stuck. There's no reshuffle — once the stock runs out, that's it.</li>
       <li>Clear all 7 columns to win. If you run out of moves with cards still on the table, the round ends there.</li>
       <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make. <b>Auto Play</b> plays any column that's currently the only one able to move.</li>
@@ -195,6 +198,13 @@
         <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
       </div>
     </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Allow Wrap (A↔K)</span>
+        <label class="switch"><input type="checkbox" id="tog-wrap"><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">Easy Golf variant: lets an Ace play on a King and a King play on an Ace. Off by default to match traditional rules.</div>
+    </div>
 
     <div class="field">
       <label>Testing</label>
@@ -220,7 +230,7 @@
 (function(){
 "use strict";
 const E = window.SEngine;
-const PAGE_VERSION = '1.0';
+const PAGE_VERSION = '1.1';
 
 /* =========================================================
    GAME STATE
@@ -228,6 +238,7 @@ const PAGE_VERSION = '1.0';
 const state = {
   showTimer: false,
   showScore: false,
+  wrapEnabled: false,
   backStyle: 'back_10.webp',
   stock: [],
   foundation: [],
@@ -237,17 +248,24 @@ const state = {
   timerHandle: null,
   cascadePlayed: false
 };
-const pendingSettings = { showTimer:false, showScore:false, backStyle:'back_10.webp' };
+const pendingSettings = { showTimer:false, showScore:false, wrapEnabled:false, backStyle:'back_10.webp' };
 const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
 
 /* =========================================================
    RULES
-   Suit never matters in Golf — only rank adjacency, and ranks never
-   wrap (no Ace-on-King or King-on-Ace).
+   Suit never matters in Golf — only rank adjacency. Ranks don't wrap
+   by default (no Ace-on-King or King-on-Ace) — the Wrap setting
+   (Easy Golf variant, off by default) makes that one pair adjacent
+   too, on top of the normal +/-1 check.
    ========================================================= */
 function canPlayOnFoundation(card, topCard){
   if(!topCard) return false;
-  return Math.abs(E.rankValue(card.rank) - E.rankValue(topCard.rank)) === 1;
+  if(Math.abs(E.rankValue(card.rank) - E.rankValue(topCard.rank)) === 1) return true;
+  if(state.wrapEnabled){
+    const isAK = (card.rank==='A' && topCard.rank==='K') || (card.rank==='K' && topCard.rank==='A');
+    if(isAK) return true;
+  }
+  return false;
 }
 function findPileArray(pileType, key){
   if(pileType==='tableau') return state.tableau[key];
@@ -498,6 +516,7 @@ function newGame(){
   clearInterval(state.timerHandle);
   state.showTimer = pendingSettings.showTimer;
   state.showScore = pendingSettings.showScore;
+  state.wrapEnabled = pendingSettings.wrapEnabled;
   state.backStyle = pendingSettings.backStyle;
 
   const deck = E.shuffle(E.buildDeck());
@@ -577,7 +596,23 @@ const settingsShell = E.wireSettingsShell({
   togScoreEl: document.getElementById('tog-score'),
   applyHudVisibility, syncTimerInterval,
   onRenderNeeded: renderAll,
-  extraOnOpen: refreshVersionInfo
+  extraSnapshot: ()=>({ wrapEnabled: pendingSettings.wrapEnabled }),
+  extraRestore: (snap)=>{
+    pendingSettings.wrapEnabled = snap.wrapEnabled;
+    state.wrapEnabled = snap.wrapEnabled;
+    document.getElementById('tog-wrap').checked = snap.wrapEnabled;
+    renderAll();
+  },
+  extraOnOpen: ()=>{
+    pendingSettings.wrapEnabled = state.wrapEnabled;
+    document.getElementById('tog-wrap').checked = state.wrapEnabled;
+    refreshVersionInfo();
+  }
+});
+document.getElementById('tog-wrap').addEventListener('change', (e)=>{
+  pendingSettings.wrapEnabled = e.target.checked;
+  state.wrapEnabled = e.target.checked;
+  renderAll(); // legality just changed — re-check hint/no-moves state immediately
 });
 function refreshVersionInfo(){
   const stylesVersion = E.getStylesheetVersion() || 'unknown';
