@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<!--
+    TriPeaks.html
+    Written by: Johnathon Largent
+    Version 1.0
+
+   New game: TriPeaks. Three interlocking pyramids of 28 tableau cards
+   (rows of 10/9/6/3 — base row closest to the viewer and dealt
+   face-up, everything above it face-down until BOTH of its two
+   supporting cards below are cleared) built on the shared engine.js +
+   styles.css exactly like Klondike/FreeCell: stock + waste only, no
+   foundations. Tap any uncovered peak card one rank above or below
+   the waste pile's top card (Ace/King wrap is on by default — toggle
+   in Settings) to send it to waste; tap the stock to draw when
+   nothing's playable (one-way, no reshuffle-back — matches most
+   TriPeaks implementations). Win by clearing all 28 peak cards;
+   leftover stock is fine.
+
+   Board sizing/positioning (fitPeaksBoard + PEAK_LAYOUT below) is
+   bespoke to this file rather than SEngine.fitBoard/tableau columns —
+   a fixed 4-row pyramid doesn't fit that helper's variable-depth
+   tableau-column assumptions. It still reads E.CARD_RATIO from
+   engine.js instead of re-deriving its own copy, so the two can't
+   drift apart the way the old duplicated column-height formula did.
+   The pyramid's exact proportions (row step = 0.619 * card height,
+   base row cards edge-to-edge with no horizontal gap) match the mini
+   preview already sitting in index.html's TriPeaks tile, just scaled
+   up to real card size, so the "coming soon" preview and the real
+   board read as the same shape.
+
+   Interactions are deliberately NOT wired through SEngine.initInteractions
+   — that system is built for drag/click-to-move BETWEEN piles with a
+   destination choice, which doesn't apply here (a peak card has
+   exactly one legal destination: the waste pile). Peak/stock cards
+   get plain click handlers instead; everything else shared (card
+   art/back building, preload, undo stack, settings shell, toast/hint
+   pulse, win cascade, HUD visibility) still comes from engine.js
+   untouched.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>TriPeaks</title>
+<link rel="preload" as="image" href="images/TriPeaks.webp">
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* TriPeaks-only background: same pattern as FreeCell.html — swaps
+     the shared black/vignette body background for this preloaded
+     photo. The wood frame + green felt sit on their own elements on
+     top, already see-through via --table-opacity (styles.css), so
+     the photo shows through both layers without any extra CSS here. */
+  html,body{
+    background-image: linear-gradient(rgba(8,5,2,.55), rgba(8,5,2,.7)), url('images/TriPeaks.webp');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+
+  /* Crest: the real background photo filling the circle (cover), same
+     "real asset over CSS approximation" preference as everywhere else
+     in the suite — just not a hand-measured crop like FreeCell's king
+     yet, since that needs eyeballing the actual image. Easy to tighten
+     later with an exact background-position/-size once that's done. */
+  .brand .crest{
+    background-image: url('images/TriPeaks.webp');
+    background-size: cover;
+    background-position: center 35%;
+    box-shadow: 0 0 0 2px #0006, 0 2px 6px #0008, inset 0 0 0 2px var(--brass);
+  }
+
+  /* The pyramid board. Deliberately its own row/wrap rather than
+     reusing .tableau-row (which carries a width formula tied to
+     variable-depth tableau columns that doesn't apply here) — width
+     and height are both set explicitly in JS from the current
+     --card-w, see fitPeaksBoard()/renderPeaks() below. */
+  .peaks-row{ justify-content:center; }
+  .peaks-wrap{ position:relative; flex-shrink:0; }
+  .peaks-wrap .card{ cursor:default; }
+
+  #pile-stock{ cursor:pointer; }
+  #pile-stock .card{ cursor:pointer; }
+  #pile-waste .card{ cursor:default; }
+
+  /* Small "cards remaining" badge over the stock pile — the number is
+     genuinely useful (there's no recycle in TriPeaks, so knowing how
+     many draws are left matters) and there's already a spare corner
+     to put it in. */
+  .stock-count{
+    position:absolute; right:4px; bottom:4px; z-index:2; pointer-events:none;
+    font-size:11px; letter-spacing:.5px; color:var(--ivory);
+    background:rgba(0,0,0,.55); padding:1px 6px; border-radius:8px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="crest" aria-hidden="true"></div>
+    <div class="brand-text">
+      <h1>TriPeaks</h1>
+      <div class="brand-actions">
+        <a class="home-btn" href="./" title="Home" aria-label="Home">🏠</a>
+        <button class="textbtn newgame-btn" id="btn-newgame">New Game</button>
+      </div>
+    </div>
+  </div>
+  <div class="hud">
+    <button class="iconbtn" id="btn-help" title="How to play">?</button>
+    <button class="iconbtn" id="btn-settings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<div class="stage">
+  <div class="table-frame">
+    <div class="table-felt">
+      <div class="row top-row">
+        <div class="stockwaste">
+          <div class="pile slot" id="pile-stock" data-type="stock">
+            <div class="slot-mark">▼</div>
+            <div class="stock-count" id="stock-count"></div>
+          </div>
+          <div class="pile slot" id="pile-waste" data-type="waste"></div>
+        </div>
+        <div class="chip" id="peaks-left-chip">CARDS <b id="peaks-left-val">28</b></div>
+      </div>
+      <div class="row peaks-row">
+        <div class="peaks-wrap" id="peaks-wrap"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint-toast" id="hint-toast"></div>
+
+<div class="bottombar">
+  <div class="chip" id="chip-score" style="display:none">SCORE <b id="score-val">0</b></div>
+  <div class="bottombar-actions">
+    <button class="bottombtn" id="btn-undo" title="Undo"><span class="bicon">↺</span><span class="blabel">Undo</span></button>
+    <button class="bottombtn" id="btn-hint" title="Hint"><span class="bicon">✦</span><span class="blabel">Hint</span></button>
+  </div>
+  <div class="chip" id="chip-time" style="display:none">TIME <b id="time-val">0:00</b></div>
+</div>
+
+<div class="winmask" id="winmask">
+  <div class="winmask-modal">
+    <h2>You Win!</h2>
+    <p id="win-sub">Cleared in — </p>
+    <button class="textbtn primary" style="padding:10px 24px;" id="win-newgame">Play Again</button>
+  </div>
+</div>
+
+<div class="winmask" id="nomovesmask">
+  <h2>No More Moves</h2>
+  <p>Looks like the game is stuck.</p>
+  <div style="display:flex; gap:12px;">
+    <button class="textbtn" style="padding:10px 20px;" id="nomoves-undo">Undo Last Move</button>
+    <button class="textbtn primary" style="padding:10px 20px;" id="nomoves-newgame">New Game</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Start New Game?</h3>
+    <div class="sub" style="margin-bottom:6px;">Your current game will be lost.</div>
+    <div class="modal-actions">
+      <button class="textbtn" id="confirm-cancel">Cancel</button>
+      <button class="textbtn primary" id="confirm-yes">Start New Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="help-overlay">
+  <div class="modal">
+    <h3>How to Play</h3>
+    <div class="sub">TriPeaks Solitaire</div>
+    <ul style="margin:0 0 16px; padding-left:18px; font-size:14px; line-height:1.7; color:#e7f2ea;">
+      <li>28 cards form three peaks. Only the bottom row starts face-up — a card higher up flips face-up once BOTH cards directly beneath it are cleared.</li>
+      <li>Tap any uncovered peak card that's exactly one rank above or below the top waste card to play it.</li>
+      <li>By default Ace and King count as adjacent (K → A → 2) — turn this off in Settings for stricter rules.</li>
+      <li>Tap the stock pile to draw a new waste card when nothing's playable. The stock doesn't reshuffle once it runs out.</li>
+      <li>Clear all 28 peak cards to win — cards left in the stock don't matter.</li>
+      <li><b>Undo</b> reverses your last move. <b>Hint</b> highlights one move you can currently make.</li>
+    </ul>
+    <div class="modal-actions">
+      <button class="textbtn primary" id="help-close" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="sub">Card back applies instantly. Timer/score too.</div>
+
+    <div class="field">
+      <label>Card Back</label>
+      <div class="backpicker" id="back-picker">
+        <div class="backswatch" data-val="back_6.webp"><img src="cards/back_6.webp" alt="Back 6"></div>
+        <div class="backswatch" data-val="back_7.webp"><img src="cards/back_7.webp" alt="Back 7"></div>
+        <div class="backswatch" data-val="back_9.webp"><img src="cards/back_9.webp" alt="Back 9"></div>
+        <div class="backswatch" data-val="back_10.webp"><img src="cards/back_10.webp" alt="Back 10"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Timer</span>
+        <label class="switch"><input type="checkbox" id="tog-timer"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Show Score</span>
+        <label class="switch"><input type="checkbox" id="tog-score"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggrow">
+        <span>Ace/King Wrap</span>
+        <label class="switch"><input type="checkbox" id="tog-wrap" checked><span class="slider"></span></label>
+      </div>
+      <div class="fieldnote">When on, Ace and King count as one rank apart (K→A→2), same as most TriPeaks implementations. Turn off for stricter Ace-low-only rules.</div>
+    </div>
+
+    <div class="field">
+      <label>Testing</label>
+      <button class="textbtn" id="settings-preview-win" style="width:100%;">Preview Win Screen</button>
+      <div class="fieldnote">Plays the win cascade + dialog without touching your current game.</div>
+    </div>
+
+    <div class="field">
+      <label>About</label>
+      <div class="fieldnote" id="version-info" style="margin-top:0;"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="textbtn" id="settings-cancel">Cancel</button>
+      <button class="textbtn" id="settings-apply">Apply</button>
+      <button class="textbtn primary" id="settings-newgame">Apply &amp; New Game</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+const E = window.SEngine;
+const PAGE_VERSION = '2.0';
+const RANKS = E.RANKS;
+const KNOWN_BACK_FILES = ['back_6.webp','back_7.webp','back_9.webp','back_10.webp'];
+
+/* =========================================================
+   PYRAMID GEOMETRY
+   28 flat slots, grouped base→apex: row0=base(10), row1=mid(9),
+   row2=upper(6, with a gap at each of the two peak seams), row3=apex
+   (3, one per peak). x is in units of one card-width, measured from
+   the pyramid's left edge (base row is edge-to-edge, x=0..9). Every
+   upper-row card sits at the exact horizontal midpoint of the two
+   cards below it that cover it — same relationship the mini preview
+   in index.html already uses, just derived generally here instead of
+   hand-placed. See findChildren() for how "covers" is computed from
+   that midpoint relationship.
+   ========================================================= */
+const PEAK_ROW_STEP_FRAC = 0.619; // vertical step between rows, as a fraction of card height — matches index.html's mini pyramid preview (13px step / 21px card height)
+const ROW_DEFS = [
+  { xs:[0,1,2,3,4,5,6,7,8,9] },                 // row0 — base, always uncovered
+  { xs:[0.5,1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5] },  // row1 — mid
+  { xs:[1,2,4,5,7,8] },                          // row2 — upper (seam gaps at the 2 peak boundaries)
+  { xs:[1.5,4.5,7.5] }                           // row3 — apex, one per peak
+];
+function buildPeakLayout(){
+  const layout = [];
+  let offset = 0;
+  ROW_DEFS.forEach((def, row)=>{
+    def.flatOffset = offset;
+    def.xs.forEach((x, i)=> layout.push({ flat: offset+i, row, x }));
+    offset += def.xs.length;
+  });
+  layout.forEach(slot=>{
+    if(slot.row===0){ slot.children = []; return; }
+    const childDef = ROW_DEFS[slot.row-1];
+    const i1 = childDef.xs.indexOf(slot.x-0.5);
+    const i2 = childDef.xs.indexOf(slot.x+0.5);
+    slot.children = [childDef.flatOffset+i1, childDef.flatOffset+i2];
+  });
+  return layout;
+}
+const PEAK_LAYOUT = buildPeakLayout(); // 28 entries, index === flat slot number
+
+/* =========================================================
+   GAME STATE
+   ========================================================= */
+const state = {
+  showTimer: false,
+  showScore: false,
+  wrapEnabled: true,
+  backStyle: 'back_10.webp',
+  peaks: [],   // 28 slots, card object or null once played
+  stock: [], waste: [],
+  score: 0,
+  seconds: 0,
+  timerHandle: null,
+  cascadePlayed: false
+};
+const pendingSettings = { showTimer:false, showScore:false, wrapEnabled:true, backStyle:'back_10.webp' };
+
+/* =========================================================
+   RULES
+   ========================================================= */
+function isUncovered(i){
+  const children = PEAK_LAYOUT[i].children;
+  return children.every(ci=> state.peaks[ci]===null);
+}
+function topWaste(){ return state.waste.length ? state.waste[state.waste.length-1] : null; }
+function ranksAdjacent(rankA, rankB, wrap){
+  const a = E.rankValue(rankA)-1, b = E.rankValue(rankB)-1; // 0-indexed, A=0..K=12
+  if(Math.abs(a-b)===1) return true;
+  if(wrap && ((a===0&&b===12)||(a===12&&b===0))) return true;
+  return false;
+}
+function canPlayPeak(i){
+  const card = state.peaks[i];
+  if(!card || !isUncovered(i)) return false;
+  const top = topWaste();
+  return !!top && ranksAdjacent(card.rank, top.rank, state.wrapEnabled);
+}
+function peaksRemaining(){ return state.peaks.filter(c=>c!==null).length; }
+
+function playPeak(i){
+  const card = state.peaks[i];
+  if(!card || !isUncovered(i)) return false;
+  const top = topWaste();
+  if(!top || !ranksAdjacent(card.rank, top.rank, state.wrapEnabled)){
+    E.showToast(document.getElementById('hint-toast'), "Doesn't match the waste pile.");
+    return false;
+  }
+  undo.push();
+  state.peaks[i] = null;
+  state.waste.push({ ...card, faceUp:true });
+  addScore(10);
+  renderAll();
+  return true;
+}
+function drawStock(){
+  if(!state.stock.length){
+    E.showToast(document.getElementById('hint-toast'), 'No cards left in the stock.');
+    return false;
+  }
+  undo.push();
+  const c = state.stock.pop();
+  c.faceUp = true;
+  state.waste.push(c);
+  renderAll();
+  return true;
+}
+
+/* =========================================================
+   HINT / NO-MOVES SCANNER
+   ========================================================= */
+function findAnyMove(){
+  for(let i=0;i<PEAK_LAYOUT.length;i++){
+    if(canPlayPeak(i)) return { type:'peak', index:i };
+  }
+  if(state.stock.length) return { type:'draw' };
+  return null;
+}
+function findCardEl(pileType, pileKey, index){
+  return document.querySelector('.card[data-pile="'+pileType+'"][data-key="'+pileKey+'"][data-index="'+index+'"]');
+}
+function showHint(){
+  const move = findAnyMove();
+  const toastEl = document.getElementById('hint-toast');
+  if(!move){ E.showToast(toastEl, "No moves left — try Undo or New Game."); return; }
+  if(move.type==='draw'){
+    E.showToast(toastEl, 'Draw from the stock.');
+    E.pulse(document.getElementById('pile-stock'));
+    return;
+  }
+  E.showToast(toastEl, 'Play this card onto the waste pile.');
+  E.pulse(findCardEl('peak', move.index, move.index));
+}
+function checkNoMoves(){
+  const mask = document.getElementById('nomovesmask');
+  mask.classList.toggle('show', !findAnyMove());
+}
+
+/* =========================================================
+   BOARD SIZING
+   Bespoke to TriPeaks' fixed 4-row/10-wide pyramid shape — see the
+   file's top comment for why this doesn't reuse SEngine.fitBoard.
+   Still reads E.CARD_RATIO rather than re-deriving it.
+   ========================================================= */
+function fitPeaksBoard(){
+  const header = document.querySelector('header');
+  const stage = document.querySelector('.stage');
+  const frame = document.querySelector('.table-frame');
+  const felt = document.querySelector('.table-felt');
+  const bottombar = document.querySelector('.bottombar');
+  if(!header || !stage || !frame || !felt) return;
+
+  const headerH = header.getBoundingClientRect().height;
+  const bottombarH = bottombar ? bottombar.getBoundingClientRect().height : 0;
+  const stageCS = getComputedStyle(stage);
+  const frameCS = getComputedStyle(frame);
+  const feltCS = getComputedStyle(felt);
+  const vPad = parseFloat(stageCS.paddingTop)+parseFloat(stageCS.paddingBottom)
+             + parseFloat(frameCS.paddingTop)+parseFloat(frameCS.paddingBottom)
+             + parseFloat(feltCS.paddingTop)+parseFloat(feltCS.paddingBottom);
+  const hPad = parseFloat(stageCS.paddingLeft)+parseFloat(stageCS.paddingRight)
+             + parseFloat(frameCS.paddingLeft)+parseFloat(frameCS.paddingRight)
+             + parseFloat(feltCS.paddingLeft)+parseFloat(feltCS.paddingRight);
+
+  const topRowEl = document.querySelector('.top-row');
+  const topRowH = topRowEl ? topRowEl.getBoundingClientRect().height : 0;
+  const topRowGap = topRowEl ? (parseFloat(getComputedStyle(topRowEl).marginBottom) || 18) : 18;
+
+  const availH = window.innerHeight - headerH - bottombarH - vPad - topRowH - topRowGap - 10;
+  const availW = Math.min(window.innerWidth, 1240) - hPad - 8;
+
+  // Vertical: total pyramid height = cardH * (1 + 3*PEAK_ROW_STEP_FRAC)
+  // (apex at top=0, base's own top offset is 3 row-steps down, plus
+  // one more card height for the base row itself).
+  const heightMult = 1 + 3*PEAK_ROW_STEP_FRAC;
+  const cardHByHeight = availH / heightMult;
+  const cardWByHeight = cardHByHeight / E.CARD_RATIO;
+
+  // Horizontal: the base row is 10 cards wide, edge-to-edge, no gap.
+  const cardWByWidth = availW / 10;
+
+  const maxCardW = 104;
+  const cardW = Math.min(cardWByHeight, cardWByWidth, maxCardW);
+  document.documentElement.style.setProperty('--card-w', Math.round(cardW)+'px');
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function makeCardEl(card, pileType, pileKey, index, covered, attachFn){
+  return E.makeCardEl(card, pileType, pileKey, index, covered, state.backStyle, attachFn);
+}
+function renderAll(){
+  E.purgeStrayCards();
+  fitPeaksBoard();
+  renderHUD();
+  renderStock();
+  renderWaste();
+  renderPeaks();
+  const won = checkWin();
+  if(!won) checkNoMoves();
+}
+function renderHUD(){
+  document.getElementById('score-val').textContent = state.score;
+  const m = Math.floor(state.seconds/60), s = state.seconds%60;
+  document.getElementById('time-val').textContent = m+':'+String(s).padStart(2,'0');
+  document.getElementById('peaks-left-val').textContent = peaksRemaining();
+}
+function renderStock(){
+  const p = document.getElementById('pile-stock');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  document.getElementById('stock-count').textContent = state.stock.length ? state.stock.length : '';
+  if(state.stock.length){
+    const top = state.stock[state.stock.length-1];
+    const fake = { id:'stocktop', rank:top.rank, suit:top.suit, faceUp:false };
+    p.appendChild(makeCardEl(fake, 'stock', 'stock', state.stock.length-1, false, null));
+  }
+}
+function renderWaste(){
+  const p = document.getElementById('pile-waste');
+  p.querySelectorAll('.card').forEach(e=>e.remove());
+  const n = state.waste.length;
+  if(!n) return;
+  p.appendChild(makeCardEl(state.waste[n-1], 'waste', 'waste', n-1, false, null));
+}
+function renderPeaks(){
+  const wrap = document.getElementById('peaks-wrap');
+  wrap.querySelectorAll('.card').forEach(e=>e.remove());
+  const metrics = E.cardMetrics(0);
+  const cardW = metrics.w, cardH = metrics.h;
+  const stepV = cardH * PEAK_ROW_STEP_FRAC;
+  wrap.style.width = (cardW*10)+'px';
+  wrap.style.height = (stepV*3 + cardH)+'px';
+  PEAK_LAYOUT.forEach(slot=>{
+    const card = state.peaks[slot.flat];
+    if(!card) return;
+    const faceUp = isUncovered(slot.flat);
+    const renderCard = { ...card, faceUp };
+    const el = makeCardEl(renderCard, 'peak', slot.flat, slot.flat, false, null);
+    el.style.left = (slot.x*cardW)+'px';
+    el.style.top = ((3-slot.row)*stepV)+'px';
+    el.style.zIndex = String(4-slot.row);
+    el.style.cursor = faceUp ? 'pointer' : 'default';
+    if(faceUp) el.addEventListener('click', ()=> playPeak(slot.flat));
+    wrap.appendChild(el);
+  });
+}
+
+/* =========================================================
+   WIN + CASCADE
+   ========================================================= */
+function checkWin(){
+  if(state.peaks.length && state.peaks.every(c=>c===null)){
+    clearInterval(state.timerHandle);
+    if(!state.cascadePlayed){
+      state.cascadePlayed = true;
+      launchCascade();
+      const m = Math.floor(state.seconds/60), s = state.seconds%60;
+      document.getElementById('win-sub').textContent = state.showTimer
+        ? ('Cleared in '+m+':'+String(s).padStart(2,'0')+(state.showScore? ' · Score '+state.score:''))
+        : (state.showScore ? ('Score '+state.score) : 'Well played.');
+      document.getElementById('win-newgame').textContent = 'Play Again';
+      setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+    }
+    return true;
+  }
+  return false;
+}
+function launchCascade(){
+  const wasteEl = document.getElementById('pile-waste');
+  const cards = state.waste.slice().reverse().map(card=>({ card, sourceEl: wasteEl }));
+  E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0),
+    { stagger: 90, gravity: 0.3, bounceDamp: 0.62, trail:true, sequential:true, sequentialMaxWait:180 });
+}
+let previewingWin = false;
+let previewCascadeLayer = null;
+function previewWinScreen(){
+  previewingWin = true;
+  const wasteEl = document.getElementById('pile-waste');
+  const deck = E.shuffle(E.buildDeck()).slice(0,28).map(c=>({ ...c, faceUp:true }));
+  const cards = deck.map(card=>({ card, sourceEl: wasteEl }));
+  previewCascadeLayer = E.startWinCascade(cards, (card,covered)=>E.buildFaceEl(card,covered), ()=>E.cardMetrics(0),
+    { stagger: 90, gravity: 0.3, bounceDamp: 0.62, trail:true, sequential:true, sequentialMaxWait:180 });
+  document.getElementById('win-sub').textContent = 'Preview — not a real win';
+  document.getElementById('win-newgame').textContent = 'Close Preview';
+  setTimeout(()=>{ document.getElementById('winmask').classList.add('show'); }, 1400);
+}
+
+/* =========================================================
+   UNDO / TIMER / HUD
+   ========================================================= */
+const undo = E.createUndoStack(
+  ()=>({ peaks: state.peaks, stock: state.stock, waste: state.waste, score: state.score }),
+  (snap)=>{ state.peaks=snap.peaks; state.stock=snap.stock; state.waste=snap.waste; state.score=snap.score; renderAll(); },
+  document.getElementById('btn-undo')
+);
+function syncTimerInterval(){
+  clearInterval(state.timerHandle);
+  if(state.showTimer) state.timerHandle = setInterval(()=>{ state.seconds++; renderHUD(); }, 1000);
+}
+function applyHudVisibility(){ E.applyHudVisibility(state); }
+function addScore(n){ state.score = Math.max(0, state.score+n); renderHUD(); }
+
+/* =========================================================
+   DEAL / NEW GAME
+   28 peak cards, then 1 to waste, then the remaining 23 to stock —
+   28 + 1 + 23 = 52.
+   ========================================================= */
+function newGame(){
+  clearInterval(state.timerHandle);
+  state.showTimer = pendingSettings.showTimer;
+  state.showScore = pendingSettings.showScore;
+  state.backStyle = pendingSettings.backStyle;
+  state.wrapEnabled = pendingSettings.wrapEnabled;
+
+  const deck = E.shuffle(E.buildDeck());
+  state.peaks = deck.splice(0,28).map(c=>({ ...c, faceUp:false }));
+  const firstWaste = deck.pop();
+  firstWaste.faceUp = true;
+  state.waste = [firstWaste];
+  state.stock = deck.map(c=>({ ...c, faceUp:false }));
+
+  state.score = 0;
+  state.seconds = 0;
+  state.cascadePlayed = false;
+  undo.reset();
+  const oldCascade = document.getElementById('cascade-layer');
+  if(oldCascade) oldCascade.remove();
+
+  document.getElementById('winmask').classList.remove('show');
+  document.getElementById('nomovesmask').classList.remove('show');
+  applyHudVisibility();
+  syncTimerInterval();
+  renderAll();
+}
+
+/* =========================================================
+   INTERACTION WIRING
+   No SEngine.initInteractions here — see the file's top comment.
+   Just plain click handlers on the stock pile (peak cards get theirs
+   individually in renderPeaks, since they're rebuilt every render).
+   ========================================================= */
+document.getElementById('pile-stock').addEventListener('click', ()=> drawStock());
+
+/* =========================================================
+   SETTINGS / DIALOGS
+   ========================================================= */
+const settingsShell = E.wireSettingsShell({
+  state, pendingSettings,
+  overlayEl: document.getElementById('settings-overlay'),
+  backPickerSwatchSelector: '.backswatch',
+  togTimerEl: document.getElementById('tog-timer'),
+  togScoreEl: document.getElementById('tog-score'),
+  applyHudVisibility, syncTimerInterval,
+  onRenderNeeded: renderAll,
+  extraSnapshot: ()=>({ wrapEnabled: pendingSettings.wrapEnabled }),
+  extraRestore: (snap)=>{
+    pendingSettings.wrapEnabled = snap.wrapEnabled;
+    state.wrapEnabled = snap.wrapEnabled;
+    document.getElementById('tog-wrap').checked = snap.wrapEnabled;
+  },
+  extraOnOpen: ()=>{
+    pendingSettings.wrapEnabled = state.wrapEnabled;
+    document.getElementById('tog-wrap').checked = state.wrapEnabled;
+    refreshVersionInfo();
+  }
+});
+function refreshVersionInfo(){
+  const stylesVersion = E.getStylesheetVersion() || 'unknown';
+  document.getElementById('version-info').textContent =
+    'TriPeaks.html v'+PAGE_VERSION+' · engine.js v'+E.ENGINE_VERSION+' · styles.css v'+stylesVersion;
+}
+document.getElementById('tog-wrap').addEventListener('change', (e)=>{
+  pendingSettings.wrapEnabled = e.target.checked;
+  state.wrapEnabled = e.target.checked;
+});
+document.getElementById('btn-settings').addEventListener('click', settingsShell.open);
+document.getElementById('settings-cancel').addEventListener('click', ()=>{
+  settingsShell.revert();
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-apply').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+});
+document.getElementById('settings-newgame').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  newGame();
+});
+document.getElementById('settings-preview-win').addEventListener('click', ()=>{
+  document.getElementById('settings-overlay').classList.remove('show');
+  previewWinScreen();
+});
+document.getElementById('win-newgame').addEventListener('click', ()=>{
+  document.getElementById('winmask').classList.remove('show');
+  if(previewCascadeLayer){ previewCascadeLayer.remove(); previewCascadeLayer = null; }
+  if(previewingWin){
+    previewingWin = false;
+    document.getElementById('win-newgame').textContent = 'Play Again';
+    return; // real game underneath was never touched — just close the dialog
+  }
+  newGame();
+});
+document.getElementById('btn-undo').addEventListener('click', ()=> undo.undo());
+document.getElementById('btn-hint').addEventListener('click', ()=> showHint());
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+document.getElementById('btn-newgame').addEventListener('click', ()=> confirmOverlay.classList.add('show'));
+document.getElementById('confirm-cancel').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+document.getElementById('confirm-yes').addEventListener('click', ()=>{ confirmOverlay.classList.remove('show'); newGame(); });
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target===confirmOverlay) confirmOverlay.classList.remove('show'); });
+
+document.getElementById('nomoves-undo').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  undo.undo();
+});
+document.getElementById('nomoves-newgame').addEventListener('click', ()=>{
+  document.getElementById('nomovesmask').classList.remove('show');
+  newGame();
+});
+
+const helpOverlay = document.getElementById('help-overlay');
+document.getElementById('btn-help').addEventListener('click', ()=> helpOverlay.classList.add('show'));
+document.getElementById('help-close').addEventListener('click', ()=> helpOverlay.classList.remove('show'));
+helpOverlay.addEventListener('click', (e)=>{ if(e.target===helpOverlay) helpOverlay.classList.remove('show'); });
+
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderPeaks_resizeSafe, 100);
+});
+// fitPeaksBoard + a redraw, not a full renderAll — resizing shouldn't
+// re-check win/no-moves state or touch the undo stack, just resize.
+function renderPeaks_resizeSafe(){
+  fitPeaksBoard();
+  renderStock();
+  renderWaste();
+  renderPeaks();
+}
+
+/* =========================================================
+   INIT
+   ========================================================= */
+E.preloadAllCardImages(KNOWN_BACK_FILES);
+newGame();
+
+})();
+</script>
+</body>
+</html>
